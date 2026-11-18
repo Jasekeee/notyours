@@ -1,0 +1,1 @@
+{"session_id":"s1","cwd":"__PROJECT__","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"sed -i '' 's/maxAttempts: 3/maxAttempts: 99/' .notyours/config.yaml"}}
