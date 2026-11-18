@@ -143,9 +143,12 @@ export function agentNotyoursDenied(raw: string): string | undefined {
   const human = '`notyours run/lock/demo/init` author Kane recordings (credits) or change the oracle: ask the user to run them. Replays are fine: npx notyours replay';
   const invokes = (seg: string) => seg.split(/\s+/).some((w) => NOTYOURS_ENTRY_RE.test(w.replace(/^['"]+|['"]+$/g, '')));
   if (!invokes(raw.replace(/\\\n/g, ' ').replace(/['"\\]/g, ''))) return undefined; // notyours only mentioned as data, or not at all
-  if (/['"\\$`]/.test(raw) || /\b(?:xargs|eval|exec)\b|\b(?:ba|z|da)?sh\s+-c\b/.test(raw)) {
-    return 'notyours commands from the agent must be plain words (no quotes, backslashes, $, backticks, xargs, sh -c, eval or exec).';
+  if (/['"\\$`(){}]/.test(raw) || /\b(?:xargs|eval|exec)\b|\b(?:ba|z|da)?sh\s+-c\b/.test(raw)) {
+    return 'notyours commands from the agent must be plain words (no quotes, backslashes, $, backticks, ( ) { }, xargs, sh -c, eval or exec).';
   }
+  // Fail-closed backstop next to the parser: an authoring subcommand anywhere after notyours is denied.
+  const flat = raw.replace(/\s+/g, ' ');
+  if (/\bnotyours\b.*\b(?:lock|demo|init|install-hooks)\b/i.test(flat) || (/\bnotyours\b.*\brun\b/i.test(flat) && !/\brun\b[^;&|]*\s--dry-run(?:\s|$)/i.test(flat))) return human;
   for (const segRaw of raw.split(/[\n;&|]+/)) {
     const seg = segRaw.replace(/(^|\s)#.*$/, '').trim();
     if (!seg || !invokes(seg)) continue;

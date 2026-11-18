@@ -59,6 +59,11 @@ Claude Code usage for the four headless sessions.
   By decision they're never committed (`**/.notyours/tests/` is gitignored), so every fresh demo authors (~45 credits
   quick, ~120 full).
 - **Bash edits bypass post-tool.** Run 3's agent edited a route with `python3`, and that doesn't mark boundaries dirty.
+- **The guard is a guardrail, not a sandbox.** Automated security review found successive parser differentials in the
+  Bash checks. The current version is deny-by-default for any notyours invocation (exact plain-word allowlist, with no
+  quotes, expansions, subshells or command runners) plus a fail-closed regex backstop. A determined agent with shell
+  access can still find unanticipated forms. The backstops are Claude Code's `permissions.deny` rules and reviewing
+  `.notyours/` in `git diff`.
 - **Demo friction:** Jotter's own tests assert the seeded bugs, so a correct fix turns 2–4 of them red, which agents
   notice and trade off (run 3 briefly re-added bug #3). Running them while the app holds :3077 is slow.
 - **Test suite:** one timing test flaked under parallel Chrome load (fixed: best of 3). One unexplained "1 failed file"

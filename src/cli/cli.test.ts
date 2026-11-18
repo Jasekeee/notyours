@@ -476,7 +476,8 @@ describe('hooks', () => {
       'npx notyours@0.1.0 lock', './node_modules/.bin/notyours.cmd lock', 'sh -c "npx notyours lock"', 'npx notyours',
     ];
     for (const c of bad) expect([c, g('Bash', { command: c }).allow]).toEqual([c, false]);
-    for (const c of ['nohup npx notyours lock', 'env FOO=1 notyours run b1', 'find . -exec notyours lock {} +', 'npm exec notyours lock']) expect([c, g('Bash', { command: c }).allow]).toEqual([c, false]);
+    for (const c of ['nohup npx notyours lock', 'env FOO=1 notyours run b1', 'find . -exec notyours lock {} +', 'npm exec notyours lock',
+      '(npx notyours lock)', '{ npx notyours lock; }', 'npx notyours replay b1 > out.txt']) expect([c, g('Bash', { command: c }).allow]).toEqual([c, false]);
     const ok = ['npx notyours replay b1', 'npx notyours run --dry-run', 'npx notyours -C . run b1 --dry-run', 'npx notyours report --open', 'npx notyours doctor', 'git log --grep notyours', 'grep -rn notyours README.md'];
     for (const c of ok) expect([c, g('Bash', { command: c }).allow]).toEqual([c, true]);
   });
