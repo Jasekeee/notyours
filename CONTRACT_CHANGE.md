@@ -31,7 +31,7 @@ Only the coordinator applies approved changes, on `main`, and every branch then 
   probe) and use `viewerOwn` for the viewer control. Without it, behaviour stays as now (viewer create is best-effort).
 - **Impact on other branches:** additive and optional. feat/demo can add `viewerOwn` to B1/B3; feat/ratchet/feat/cli
   only pass it through.
-- **Status:** proposed
+- **Status:** approved (2026-11-18); applied on feat/engine (schema + engine + tests)
 
 ### CC-2 (convention, no schema change): HTTP method prefix in `targets.api`
 - **Requested by:** feat/demo (agent B), implemented in feat/engine

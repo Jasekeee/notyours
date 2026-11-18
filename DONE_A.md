@@ -76,8 +76,9 @@ tabs now disable the cache, and the fake runner in the tests opens targets the w
 
 ## Decisions and interpretations
 - **Ports come from `Identity.cdpPort`**, since Config has no port field. The base port is `NOTYOURS_CDP_BASE_PORT`, default 9301.
-- **The viewer runs `create` too, for its own control.** That run is best-effort: seeded boundaries (B1) fail it as
-  the viewer and still probe. See CC-1 for making HELD reachable there.
+- **Viewer control:** if the boundary has `viewerOwn` (CC-1, applied), the viewer's create run is skipped and the
+  control is "viewer sees its own token on `viewerOwn`". Without it, the viewer runs `create` too, best-effort:
+  seeded boundaries (B1) fail it as the viewer and still probe, but can't reach HELD.
 - **API targets are judged by network only.** Chrome renders a GET'd JSON response as DOM text, which would
   otherwise make every API leak "visible".
 - **`maxAttempts` only applies to the oracle's free page loads.** Kane authoring runs are never retried.
@@ -87,7 +88,8 @@ tabs now disable the cache, and the fake runner in the tests opens targets the w
 ## Changes outside src/engine/ (please review)
 1. `test/contracts.test.ts`: uses `new MockEngine()` instead of `createEngine()` (separate commit). Otherwise
    `npm test` would start real Kane runs with the mock identities.
-2. `CONTRACT_CHANGE.md`: CC-1 (proposed: optional `Boundary.viewerOwn`) and CC-2 (the method-prefix convention).
+2. `CONTRACT_CHANGE.md`: CC-1 (approved and applied: optional `Boundary.viewerOwn`) and CC-2 (the method-prefix convention).
+3. `src/schemas.ts`: `BoundarySchema.viewerOwn` added per the approved CC-1. Other branches need to rebase on it.
 
 ## For other agents / the coordinator
 - **Pre-push hook false positive (coordinator):** the `.env`-style rule `…KEY|TOKEN|SECRET… = value` runs under
@@ -99,8 +101,8 @@ tabs now disable the cache, and the fake runner in the tests opens targets the w
   `createEngine({ pool, stateDir })`. Pass the same `ChromePool` you signed up with to avoid relaunches.
 - **feat/ratchet (C):** `runKane(…, { name })` passes `--name`. Diagnostics are in `.notyours/runs/<runId>/*.json`.
   Replays should resolve "METHOD URL" targets with `parseTarget()` from `src/engine/oracle.ts`.
-- **feat/demo (B):** method prefix done, and plan-gate leak = free user's own token. With `create.store: []` (B3) the
-  free user has no own page, so B3 can be LEAK or HARNESS_BROKEN, never HELD, until CC-1 (or B3 stores the free
-  user's note URL). The engine ignores `surface`, so its base path is the report's concern.
+- **feat/demo (B):** method prefix done, and plan-gate leak = free user's own token. Add `viewerOwn` to B1/B3
+  (e.g. `viewerOwn: { ui: ["http://127.0.0.1:3077/notes/1002"], api: [] }`): it saves the viewer's create run (~30
+  credits) and makes HELD reachable once the bugs are fixed. A test covers the exact B3 shape. The engine ignores `surface`, so its base path is the report's concern.
 - Kane wrote no `.testmuai/` into the state dir or the worktree during the smoke run (0.10.0 keeps evidence under
   `~/.testmuai/kaneai/sessions`). Ignore rules remain in place anyway.
