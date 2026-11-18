@@ -4,6 +4,7 @@
 # Scans lines ADDED by every commit being pushed. .env.example is exempt.
 # A line containing "notyours:allow-secret" is exempt (use for fake test fixtures only).
 # Matched values are never printed, only the file and commit.
+# Binary files (zips, images) are not content-scanned, so evidence packs/HARs are blocked by path.
 
 ZERO=0000000000000000000000000000000000000000
 SEP='|NY|'
@@ -44,7 +45,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 
     # Forbidden files added/modified.
     git diff-tree -r --root --no-commit-id --name-only --diff-filter=AMR "$c" |
-      grep -E '(^|/)\.env(\..*)?$|(^|/)\.notyours/(secrets\.json|profiles/)' |
+      grep -E '(^|/)\.env(\..*)?$|(^|/)\.notyours/(secrets\.json|profiles/|runs/)|(^|/)\.testmuai/evidence/|\.(evidence|har)$' |
       grep -v -E '(^|/)\.env\.example$' > "$tmp/files"
     if [ -s "$tmp/files" ]; then
       while read -r f; do echo "pre-push: BLOCKED $short adds forbidden file: $f" >&2; done < "$tmp/files"

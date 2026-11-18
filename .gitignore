@@ -2,10 +2,14 @@ node_modules
 .env
 .env.*
 !.env.example
-.notyours/secrets.json
-.notyours/profiles/
-.notyours/runs/
-.testmuai/evidence/
+# "**/" so these match at any depth (a bare "a/b/" pattern is anchored to the repo root).
+**/.notyours/secrets.json
+**/.notyours/profiles/
+**/.notyours/runs/
+**/.testmuai/evidence/
+**/.testmuai/tests/output-*/
+*.evidence
+*.har
 dist/
 *.log
 .DS_Store
