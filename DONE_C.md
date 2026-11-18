@@ -11,7 +11,7 @@
   boundary's YAML/JSON file, keeping comments. Every `{{name}}` is resolved before recording, so replays go to fixed
   URLs (replay ignores changed variables).
   - Guards: refuses below `creditFloor` and refuses when the balance can't be read (`kane-cli balance`). Caps authoring at
-    15 runs per project, counted from `.notyours/runs/credits.jsonl`, where every run's `credits_consumed` is logged.
+    **8 runs** per project (agent B measured ~30 credits per run), counted from `.notyours/runs/credits.jsonl`, where every run's `credits_consumed` is logged.
   - Runs are sequential, so a failed owner recording does not spend the viewer's credits. Locking again is a no-op
     unless `reauthor: true`. `.env*` files are stripped from adopted recordings (kane's code export writes an
     `.env.example` with `LT_USERNAME`/`LT_ACCESS_KEY` slots, and the pre-push scan exempts `.env.example`).
@@ -24,25 +24,28 @@
 - **`createRatchet(opts?)`:** returns the real ratchet with `{ projectDir }` and the mock without arguments. That keeps the
   mock-wired CLI stub (`replay` calls `lock(mockBoundary…)`) from ever starting a paid authoring run.
 - **Hooks** (`src/hooks/`), each a pure `(input) → { exitCode, stdout, stderr }`:
-  - `post-tool` matches `tool_input.file_path` against each boundary's `surface` plus `.notyours/map.json`. It records
-    `{ files, globs, ts }` per id in `dirty.json` and always exits 0. It has its own glob matcher (`**`, `*`, `?`, `{a,b}`,
+  - `post-tool` finds the **app folder** for the edited file: the nearest ancestor holding `.notyours/`, no higher than
+    the project dir (e.g. `demo/`). It matches the app-relative path against each boundary's `surface` plus that
+    folder's `.notyours/map.json`, records `{ files, globs, ts }` per id in that folder's `dirty.json`, and always exits 0. It has its own glob matcher (`**`, `*`, `?`, `{a,b}`,
     `[…]`), so no new dependency.
   - `guard` blocks Edit/Write/MultiEdit on `.notyours/` and Bash commands that could write there, with exit 2 and the
-    exact message. It handles case-insensitive paths, symlinks (dangling ones too), shell quoting, dot-globs and `xargs`
-    chains. It also blocks `notyours lock`. Read-only Bash (`cat/ls/head/tail/grep/jq/find` without `-delete`/`-exec`, no
+    exact message. Paths are resolved the way the kernel does (`physicalPath`: `..` after a symlink, dangling links,
+    loops fail closed), case-insensitively. Bash checks handle shell quoting, dot-globs and `xargs` chains. It also blocks `notyours lock`. Read-only Bash (`cat/ls/head/tail/grep/jq/find` without `-delete`/`-exec`, no
     redirects) stays allowed, so the agent can still read evidence under `.notyours/runs`.
-  - `stop`: an empty `dirty.json` exits 0 right away. Otherwise it replays the dirty locked boundaries:
+  - `stop` looks for app folders under the project (up to 3 levels deep, skipping dot and vendor dirs). If none has
+    anything in `dirty.json`, it exits 0 right away. Otherwise it replays each folder's dirty locked boundaries with that
+    folder as the ratchet's project dir:
     - GREEN clears dirty and attempts.
     - YELLOW keeps the boundary dirty and sends the human a `systemMessage` with "harness needs re-recording: notyours lock --reauthor <id>".
     - RED increments `attempts.json`. Below `maxAttempts` it exits 2 with a report of at most 40 lines: id + kind,
       "bob saw alice's data", URL, VISIBLE/PAYLOAD, token + quoted snippet, screenshot, suspected files with the globs
-      they matched, `npx notyours replay <id>`, and last line "Fix server-side; do not edit tests.". At `maxAttempts`
+      they matched (shown relative to the project, e.g. `demo/routes/notes.js`), `npx notyours replay <id>`, and last line "Fix server-side; do not edit tests.". At `maxAttempts`
       it writes `ESCALATION.md` (project root), exits 0 and tells the human.
     - Identity passwords are scrubbed from snippets.
   - `installHooks(projectDir, cliCommand = 'npx notyours')` merges into `.claude/settings.json`. It keeps every other key
     and hook, replaces only handlers ending in ` hook <name>` (so re-running with a new `cliCommand` doesn't duplicate),
     and refuses to touch invalid JSON.
-- **Tests:** 120 passing (`npm run typecheck && npm test`).
+- **Tests:** 131 passing (`npm run typecheck && npm test`).
   - JSON stdin fixtures for every hook in `src/hooks/fixtures/`, plus real-process runs of `src/hooks/bin.ts`.
   - Glob table, guard bypass table, and lock/replay with a fake `KaneClient`.
   - A fake `kane-cli` binary asserts `--no-adaptive-heal`/`--cdp-endpoint`.
@@ -79,8 +82,9 @@ call was made to learn its output format.
 3. **Latency:** a built hook process takes about 120 ms, but `npx` adds 200–400 ms, so `npx notyours hook post-tool` can
    exceed 300 ms. For speed, pass `cliCommand` as `node <project>/node_modules/notyours/dist/cli/index.js`.
 4. **Project layout assumptions (please confirm):**
-   - Hooks look for `.notyours/` at `CLAUDE_PROJECT_DIR` (else the stdin `cwd`). The demo keeps it in `demo/`, so run
-     Claude Code in `demo/`, or have the CLI pass the dir.
+   - Per agent B, the app folder is the one holding `.notyours/`, and surface globs are relative to it. The hooks find
+     it from `CLAUDE_PROJECT_DIR` (else the stdin `cwd`), so Claude Code can run at the repo root or inside `demo/`.
+     The CLI should construct the ratchet and run `replay <id>` with that app folder as `projectDir`.
    - Boundaries are read from `.notyours/boundaries.yaml` and/or `.notyours/boundaries/*.{yaml,yml,json}`.
    - Identities come from `.notyours/identities.json` merged with `.notyours/secrets.json`.
    - `map.json` may be `{id: string[]}` or `{id: {files|surface|globs}}`, optionally under `boundaries` (src/map
@@ -97,5 +101,5 @@ call was made to learn its output format.
   that changes to `.notyours/` show up in git diffs.
 - `dirty.json` is written read-modify-write with an atomic rename. Two edits finishing at the same moment could drop one
   id; the next edit or Stop recovers it.
-- `ESCALATION.md` goes to the project root. Once escalated, a boundary stays escalated until `attempts.json` is reset or a
+- `ESCALATION.md` goes to the app folder (e.g. `demo/ESCALATION.md`). Once escalated, a boundary stays escalated until `attempts.json` is reset or a
   replay goes GREEN.
