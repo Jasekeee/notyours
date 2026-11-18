@@ -9,7 +9,8 @@ import {
 import { findTokens, makeToken } from '../src/shared/token.js';
 import { redactIdentity } from '../src/shared/redact.js';
 import { mockBoundary, mockConfig, mockHeldResult, mockIdentities, mockLeakResult } from '../src/mocks/fixtures.js';
-import { createEngine, createRatchet, createReport } from '../src/index.js';
+import { createRatchet, createReport } from '../src/index.js';
+import { MockEngine } from '../src/engine/mock.js';
 
 describe('contracts', () => {
   it('fixtures satisfy the schemas', () => {
@@ -56,7 +57,8 @@ describe('contracts', () => {
   });
 
   it('mocks return schema-valid data', async () => {
-    const result = await createEngine().runBoundary(mockBoundary, mockIdentities, mockConfig);
+    // createEngine() is the real Kane engine (spends credits); contracts are checked against the mock.
+    const result = await new MockEngine().runBoundary(mockBoundary, mockIdentities, mockConfig);
     expect(ProbeResultSchema.parse(result).boundaryId).toBe(mockBoundary.id);
     const ratchet = createRatchet();
     await ratchet.lock(mockBoundary, result);
