@@ -299,9 +299,23 @@ describe('allowHosts', () => {
 
 describe('credits and exit codes', () => {
   it('refuses authoring below creditFloor; unknown balance is an error', async () => {
-    await expect(ensureCredits(mockConfig, 1, async () => 299)).rejects.toThrow(/below creditFloor 300/);
-    await expect(ensureCredits(mockConfig, 1, async () => undefined)).rejects.toThrow(/notyours doctor/);
-    await expect(ensureCredits(mockConfig, 1, async () => 5000)).resolves.toBeUndefined();
+    await expect(ensureCredits(mockConfig, 1, async () => 299, true)).rejects.toThrow(/below creditFloor 300/);
+    await expect(ensureCredits(mockConfig, 1, async () => undefined, true)).rejects.toThrow(/notyours doctor/);
+    await expect(ensureCredits(mockConfig, 1, async () => 5000, true)).resolves.toBeUndefined();
+    // Mock mode (default): never calls kane-cli.
+    await expect(ensureCredits(mockConfig, 1, async () => { throw new Error('balance called'); })).resolves.toBeUndefined();
+  });
+
+  it('uses the mock engine and ratchet unless NOTYOURS_REAL=1', async () => {
+    const { useReal, getEngine, getRatchet } = await import('./backends.js');
+    const { MockEngine } = await import('../engine/index.js');
+    const { MockRatchet } = await import('../ratchet/index.js');
+    expect(useReal({})).toBe(false);
+    expect(useReal({ NOTYOURS_REAL: 'true' })).toBe(false);
+    expect(useReal({ NOTYOURS_REAL: '1' })).toBe(true);
+    expect(getEngine()).toBeInstanceOf(MockEngine);
+    expect(getRatchet()).toBeInstanceOf(MockRatchet);
+    expect(getRatchet()).toBe(getRatchet());
   });
 
   it('exit 1 on any leak or harness failure', () => {

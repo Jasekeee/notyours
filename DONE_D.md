@@ -1,7 +1,14 @@
 # DONE_D: feat/cli (agent D)
 
 Kane credits spent: **0** (no Kane runs; only free `kane-cli whoami` / `balance` calls from `doctor`).
-`npm run typecheck && npm test`: green (68 tests in 4 files).
+
+> **Mock by default until the merge.** Every command uses `MockEngine` / `MockRatchet` unless
+> `NOTYOURS_REAL=1` is set (`src/cli/backends.ts`), so nothing can spend Kane credits by accident.
+> In mock mode the balance check is skipped and each run prints a one-line notice. With
+> `NOTYOURS_REAL=1` the CLI calls `createEngine()` / `createRatchet()` and enforces `creditFloor`.
+> After the real engine and ratchet are merged and verified, flip the default in `useReal()`
+> (or keep the opt-in for CI).
+`npm run typecheck && npm test`: green (69 tests in 4 files).
 
 ## What landed
 
@@ -69,7 +76,7 @@ the stop hook and `demo` (replay vs author) all read `locked` from the YAML.
 
 ## Known gaps
 
-- `replay` prints "Nothing to replay" until the real ratchet lands (the mock ratchet is in-memory per process).
+- In mock mode, `replay` in a fresh process prints "Nothing to replay" (the mock ratchet is in-memory per process; `demo` shares one instance, so lock-then-replay works within a run).
 - `map` doesn't resolve Express mount prefixes (`app.use('/api', router)`); `map.json` says so and
   the slash command asks the agent to fix paths.
 - Hooks default to `npx notyours …`, which adds npx startup time to every tool call. A local

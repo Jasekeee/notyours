@@ -2,8 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pc from 'picocolors';
-import { createEngine } from '../engine/index.js';
-import { createRatchet } from '../ratchet/index.js';
+import { getEngine, getRatchet, useReal } from './backends.js';
 import { createReport } from '../report/index.js';
 import { credits, headline, isLeak, parties, verdictExplanation, verdictGroup } from '../report/summary.js';
 import { fmtCredits } from '../report/html.js';
@@ -147,7 +146,8 @@ function assertIdentities(boundaries: Boundary[], identities: Identity[]): void 
 }
 
 /** Refuse authoring when the Kane balance is below creditFloor (project rule). */
-export async function ensureCredits(cfg: Config, authoringRuns: number, balance: () => Promise<number | undefined> = kaneBalance): Promise<void> {
+export async function ensureCredits(cfg: Config, authoringRuns: number, balance: () => Promise<number | undefined> = kaneBalance, real = useReal()): Promise<void> {
+  if (!real) return; // mock engine: nothing is spent
   const bal = await balance();
   if (bal === undefined) throw new UserError('Could not read your Kane balance (`kane-cli balance`). Run: notyours doctor');
   if (bal < cfg.creditFloor) {
@@ -199,7 +199,7 @@ export function finish(root: string, command: string, startedAt: Date, results: 
 
 /** Run the engine over boundaries one at a time (each boundary uses all persona Chromes). */
 export async function author(p: Project, boundaries: Boundary[]): Promise<ProbeResult[]> {
-  const engine = createEngine();
+  const engine = getEngine();
   const results: ProbeResult[] = [];
   for (const b of boundaries) {
     log(pc.dim(`→ ${b.id}: ${b.owner} creates, ${b.viewer} looks`));
@@ -212,7 +212,7 @@ export async function author(p: Project, boundaries: Boundary[]): Promise<ProbeR
 
 /** Replay locked boundaries (0 credits), optionally narrowed to ids. */
 export async function replayLocked(p: Project, ids: string[]): Promise<ProbeResult[]> {
-  const results = await createRatchet().replay(p.identities);
+  const results = await getRatchet().replay(p.identities);
   const wanted = ids.length ? results.filter((r) => ids.includes(r.boundaryId)) : results;
   const missing = ids.filter((id) => !results.some((r) => r.boundaryId === id));
   if (missing.length) warn(`Not locked, so not replayed: ${missing.join(', ')}. Lock them with: notyours lock ${missing.join(' ')}`);
@@ -319,7 +319,8 @@ export const actions: Actions = {
     assertHostsAllowed(p.cfg, chosen, root);
     assertIdentities(chosen, p.identities);
     const estimate = chosen.length * CREDITS_PER_AUTHORING;
-    log(`${chosen.length} boundar${chosen.length === 1 ? 'y' : 'ies'} against ${p.cfg.baseUrl}: ~${estimate} Kane credits (authoring). Replays after \`notyours lock\` are free.`);
+    const cost = useReal() ? `~${estimate} Kane credits (authoring)` : `mock engine, 0 credits (real: ~${estimate})`;
+    log(`${chosen.length} boundar${chosen.length === 1 ? 'y' : 'ies'} against ${p.cfg.baseUrl}: ${cost}. Replays after \`notyours lock\` are free.`);
     if (o.dryRun) {
       for (const b of chosen) log(`  ${pc.bold(b.id)}  ${b.kind}: ${b.owner} → ${b.viewer}  ui ${b.targets.ui.length}, api ${b.targets.api.length}${b.locked ? pc.dim('  (locked)') : ''}`);
       log(pc.dim('Dry run: nothing started.'));
@@ -346,7 +347,7 @@ export const actions: Actions = {
       fresh = await author(p, chosen);
     }
     const latest = latestResultsByBoundary(root);
-    const ratchet = createRatchet();
+    const ratchet = getRatchet();
     let locked = 0;
     for (const b of chosen) {
       const r = fresh.find((x) => x.boundaryId === b.id) ?? latest.get(b.id);

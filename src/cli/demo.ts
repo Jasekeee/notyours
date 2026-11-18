@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pc from 'picocolors';
 import type { ProbeResult } from '../types.js';
-import { createRatchet } from '../ratchet/index.js';
+import { getRatchet } from './backends.js';
 import { CREDITS_PER_AUTHORING, assertHostsAllowed, author, ensureCredits, finish, replayLocked } from './commands.js';
 import { DEMO_PORT } from './doctor.js';
 import { runInit } from './init.js';
@@ -147,7 +147,7 @@ export async function runDemo(o: DemoOpts): Promise<number> {
       const authored = await author(project, fresh);
       results.push(...authored);
       // Lock what was proven so the next run (with --dir) replays it for 0 credits.
-      const ratchet = createRatchet();
+      const ratchet = getRatchet();
       for (const r of authored) {
         const b = fresh.find((x) => x.id === r.boundaryId);
         if (b && r.verdict !== 'HARNESS_BROKEN') await ratchet.lock(b, r);
