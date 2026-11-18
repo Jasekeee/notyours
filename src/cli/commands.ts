@@ -354,7 +354,9 @@ export const actions: Actions = {
       const root = path.resolve(process.env.CLAUDE_PROJECT_DIR ?? o.cwd);
       const raw = await readStdin();
       const input = (raw.trim() ? JSON.parse(raw) : {}) as HookInput;
+      const t0 = Date.now();
       const r = await runHook(event, input, root);
+      logHook(root, event, input, r, Date.now() - t0);
       // Pipes are asynchronous on macOS: wait for each write before the process exits.
       const write = (s: NodeJS.WriteStream, t: string) => new Promise<void>((res) => s.write(t, () => res()));
       if (r.stdout) await write(process.stdout, r.stdout);
@@ -366,6 +368,27 @@ export const actions: Actions = {
     return 0;
   },
 };
+
+/**
+ * One JSON line per hook call in .notyours/runs/hooks.jsonl (gitignored, read-only to the agent): what the
+ * agent was shown and why it was blocked. Passwords are scrubbed; never fails the hook.
+ */
+export function logHook(root: string, event: HookEvent, input: HookInput, r: HookResult, ms: number): void {
+  try {
+    if (!fs.existsSync(nyPaths(root).config)) return;
+    let ids: Identity[] = [];
+    try { ids = readIdentities(root); } catch { /* no identities yet */ }
+    const scrub = (t?: string) => {
+      let out = (t ?? '').slice(0, 8000);
+      for (const i of ids) if (i.password && i.password.length >= 4) out = out.split(i.password).join('[REDACTED]');
+      return out;
+    };
+    const tool = typeof input.tool_name === 'string' ? input.tool_name : undefined;
+    const target = typeof input.tool_input?.file_path === 'string' ? input.tool_input.file_path : typeof input.tool_input?.command === 'string' ? input.tool_input.command.slice(0, 300) : undefined;
+    const line = { ts: new Date().toISOString(), event, tool, target: target ? scrub(target) : undefined, exitCode: r.exitCode, ms, stdout: scrub(r.stdout), stderr: scrub(r.stderr) };
+    safeAppendFile(root, path.join(nyPaths(root).runs, 'hooks.jsonl'), `${JSON.stringify(line)}\n`);
+  } catch { /* logging must never break the agent's session */ }
+}
 
 /**
  * Hook dispatch. guard: the CLI's hardened guard (canonical paths, Bash allowlist, hook config read-only).

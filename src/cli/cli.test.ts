@@ -10,14 +10,14 @@ import { mockBoundary, mockConfig } from '../mocks/fixtures.js';
 import { buildProgram, type Actions } from './program.js';
 import { checkHost } from './hosts.js';
 import { runInit, parseUsersFile, readPublicIdentities } from './init.js';
-import { assertHostsAllowed, boundaryUrls, ensureCredits, exitCodeFor, runHook } from './commands.js';
+import { assertHostsAllowed, boundaryUrls, ensureCredits, exitCodeFor, logHook, runHook } from './commands.js';
 import { checkNode, runDoctor } from './doctor.js';
 import type { Exec } from './system.js';
 import { guard, mergeHookSettings } from './hooks.js';
 import { matchesGlob } from './glob.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
 import { copyFilter, demoStartCommand, packagedDemoDir } from './demo.js';
-import { UserError } from './workspace.js';
+import { UserError, readIdentities } from './workspace.js';
 import { isOwnedHost, ownedStorePath, recordOwnedHosts, setOwnedStorePathForTests } from './owned.js';
 import { mockHeldResult, mockLeakResult } from '../mocks/fixtures.js';
 
@@ -545,6 +545,19 @@ describe('hooks', () => {
     const ids = readPublicIdentities(r3);
     expect(ids[0]!.token).toBe('NY-ALICE-JOTTERSEED2A');
     expect(ids[0]!.userDataDir).toBe(path.join(r3, '.notyours', 'profiles', 'alice'));
+  });
+
+  it('logs every hook call to .notyours/runs/hooks.jsonl with passwords scrubbed', () => {
+    const r5 = tmp('ny-hlog-');
+    fs.writeFileSync(path.join(r5, 'users.yaml'), 'users:\n  - { id: alice, role: owner, plan: pro, email: a@x.test, password: fake-test-pw-123 } # notyours:allow-secret\n');
+    runInit(r5, { url: 'http://localhost:3000', users: path.join(r5, 'users.yaml') });
+    const pw = readIdentities(r5).find((i) => i.password)!.password!;
+    logHook(r5, 'stop', {}, { exitCode: 2, stderr: `leak report mentioning ${pw}` }, 12);
+    const lines = fs.readFileSync(path.join(r5, '.notyours/runs/hooks.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const last = lines.at(-1);
+    expect(last).toMatchObject({ event: 'stop', exitCode: 2, ms: 12 });
+    expect(last.stderr).toContain('[REDACTED]');
+    expect(JSON.stringify(lines)).not.toContain(pw);
   });
 
   it('install-hooks merges idempotently and keeps the user\'s own hooks', () => {
