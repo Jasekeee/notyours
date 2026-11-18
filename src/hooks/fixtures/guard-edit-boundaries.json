@@ -1,0 +1,1 @@
+{"session_id":"s1","cwd":"__PROJECT__","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"__PROJECT__/.notyours/boundaries.yaml","old_string":"locked: true","new_string":"locked: false"}}
