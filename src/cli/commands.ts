@@ -59,7 +59,8 @@ export function exitCodeFor(results: ProbeResult[]): number {
 }
 
 /** Dotted words in objectives that are file names, not hosts (index.html, page.tsx). */
-const FILE_EXT = new Set(['html', 'htm', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'json', 'yaml', 'yml', 'md', 'css', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'pdf', 'csv', 'txt', 'xml', 'php', 'py', 'rb', 'go', 'zip']);
+// Only extensions that are NOT delegated TLDs (.md .py .zip .go .mov are real TLDs, so they stay hosts).
+const FILE_EXT = new Set(['html', 'htm', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'json', 'yaml', 'yml', 'css', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'pdf', 'csv', 'txt', 'xml', 'php', 'rb']);
 
 /**
  * Hosts a boundary will make Kane visit: absolute URLs in targets and objectives, plus (deny by default)
@@ -67,7 +68,8 @@ const FILE_EXT = new Set(['html', 'htm', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx',
  * Email domains (alice@demo.test) are not navigation targets and are skipped.
  */
 export function boundaryUrls(b: Boundary): string[] {
-  const objectives = [b.create.objective, b.proAction?.objective ?? ''].join('\n');
+  // Unicode full stops (。．｡) are treated as dots by URL parsers: normalise before scanning.
+  const objectives = [b.create.objective, b.proAction?.objective ?? ''].join('\n').replace(/[\u3002\uFF0E\uFF61]/g, '.');
   const text = [objectives, ...b.targets.ui, ...b.targets.api].join('\n');
   const urls = [...text.matchAll(/https?:\/\/[^\s'"`<>)]+/gi)].map((m) => m[0].replace(/[.,;]+$/, ''));
   const hostTokens = [...objectives.matchAll(/(?<![\w@.-])((?:[a-z0-9-]+\.)+[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3})(?![\w-]*@)\b/gi)]
@@ -103,7 +105,21 @@ export function assertHostsAllowed(cfg: Config, boundaries: Boundary[], root: st
   check(cfg.baseUrl, 'config.yaml baseUrl');
   for (const b of boundaries) {
     for (const t of [...b.targets.ui, ...b.targets.api]) {
-      if (!TARGET_RE.test(t)) throw new UserError(`boundary ${b.id}: target "${t}" must be an absolute http(s) URL, or a {{stored}} value optionally followed by /path`);
+      if (!TARGET_RE.test(t) || /[\s'"`<>()\\]/.test(t)) {
+        throw new UserError(`boundary ${b.id}: target "${t}" must be an absolute http(s) URL, or a {{stored}} value optionally followed by /path`);
+      }
+      if (/^https?:\/\/[^/]*\{\{/i.test(t)) throw new UserError(`boundary ${b.id}: the host in ${t} is a template; only paths may use {{variables}}.`);
+      if (/^https?:/i.test(t)) {
+        // Check the host the browser would actually use, parsed from the whole target string.
+        let u: URL;
+        try {
+          u = new URL(t.replace(/\{\{[^}]*\}\}/g, 'x'));
+        } catch {
+          throw new UserError(`boundary ${b.id}: can't parse target ${t}`);
+        }
+        if (u.username || u.password) throw new UserError(`boundary ${b.id}: target ${t} contains credentials (user@host)`);
+        check(`${u.protocol}//${u.host}/`, `boundary ${b.id}`);
+      }
     }
     for (const u of boundaryUrls(b)) check(u, `boundary ${b.id}`);
   }

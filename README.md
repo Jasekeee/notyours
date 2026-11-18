@@ -163,7 +163,8 @@ This merges three hooks and a few `permissions.deny` rules (for the secrets and 
 
 The guard is a guardrail for a cooperating agent, not a sandbox. It also keeps the hook config
 (`.claude/settings*.json`) read-only, and in Bash it only allows read-only commands (ls, cat, grep,
-jq, git diff, notyours replay/report) on those folders, without `$`, backticks, `~` or `../`. Use test accounts, never real users'
+jq, git diff, notyours replay/report) on those folders, without `$`, backticks, `~`, `../` or globs
+on dot-paths. Use test accounts, never real users'
 passwords, for your identities.
 
 ## Credit costs

@@ -80,7 +80,7 @@ const READONLY_PATHS = [
  * Bash segments that touch protected folders must be one of these read-only commands, with no redirects.
  * Allowlist, not denylist: anything unrecognised (interpreters, cp, sed, editors, scripts) is refused.
  */
-const READONLY_BASH_RE = /^(?:ls|cat|head|tail|wc|stat|file|jq|yq|grep|rg|diff|tree|git\s+(?:status|diff|log|show)|npx\s+notyours\s+(?:replay|report|map|doctor|run\s+--dry-run)|notyours\s+(?:replay|report|map|doctor|run\s+--dry-run))\b/;
+const READONLY_BASH_RE = /^(?:ls|cat|head|tail|wc|stat|jq|grep|diff|git\s+(?:status|diff|log|show)|npx\s+notyours\s+(?:replay|report|map|doctor|run\s+--dry-run)|notyours\s+(?:replay|report|map|doctor|run\s+--dry-run))\b/;
 const PROTECTED_IN_SHELL_RE = /\.notyours\b|\.testmuai\b|\.claude\/(?:settings|commands\/notyours)/;
 
 const under = (rel: string, p: string) => rel === p || rel.startsWith(`${p}/`);
@@ -127,6 +127,8 @@ export function guard(input: HookInput, root: string): GuardResult {
     if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
     }
+    // Globs/braces on any dot-path could expand to a protected folder (.n*, ./.t?stmuai, .{notyours,x}).
+    if (/(?:^|[\s/=])\.[^\s/]*[*?[{]/.test(cmd)) return deny('globs and braces on dot-paths (like .n*) are not allowed: name the file explicitly.');
     // Every segment that mentions a protected folder must be an allowlisted read-only command.
     const segments = cmd.split(/&&|\|\||;|\||\n|\$\(|`/).map((s) => s.trim()).filter(Boolean);
     for (const seg of segments) {
