@@ -24,15 +24,17 @@
 - **`createRatchet(opts?)`:** returns the real ratchet with `{ projectDir }` and the mock without arguments. That keeps the
   mock-wired CLI stub (`replay` calls `lock(mockBoundary…)`) from ever starting a paid authoring run.
 - **Hooks** (`src/hooks/`), each a pure `(input) → { exitCode, stdout, stderr }`:
-  - `post-tool` finds the **app folder** for the edited file: the nearest ancestor holding `.notyours/`, no higher than
-    the project dir (e.g. `demo/`). It matches the app-relative path against each boundary's `surface` plus that
+  - `post-tool` finds every **app folder** enclosing the edited file (a folder whose `.notyours/` has `config.yaml` or
+    boundaries, e.g. `demo/`), no higher than the project dir. It checks both the path as written and its
+    symlink-resolved location. It matches the app-relative path against each boundary's `surface` plus that
     folder's `.notyours/map.json`, records `{ files, globs, ts }` per id in that folder's `dirty.json`, and always exits 0. It has its own glob matcher (`**`, `*`, `?`, `{a,b}`,
     `[…]`), so no new dependency.
   - `guard` blocks Edit/Write/MultiEdit on `.notyours/` and Bash commands that could write there, with exit 2 and the
     exact message. Paths are resolved the way the kernel does (`physicalPath`: `..` after a symlink, dangling links,
     loops fail closed), case-insensitively. Bash checks handle shell quoting, dot-globs and `xargs` chains. It also blocks `notyours lock`. Read-only Bash (`cat/ls/head/tail/grep/jq/find` without `-delete`/`-exec`, no
     redirects) stays allowed, so the agent can still read evidence under `.notyours/runs`.
-  - `stop` looks for app folders under the project (up to 3 levels deep, skipping dot and vendor dirs). If none has
+  - `stop` looks for app folders under the project: a scan 6 levels deep that skips only `node_modules`/`.git`, plus
+    an index of the folders post-tool marked (`$TMPDIR/notyours/apps-<hash>.json`, keyed by the project's real path). If none has
     anything in `dirty.json`, it exits 0 right away. Otherwise it replays each folder's dirty locked boundaries with that
     folder as the ratchet's project dir:
     - GREEN clears dirty and attempts.
@@ -45,7 +47,7 @@
   - `installHooks(projectDir, cliCommand = 'npx notyours')` merges into `.claude/settings.json`. It keeps every other key
     and hook, replaces only handlers ending in ` hook <name>` (so re-running with a new `cliCommand` doesn't duplicate),
     and refuses to touch invalid JSON.
-- **Tests:** 131 passing (`npm run typecheck && npm test`).
+- **Tests:** 135 passing (`npm run typecheck && npm test`).
   - JSON stdin fixtures for every hook in `src/hooks/fixtures/`, plus real-process runs of `src/hooks/bin.ts`.
   - Glob table, guard bypass table, and lock/replay with a fake `KaneClient`.
   - A fake `kane-cli` binary asserts `--no-adaptive-heal`/`--cdp-endpoint`.
