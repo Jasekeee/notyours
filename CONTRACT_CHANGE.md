@@ -16,4 +16,28 @@ Only the coordinator applies approved changes, on `main`, and every branch then 
 
 ## Requests
 
-_None yet._
+### CC-1: explicit viewer-own targets for the positive control
+- **Requested by:** feat/engine (agent A)
+- **Date:** 2026-11-18
+- **File / symbol:** `src/schemas.ts` `BoundarySchema`
+- **Change:** add optional `viewerOwn: z.object({ ui: z.array(z.string()), api: z.array(z.string()) }).optional()`:
+  pages where the viewer must see its OWN token (e.g. `["http://127.0.0.1:3077/notes/1002"]`).
+- **Why:** HELD needs `controls.viewerSeesOwnToken`. Today the engine gets the viewer's own page by running
+  `create.objective` as the viewer too and resolving the targets with the viewer's stored values. Seeded boundaries
+  (demo B1/B3: fixed URLs like `/notes/1001`, a create objective that only confirms the owner's seed) can't do that:
+  the viewer's create run fails (costs ~30 credits for nothing), so on a *fixed* app those boundaries can only ever read
+  HARNESS_BROKEN, never HELD. Leaks are still detected correctly.
+- **Engine behaviour if approved:** when `viewerOwn` is set, skip the viewer's create run (saves one authoring run per
+  probe) and use `viewerOwn` for the viewer control. Without it, behaviour stays as now (viewer create is best-effort).
+- **Impact on other branches:** additive and optional. feat/demo can add `viewerOwn` to B1/B3; feat/ratchet/feat/cli
+  only pass it through.
+- **Status:** proposed
+
+### CC-2 (convention, no schema change): HTTP method prefix in `targets.api`
+- **Requested by:** feat/demo (agent B), implemented in feat/engine
+- **Date:** 2026-11-18
+- **Change:** a `targets.api` entry may be `"METHOD URL"` (GET/POST/PUT/PATCH/DELETE), default GET, e.g.
+  `"POST http://127.0.0.1:3077/api/export"`. The engine calls non-GET targets with `fetch` from the identity's Chrome.
+  A 404/405 on such a call is never HELD. Consider documenting it on `BoundarySchema.targets.api`.
+- **Impact on other branches:** feat/ratchet replays must use `parseTarget()` from `src/engine/oracle.ts` (or the same rule).
+- **Status:** implemented as a convention in feat/engine (f80be6e); schema comment pending approval
