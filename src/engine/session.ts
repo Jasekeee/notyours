@@ -22,6 +22,9 @@ export interface SessionOptions {
 
 export const loginTestName = (identityId: string) => `login_${identityId}`;
 
+/** Identities whose login was (re)recorded in this process: never record twice (no credit loops). */
+const recordedThisProcess = new Set<string>();
+
 /** Moves kane-cli's `<name>_test.md` + `output-<name>/` from <cwd>/.testmuai/tests into `testsDir`. */
 export function adoptRecording(cwd: string, name: string, testsDir: string): string {
   const src = join(cwd, '.testmuai', 'tests');
@@ -68,6 +71,11 @@ export async function logIn(identity: Identity, handle: ChromeHandle, opts: Sess
     log(`notyours: login replay for ${identity.id} ${out.run.status}${out.run.reason ? ` (${out.run.reason})` : ''}; recording a new login (1 authoring run)`);
   }
 
+  const key = `${opts.stateDir}|${identity.id}`;
+  if (recordedThisProcess.has(key)) {
+    throw new Error(`notyours: ${identity.id}'s login was already recorded in this run and its replay still fails; not recording again (credits). Check the app's login page and .notyours/secrets.json.`);
+  }
+  recordedThisProcess.add(key);
   const res = await login(identity, opts.runner ?? runKane, { cfg: opts.cfg, stateDir: opts.stateDir, cwd: opts.cwd, name });
   if (res.run.status !== 'passed') {
     throw new Error(`Could not log ${identity.id} in (${res.run.reason ?? res.run.status}). Check its email/password in .notyours/secrets.json.`);

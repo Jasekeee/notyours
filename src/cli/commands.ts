@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pc from 'picocolors';
 import { getEngine, getRatchet } from './backends.js';
+import { sessionPool } from '../engine/index.js';
 import { createReport } from '../report/index.js';
 import { credits, headline, isLeak, parties, verdictExplanation, verdictGroup } from '../report/summary.js';
 import { fmtCredits } from '../report/html.js';
@@ -197,15 +198,23 @@ export function finish(root: string, command: string, startedAt: Date, results: 
 
 /** Run the engine over boundaries one at a time (each boundary uses all persona Chromes). */
 export async function author(p: Project, boundaries: Boundary[]): Promise<ProbeResult[]> {
-  const engine = getEngine(p.root);
+  // One logged-in Chrome per persona for the whole command (each launch logs in; replayed logins are free).
+  const pool = sessionPool({ cfg: p.cfg, stateDir: nyPaths(p.root).dir, cwd: p.root });
+  const engine = getEngine(p.root, pool);
   const results: ProbeResult[] = [];
-  for (const b of boundaries) {
-    log(pc.dim(`→ ${b.id}: ${b.owner} creates, ${b.viewer} looks`));
-    // Authoring on purpose: the engine treats locked:true as judge-only, so drop it for a fresh probe.
-    const { locked: _locked, ...fresh } = b;
-    const r = await engine.runBoundary(fresh, p.identities, p.cfg);
-    printResults([r], boundaries);
-    results.push(r);
+  try {
+    for (const b of boundaries) {
+      log(pc.dim(`→ ${b.id}: ${b.owner} creates, ${b.viewer} looks`));
+      // Authoring on purpose: the engine treats locked:true as judge-only, so drop it for a fresh probe.
+      const { locked: _locked, ...fresh } = b;
+      const t0 = Date.now();
+      const r = await engine.runBoundary(fresh, p.identities, p.cfg);
+      printResults([r], boundaries);
+      log(pc.dim(`  ${b.id}: ${((Date.now() - t0) / 1000).toFixed(1)} s, ${r.kaneRuns.reduce((n, k) => n + k.creditsConsumed, 0).toFixed(1)} credits`));
+      results.push(r);
+    }
+  } finally {
+    await pool.closeAll();
   }
   return results;
 }
