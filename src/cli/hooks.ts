@@ -146,6 +146,10 @@ export function guard(input: HookInput, root: string): GuardResult {
     // Globs at the top of .notyours/ (cat .notyours/s*) or recursive reads of the whole folder (grep -r x .notyours).
     if (/\.notyours\/[^\s/'"]*[*?[{]/.test(cmd)) return deny(secretMsg);
     if (/\.notyours\/?(?=$|[\s'";|&)])/.test(cmd) && /\b(?:grep|rg|ag|find|tar|zip|cp|rsync|cat|less|head|tail|xxd|strings|base64|scp|curl)\b/.test(cmd)) return deny(secretMsg);
+    // Authoring spends Kane credits and (re)records the oracle: the human's call, never the agent's.
+    if (/\bnotyours\b[^|;&]*\block\b/.test(cmd) || (/\bnotyours\b[^|;&]*\brun\b/.test(cmd) && !/\brun\b[^|;&]*--dry-run/.test(cmd))) {
+      return deny('`notyours run` / `notyours lock` author Kane recordings (credits) and change the oracle: ask the user to run them. Replays are fine: npx notyours replay');
+    }
     if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
     }
