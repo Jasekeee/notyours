@@ -33,6 +33,17 @@ export function stripAnsi(s: string): string {
 
 export type KaneAuth = { state: 'ok' } | { state: 'missing' } | { state: 'unauthenticated'; detail: string };
 
+/** `kane-cli --version` as x.y.z, or undefined when kane-cli is missing or prints something else. */
+export async function kaneVersion(run: Exec = exec): Promise<string | undefined> {
+  try {
+    const r = await run('kane-cli', ['--version'], { timeoutMs: 30_000 });
+    const m = /(\d+\.\d+\.\d+)/.exec(`${r.stdout}`.trim().split('\n').at(-1) ?? '');
+    return m?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
 export async function kaneWhoami(run: Exec = exec): Promise<KaneAuth> {
   const r = await run('kane-cli', ['whoami']);
   if (r.notFound) return { state: 'missing' };

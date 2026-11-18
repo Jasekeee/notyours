@@ -26,7 +26,10 @@
   },
   "files": [
     "dist",
-    "demo"
+    "demo",
+    "!demo/test",
+    "!demo/vitest.config.js",
+    "!demo/data"
   ],
   "dependencies": {
     "commander": "^15.1.0",

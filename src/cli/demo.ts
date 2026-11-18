@@ -11,10 +11,10 @@ import pc from 'picocolors';
 import type { ProbeResult } from '../types.js';
 import { getRatchet } from './backends.js';
 import { CREDITS_PER_AUTHORING, assertHostsAllowed, author, ensureCredits, finish, replayLocked } from './commands.js';
-import { DEMO_PORT } from './doctor.js';
+import { DEMO_PORT, kaneReplaysCost } from './doctor.js';
 import { runInit } from './init.js';
 import type { DemoOpts } from './program.js';
-import { isPortFree, openFile, waitForHttp } from './system.js';
+import { isPortFree, kaneVersion, openFile, waitForHttp } from './system.js';
 import { UserError, nyPaths, readBoundaries, readConfig, readIdentities } from './workspace.js';
 
 export const DEMO_URL = `http://127.0.0.1:${DEMO_PORT}`;
@@ -27,16 +27,36 @@ export const QUICK_BOUNDARY = 'b1-notes-cross-user';
  * login is recorded (1 authoring run each), then every boundary is authored. Recordings stay local
  * (never committed: they hold account ids), so `--dir <same dir>` is what makes a rerun cheap.
  */
-export function demoEstimate(quick: boolean): string {
+export function demoEstimate(quick: boolean, kaneVersion?: string): string {
+  // Measured: kane-cli 0.10.0 (docs/E2E.md) and 0.10.6 (docs/KANE_COMPAT.md; full is extrapolated).
+  const slow = kaneReplaysCost(kaneVersion);
+  const [qt, qc, ft, fc] = slow ? ['~10 min', '~65', '~25 min', '~170'] : ['~4 min', '~45', '~10 min', '~120'];
   const lines = [
-    `${quick ? pc.bold('→ quick') : '  quick'}  (B1 only, --quick): ~4 min, ~45 Kane credits (4 authoring runs: 2 logins + B1)`,
-    `${quick ? '  full ' : pc.bold('→ full ')}  (B1–B4):            ~10 min, ~120 Kane credits (12 authoring runs)`,
+    `${quick ? pc.bold('→ quick') : '  quick'}  (B1 only, --quick): ${qt}, ${qc} Kane credits (4 authoring runs: 2 logins + B1)`,
+    `${quick ? '  full ' : pc.bold('→ full ')}  (B1–B4):            ${ft}, ${fc} Kane credits (12 authoring runs)`,
+    ...(kaneVersion ? [pc.dim(`  (estimates for kane-cli ${kaneVersion}${slow ? '; replays on this version also cost a few credits' : ''})`)] : []),
     pc.dim('  Rerun with --dir <same dir> to replay recorded logins for 0 credits. No credits at all: docs/sample-report/report.html'),
   ];
   return lines.join('\n');
 }
 const USERS_FILES = ['users.yaml', 'users.yml', 'users.json'];
 /** Never copied from the package into the work dir: deps, and run state under .notyours/ or .testmuai/. */
+/**
+ * Repo-only parts of demo/ that a demo copy (`notyours demo`, and loop dirs made with `demo --dir`) must not get:
+ * Jotter's own tests assert the seeded bugs on purpose, so in a copy they would fight an agent that fixes them;
+ * data/ is a locally built database that would make the copy skip its fresh seed.
+ */
+export const DEMO_REPO_ONLY = ['test', 'vitest.config.js', 'data'];
+
+/** copyFilter plus the repo-only top-level entries of the demo folder `src`. */
+export function demoCopyFilter(src: string): (p: string) => boolean {
+  return (p) => {
+    const rel = path.relative(src, p).split(path.sep);
+    if (rel.length >= 1 && DEMO_REPO_ONLY.includes(rel[0]!) && !rel[0]!.startsWith('..')) return false;
+    return copyFilter(p);
+  };
+}
+
 export function copyFilter(p: string): boolean {
   const parts = p.split(/[\\/]/);
   const base = parts[parts.length - 1] ?? '';
@@ -104,10 +124,10 @@ export async function runDemo(o: DemoOpts): Promise<number> {
   if (!src) throw new UserError('The demo app is missing from this notyours package (demo/ not found).');
   if (!(await isPortFree(DEMO_PORT))) throw new UserError(`Port ${DEMO_PORT} is in use; the demo app needs it. Find it: lsof -i :${DEMO_PORT}`);
 
-  console.log(demoEstimate(o.quick === true));
+  console.log(demoEstimate(o.quick === true, await kaneVersion()));
   const work = path.resolve(o.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'notyours-demo-')));
   fs.mkdirSync(work, { recursive: true });
-  fs.cpSync(src, work, { recursive: true, force: false, errorOnExist: false, filter: copyFilter });
+  fs.cpSync(src, work, { recursive: true, force: false, errorOnExist: false, filter: demoCopyFilter(src) });
   const deps = depsDir();
   if (deps && !fs.existsSync(path.join(work, 'node_modules'))) fs.symlinkSync(deps, path.join(work, 'node_modules'), 'junction');
   process.chdir(work); // Kane writes .testmuai/ (incl. evidence packs) into the working directory

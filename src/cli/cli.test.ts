@@ -16,7 +16,7 @@ import type { Exec } from './system.js';
 import { guard, mergeHookSettings } from './hooks.js';
 import { matchesGlob } from './glob.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
-import { copyFilter, demoStartCommand, packagedDemoDir } from './demo.js';
+import { copyFilter, demoCopyFilter, demoStartCommand, packagedDemoDir } from './demo.js';
 import { UserError, readIdentities } from './workspace.js';
 import { isOwnedHost, ownedStorePath, recordOwnedHosts, setOwnedStorePathForTests } from './owned.js';
 import { mockHeldResult, mockLeakResult } from '../mocks/fixtures.js';
@@ -361,6 +361,27 @@ describe('credits and exit codes', () => {
   });
 });
 
+describe('kane-cli version', () => {
+  it('doctor prints the version and warns outside the tested range 0.10.0–0.10.6', async () => {
+    const { checkKaneVersion, compareVersions } = await import('./doctor.js');
+    expect(compareVersions('0.10.6', '0.10.10')).toBeLessThan(0);
+    expect(checkKaneVersion('0.10.0')).toMatchObject({ status: 'ok', detail: '0.10.0 (tested 0.10.0–0.10.6)' });
+    expect(checkKaneVersion('0.10.6')).toMatchObject({ status: 'ok' });
+    expect(checkKaneVersion('0.10.6').detail).toMatch(/replays cost a few credits/);
+    expect(checkKaneVersion('0.11.0')).toMatchObject({ status: 'warn' });
+    expect(checkKaneVersion('0.11.0').detail).toMatch(/outside the tested range.*KANE_COMPAT/);
+    expect(checkKaneVersion('0.9.9').status).toBe('warn');
+    expect(checkKaneVersion(undefined).status).toBe('warn');
+  });
+
+  it('demo estimates follow the kane-cli version', async () => {
+    const { demoEstimate } = await import('./demo.js');
+    expect(demoEstimate(true, '0.10.0')).toMatch(/quick.*~4 min, ~45 Kane credits/);
+    expect(demoEstimate(true, '0.10.6')).toMatch(/quick.*~10 min, ~65 Kane credits/);
+    expect(demoEstimate(false, '0.10.6')).toMatch(/full.*~25 min, ~170 Kane credits/);
+  });
+});
+
 describe('doctor', () => {
   it('Node < 22 fails with an upgrade hint', () => {
     expect(checkNode('22.0.0').status).toBe('ok');
@@ -378,14 +399,16 @@ describe('doctor', () => {
 
   it('all green', async () => {
     const checks = await runDoctor(300, {
-      exec: fakeExec({ whoami: { stdout: '│  ✓ Authenticated  │' }, balance: { stdout: 'Available credits: 11121.8322' } }),
+      exec: fakeExec({ '--version': { stdout: '\nUpdate available: 0.10.0 → 0.10.6\n0.10.0' }, whoami: { stdout: '│  ✓ Authenticated  │' }, balance: { stdout: 'Available credits: 11121.8322' } }),
       findChrome: () => '/chrome',
       isPortFree: async () => true,
       nodeVersion: '22.3.0',
     });
+    expect(checks.find((c) => c.name === 'kane-cli version')?.detail).toBe('0.10.0 (tested 0.10.0–0.10.6)');
     expect(checks.map((c) => [c.name, c.status])).toEqual([
       ['Node', 'ok'],
       ['Chrome', 'ok'],
+      ['kane-cli version', 'ok'],
       ['kane-cli login', 'ok'],
       ['Kane credits', 'ok'],
       ['Port 3077', 'ok'],
@@ -688,6 +711,13 @@ describe('demo helpers', () => {
     expect(copyFilter('/d/.testmuai/tests')).toBe(true);
     expect(copyFilter('/d/.notyours/boundaries')).toBe(true);
     expect(copyFilter('/d/src/runs')).toBe(true);
+  });
+
+  it('the demo copy leaves out Jotter\'s own bug-asserting tests, its vitest config and local data', () => {
+    const f = demoCopyFilter('/pkg/demo');
+    for (const p of ['/pkg/demo/test', '/pkg/demo/test/jotter.test.js', '/pkg/demo/vitest.config.js', '/pkg/demo/data/jotter.sqlite']) expect([p, f(p)]).toEqual([p, false]);
+    for (const p of ['/pkg/demo', '/pkg/demo/routes/notes.js', '/pkg/demo/server.js', '/pkg/demo/.notyours/boundaries/b1-cross-user.yaml', '/pkg/demo/routes/test.js']) expect([p, f(p)]).toEqual([p, true]);
+    expect(f('/pkg/demo/node_modules')).toBe(false);
   });
 
   it('finds how to start the demo', () => {
