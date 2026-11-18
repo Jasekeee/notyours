@@ -16,6 +16,16 @@ export interface LockDeps {
   /** Re-record even when tests already exist (`notyours lock --reauthor <id>`). */
   reauthor?: boolean;
   log?: (line: string) => void;
+  /** Bring up (logged-in) Chromes for these identities before authoring. */
+  prepare?: (identities: Identity[]) => Promise<void>;
+}
+
+/** Adopts `<boundary>_<owner>` and `<boundary>_<viewer>` from .testmuai/tests when both exist. */
+export function adoptProbeRecordings(paths: NotyoursPaths, b: Boundary): boolean {
+  const names = [testName(b.id, b.owner), testName(b.id, b.viewer)];
+  if (!names.every((n) => existsSync(path.join(paths.kaneTests, `${n}_test.md`)))) return false;
+  for (const n of names) adoptTest(paths, n);
+  return true;
 }
 
 export interface LockPlan {
@@ -143,7 +153,16 @@ export async function lockBoundary(stored: StoredBoundary, result: ProbeResult, 
     return;
   }
 
+  // The probe that produced this HELD result already recorded both runs under the same names
+  // (<boundary>_<identity> in .testmuai/tests): adopt them instead of paying for two new recordings.
+  if (!deps.reauthor && adoptProbeRecordings(deps.paths, b)) {
+    markLocked(stored);
+    log(`${b.id}: adopted the probe's recordings, 0 authoring runs`);
+    return;
+  }
+
   const plans = planLock(b, result, deps.identities);
+  if (deps.prepare) await deps.prepare(plans.map((p) => p.identity));
 
   const used = readCreditLog(deps.paths).filter((e) => e.kind === 'author').length;
   if (used + plans.length > deps.maxAuthoringRuns) {

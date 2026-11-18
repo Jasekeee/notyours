@@ -43,6 +43,11 @@ export interface ChromeHandle {
 export interface LaunchOptions {
   headful?: boolean;
   startupTimeoutMs?: number;
+  /**
+   * Runs once after each Chrome launch, before the pool hands it out (e.g. log the persona in: many apps
+   * use session cookies, which do not survive a Chrome restart). A throw closes that Chrome and rejects get().
+   */
+  onLaunch?: (identity: Identity, handle: ChromeHandle) => Promise<void>;
 }
 
 /** Launch Chrome for an identity and wait until its CDP endpoint answers. */
@@ -98,7 +103,17 @@ export class ChromePool {
   get(identity: Identity): Promise<ChromeHandle> {
     let h = this.handles.get(identity.id);
     if (!h) {
-      h = launchChrome(identity, this.opts);
+      const onLaunch = this.opts.onLaunch;
+      h = launchChrome(identity, this.opts).then(async (handle) => {
+        if (!onLaunch) return handle;
+        try {
+          await onLaunch(identity, handle);
+        } catch (e) {
+          await handle.close();
+          throw e;
+        }
+        return handle;
+      });
       h.catch(() => this.handles.delete(identity.id));
       this.handles.set(identity.id, h);
     }

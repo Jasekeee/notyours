@@ -12,11 +12,11 @@ import { runInit, parseUsersFile } from './init.js';
 import { assertHostsAllowed, boundaryUrls, ensureCredits, exitCodeFor, runHook } from './commands.js';
 import { checkNode, runDoctor } from './doctor.js';
 import type { Exec } from './system.js';
-import { guard, mergeHookSettings, postTool } from './hooks.js';
+import { guard, mergeHookSettings } from './hooks.js';
 import { matchesGlob } from './glob.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
 import { copyFilter, demoStartCommand, packagedDemoDir } from './demo.js';
-import { readDirty, UserError } from './workspace.js';
+import { UserError } from './workspace.js';
 import { isOwnedHost, ownedStorePath, recordOwnedHosts, setOwnedStorePathForTests } from './owned.js';
 import { mockHeldResult, mockLeakResult } from '../mocks/fixtures.js';
 
@@ -299,23 +299,17 @@ describe('allowHosts', () => {
 
 describe('credits and exit codes', () => {
   it('refuses authoring below creditFloor; unknown balance is an error', async () => {
-    await expect(ensureCredits(mockConfig, 1, async () => 299, true)).rejects.toThrow(/below creditFloor 300/);
-    await expect(ensureCredits(mockConfig, 1, async () => undefined, true)).rejects.toThrow(/notyours doctor/);
-    await expect(ensureCredits(mockConfig, 1, async () => 5000, true)).resolves.toBeUndefined();
-    // Mock mode (default): never calls kane-cli.
-    await expect(ensureCredits(mockConfig, 1, async () => { throw new Error('balance called'); })).resolves.toBeUndefined();
+    await expect(ensureCredits(mockConfig, 1, async () => 299)).rejects.toThrow(/below creditFloor 300/);
+    await expect(ensureCredits(mockConfig, 1, async () => undefined)).rejects.toThrow(/notyours doctor/);
+    await expect(ensureCredits(mockConfig, 1, async () => 5000)).resolves.toBeUndefined();
   });
 
-  it('uses the mock engine and ratchet unless NOTYOURS_REAL=1', async () => {
-    const { useReal, getEngine, getRatchet } = await import('./backends.js');
-    const { MockEngine } = await import('../engine/index.js');
-    const { MockRatchet } = await import('../ratchet/index.js');
-    expect(useReal({})).toBe(false);
-    expect(useReal({ NOTYOURS_REAL: 'true' })).toBe(false);
-    expect(useReal({ NOTYOURS_REAL: '1' })).toBe(true);
-    expect(getEngine()).toBeInstanceOf(MockEngine);
-    expect(getRatchet()).toBeInstanceOf(MockRatchet);
-    expect(getRatchet()).toBe(getRatchet());
+  it('uses the real engine and ratchet (no NOTYOURS_REAL switch); constructing them starts nothing', async () => {
+    const { getEngine, getRatchet } = await import('./backends.js');
+    const { KaneEngine } = await import('../engine/index.js');
+    const { RealRatchet } = await import('../ratchet/index.js');
+    expect(getEngine('/tmp/p')).toBeInstanceOf(KaneEngine);
+    expect(getRatchet('/tmp/p')).toBeInstanceOf(RealRatchet);
   });
 
   it('exit 1 on any leak or harness failure', () => {
@@ -476,23 +470,20 @@ describe('hooks', () => {
     expect(g('Edit', { file_path: '/elsewhere/file.ts' }).allow).toBe(true);
   });
 
-  it('post-tool marks boundaries whose surface matches the edited file as dirty', async () => {
-    const out = await runHook('post-tool', { tool_name: 'Edit', tool_input: { file_path: path.join(root, 'src/app/notes/[id]/page.tsx') } }, root);
-    expect(JSON.parse(out!).hookSpecificOutput.additionalContext).toMatch(/surface of boundary notes.*replayed for 0 credits/);
-    await runHook('post-tool', { tool_name: 'Write', tool_input: { file_path: 'src/invoices.ts' } }, root);
-    expect(readDirty(root)).toEqual(['invoices', 'notes']);
-    expect(await runHook('post-tool', { tool_name: 'Edit', tool_input: { file_path: 'README.md' } }, root)).toBeUndefined();
-    expect(postTool({ tool_name: 'Read', tool_input: { file_path: 'src/invoices.ts' } }, root, [])).toBeUndefined();
+  it('post-tool (ratchet hook) records the edited file and matched globs per boundary in dirty.json', async () => {
+    const r = await runHook('post-tool', { tool_name: 'Edit', tool_input: { file_path: path.join(root, 'src/app/notes/[id]/page.tsx') } }, root);
+    expect(r.exitCode).toBe(0);
+    await runHook('post-tool', { tool_name: 'Write', tool_input: { file_path: path.join(root, 'src/invoices.ts') } }, root);
+    const dirty = JSON.parse(fs.readFileSync(path.join(root, '.notyours', 'dirty.json'), 'utf8')) as Record<string, { files: string[] }>;
+    expect(Object.keys(dirty).sort()).toEqual(['invoices', 'notes']);
+    expect(dirty.notes!.files.join(' ')).toMatch(/src\/app\/notes\/\[id\]\/page\.tsx/);
+    expect((await runHook('post-tool', { tool_name: 'Edit', tool_input: { file_path: path.join(root, 'README.md') } }, root)).exitCode).toBe(0);
   });
 
-  it('stop drains the dirty set, never loops, and asks before spending credits', async () => {
-    expect(await runHook('stop', { stop_hook_active: true }, root)).toBeUndefined();
-    expect(readDirty(root)).toEqual(['invoices', 'notes']);
-    const out = JSON.parse((await runHook('stop', {}, root))!);
-    expect(out.decision).toBeUndefined();
-    expect(out.systemMessage).toMatch(/invoices \(not locked\)\. Ask the user/);
-    expect(readDirty(root)).toEqual([]);
-    expect(await runHook('stop', {}, root)).toBeUndefined();
+  it('stop (ratchet hook): unlocked dirty boundaries never trigger Kane; the human is told', async () => {
+    const r = await runHook('stop', {}, root);
+    expect(r.exitCode).toBe(0); // nothing locked, so nothing replayed and nothing blocked
+    expect(`${r.stdout ?? ''}${r.stderr ?? ''}`).toMatch(/invoices|notes/);
   });
 
   it('install-hooks merges idempotently and keeps the user\'s own hooks', () => {

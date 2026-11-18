@@ -15,7 +15,15 @@ export interface ProbeDeps {
   /** Where screenshots + diagnostics go: <stateDir>/runs/<ts>/ by default. */
   runDir: string;
   cwd?: string;
+  /**
+   * Judge mode (ratchet replay): the recorded Kane tests were just replayed, so no Kane run happens here;
+   * only the oracle (targets + positive controls). Stored values come from the replays' finalState.
+   */
+  replays?: KaneRun[];
 }
+
+/** Recording name the ratchet adopts on lock: `<boundary>_<identity>` (see src/ratchet/paths.ts testName). */
+export const recordingName = (boundaryId: string, identityId: string) => `${boundaryId}_${identityId}`;
 
 type Ctx = Record<string, string>;
 
@@ -69,8 +77,10 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
   const kopts = { cfg, stateDir: deps.stateDir, ...(deps.cwd ? { cwd: deps.cwd } : {}) };
   const baseUrl = cfg.baseUrl.replace(/\/+$/, '');
   const ctxOf = (i: Identity, stored: Ctx = {}): Ctx => ({ base_url: baseUrl, token: i.token, ...(i.email ? { email: i.email } : {}), ...stored });
-  const kane = async (objective: string, who: Identity, vars: KaneVars): Promise<KaneOutcome> => {
-    const out = await deps.runner(objective, who, vars, kopts);
+  const judgeOnly = deps.replays !== undefined;
+  const kane = async (objective: string, who: Identity, vars: KaneVars, name?: string): Promise<KaneOutcome> => {
+    if (judgeOnly) throw new Error('internal: no Kane runs in judge mode');
+    const out = await deps.runner(objective, who, vars, name ? { ...kopts, name: recordingName(b.id, who.id) } : kopts);
     runs.push(out.run);
     return out;
   };
@@ -86,14 +96,24 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
 
   try {
     // A guest starts from a wiped profile: no cookies, no login.
-    if (b.kind === 'guest') await wipeProfile(viewer, deps);
+    // (In judge mode the ratchet wiped it before replaying the guest's recorded visit.)
+    if (b.kind === 'guest' && !judgeOnly) await wipeProfile(viewer, deps);
     const [oc, vc] = await Promise.all([deps.pool.get(owner), deps.pool.get(viewer)]);
 
     // Phase 1: plant data. Owner always; viewer too (its own token is the positive control), except guests.
     const createVars = (i: Identity): KaneVars => ctxOf(i);
-    const [oCreate, vCreate] = await both(
+    const fromReplays = (i: Identity): KaneOutcome => {
+      const stored: Record<string, string> = {};
+      for (const r of deps.replays ?? []) {
+        if (r.identity !== i.id) continue;
+        for (const [k, v] of Object.entries(r.finalState)) if (typeof v === 'string' && v) stored[k] = v;
+      }
+      return { run: { objective: 'replay', identity: i.id, status: 'passed', exitCode: 0, finalState: stored, creditsConsumed: 0, durationS: 0 }, stored, text: '' };
+    };
+    // Judge mode: the owner's stored values come from its replay. Fixed-URL boundaries store nothing they need.
+    const [oCreate, vCreate] = judgeOnly ? [fromReplays(owner), undefined] : await both(
       cfg.parallel,
-      () => kane(b.create.objective, owner, createVars(owner)),
+      () => kane(b.create.objective, owner, createVars(owner), 'record'),
       // CC-1: with viewerOwn the viewer's control pages are given, so its create run is skipped (one run saved).
       () => (b.kind === 'guest' || b.viewerOwn ? Promise.resolve(undefined) : kane(b.create.objective, viewer, createVars(viewer))),
     );
@@ -103,7 +123,7 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
       const missing = b.create.store.filter((k) => !out.stored[k]);
       return out.run.status !== 'passed' || missing.length ? `${out.run.status}${missing.length ? `; did not store ${missing.join(', ')}` : ''}` : undefined;
     };
-    const ownerProblem = createProblem(oCreate);
+    const ownerProblem = judgeOnly ? undefined : createProblem(oCreate);
     if (ownerProblem) { notes.push(`owner create run ${ownerProblem}`); return finish('HARNESS_BROKEN'); }
     const viewerProblem = vCreate && createProblem(vCreate);
     if (viewerProblem) notes.push(`viewer create run ${viewerProblem} (viewer control may be unavailable)`);
@@ -130,10 +150,11 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     const visitVars = (ctx: Ctx, urls: string[]): KaneVars => ({ ...ctx, ...Object.fromEntries(urls.map((u, i) => [`t${i + 1}`, u])) });
     if (b.kind === 'plan-gate') {
       const proAction = b.proAction!.objective;
-      await both(cfg.parallel, () => kane(proAction, owner, ownerCtx), () => kane(proAction, viewer, viewerCtx));
+      if (!judgeOnly) await both(cfg.parallel, () => kane(proAction, owner, ownerCtx), () => kane(proAction, viewer, viewerCtx, 'record'));
     } else {
       const urls = kaneUrls(leakTargets);
-      if (urls.length) await kane(visitObjective(urls.length), viewer, visitVars(leakCtx, urls));
+      if (judgeOnly) { /* the viewer's recorded visit was just replayed */ }
+      else if (urls.length) await kane(visitObjective(urls.length), viewer, visitVars(leakCtx, urls), 'record');
       else notes.push('no GET targets: skipped the Kane visit run (the oracle still calls every target)');
     }
 
@@ -228,7 +249,7 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
   }
 }
 
-async function wipeProfile(identity: Identity, deps: ProbeDeps): Promise<void> {
+export async function wipeProfile(identity: Identity, deps: Pick<ProbeDeps, 'stateDir' | 'pool'>): Promise<void> {
   const profiles = resolve(deps.stateDir, 'profiles');
   const dir = resolve(identity.userDataDir);
   const rel = relative(profiles, dir);

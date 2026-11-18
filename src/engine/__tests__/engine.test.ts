@@ -25,8 +25,10 @@ const stateDir = mkdtempSync(join(tmpdir(), 'ny-engine-'));
 const objectives: string[] = [];
 
 /** Fake Kane: the create objective plants a note with the identity's token; anything else is a no-op. */
-const fakeRunner: KaneRunner = async (objective, identity, vars) => {
+const names: string[] = [];
+const fakeRunner: KaneRunner = async (objective, identity, vars, kopts) => {
   objectives.push(`${identity.id}: ${objective}`);
+  if (kopts.name) names.push(kopts.name);
   const stored: Record<string, string> = {};
   if (objective === SEEDED) {
     // Seed-confirm objective (fixed owner URL): works for the owner, fails for anyone else.
@@ -230,6 +232,35 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
       }), ids, cfg);
       expect(r.verdict).toBe('HARNESS_BROKEN');
       expect(r.controls.viewerSeesOwnToken).toBe(false);
+    }, 60_000);
+  });
+
+  describe('integration: judge-only (ratchet) and recording names', () => {
+    it('names the probe recordings <boundary>_<identity> for the ratchet to adopt', async () => {
+      names.length = 0;
+      await engine.runBoundary(boundary({ id: 'named', targets: { ui: ['{{item_url}}/safe'], api: [] } }), ids, cfg);
+      expect(names.sort()).toEqual(['named_alice', 'named_bob']); // owner create + viewer visit (viewer create unnamed)
+    }, 60_000);
+
+    it('judge() never calls Kane and still judges (stored values from the replays)', async () => {
+      const n = app.addNote(alice().email!, 'J', `J body ${alice().token}`);
+      const own = app.addNote(byId(ids, 'bob').email!, 'J', `J body ${byId(ids, 'bob').token}`);
+      const before = objectives.length;
+      const replays = [{ objective: 'replay', identity: 'alice', status: 'passed' as const, exitCode: 0, finalState: { item_url: `${app.url}/notes/${n.id}` }, creditsConsumed: 0, durationS: 0.5 }];
+      const b = boundary({ id: 'judged', viewerOwn: { ui: [`${app.url}/notes/${own.id}`], api: [] } });
+      const leak = await engine.judge(b, ids, cfg, replays);
+      expect(leak.verdict).toBe('LEAK_VISIBLE');
+      const held = await engine.judge({ ...b, targets: { ui: ['{{item_url}}/safe'], api: [] } }, ids, cfg, replays);
+      expect(held.verdict).toBe('HELD');
+      expect(held.kaneRuns).toEqual([]); // the ratchet appends its replays itself
+      expect(objectives.length).toBe(before);
+    }, 60_000);
+
+    it('runBoundary on a locked boundary is judge-only: no authoring', async () => {
+      const before = objectives.length;
+      const r = await engine.runBoundary(boundary({ id: 'locked-b', locked: true, targets: { ui: [`${app.url}/notes`], api: [] } }), ids, cfg);
+      expect(objectives.length).toBe(before);
+      expect(['HELD', 'HARNESS_BROKEN']).toContain(r.verdict);
     }, 60_000);
   });
 

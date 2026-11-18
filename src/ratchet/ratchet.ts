@@ -1,4 +1,4 @@
-import { createEngine } from '../engine/index.js';
+import { createEngine, sessionPool, wipeProfile, type ChromePool } from '../engine/index.js';
 import type { Boundary, Config, Identity, ProbeResult, Ratchet } from '../types.js';
 import { KaneCli, type KaneClient } from './kane.js';
 import { lockBoundary } from './lock.js';
@@ -19,17 +19,37 @@ export interface RatchetOptions {
   maxAuthoringRuns?: number;
   reauthor?: boolean;
   log?: (line: string) => void;
+  /**
+   * Launch one logged-in Chrome per identity for lock/replay (kane-cli and the oracle connect over CDP).
+   * Default: only with the real kane-cli and engine oracle (an injected KaneClient or Oracle means a test).
+   */
+  chromes?: boolean;
 }
 
 export class RealRatchet implements Ratchet {
   readonly paths: NotyoursPaths;
   private readonly kane: KaneClient;
-  private readonly oracle: Oracle;
 
   constructor(private readonly opts: RatchetOptions) {
     this.paths = notyoursPaths(opts.projectDir);
     this.kane = opts.kane ?? new KaneCli();
-    this.oracle = opts.oracle ?? engineOracle(createEngine());
+  }
+
+  /**
+   * Runs `fn` with one logged-in Chrome per identity (kane-cli and the oracle both connect over CDP),
+   * then closes them. The engine oracle shares the same pool. Injected oracles (tests) skip Chrome.
+   */
+  private async withChromes<T>(fn: (pool: ChromePool | undefined, oracle: Oracle) => Promise<T>): Promise<T> {
+    const launch = this.opts.chromes ?? (this.opts.kane === undefined && this.opts.oracle === undefined);
+    if (!launch) return fn(undefined, this.opts.oracle ?? engineOracle(createEngine({ stateDir: this.paths.dir, cwd: this.paths.root })));
+    const cfg = this.config();
+    const pool = sessionPool({ cfg, stateDir: this.paths.dir, cwd: this.paths.root, kane: this.kane });
+    const oracle = engineOracle(createEngine({ pool, stateDir: this.paths.dir, cwd: this.paths.root }));
+    try {
+      return await fn(pool, oracle);
+    } finally {
+      await pool.closeAll();
+    }
   }
 
   private config(): Config {
@@ -44,7 +64,7 @@ export class RealRatchet implements Ratchet {
 
   async lock(b: Boundary, result: ProbeResult): Promise<void> {
     const stored = this.stored(b.id);
-    await lockBoundary({ ...stored, boundary: { ...stored.boundary, ...b, locked: stored.boundary.locked } }, result, {
+    await this.withChromes((pool) => lockBoundary({ ...stored, boundary: { ...stored.boundary, ...b, locked: stored.boundary.locked } }, result, {
       paths: this.paths,
       config: this.config(),
       identities: this.opts.identities ?? loadIdentities(this.paths),
@@ -52,7 +72,8 @@ export class RealRatchet implements Ratchet {
       maxAuthoringRuns: this.opts.maxAuthoringRuns ?? 8,
       reauthor: this.opts.reauthor ?? false,
       ...(this.opts.log ? { log: this.opts.log } : {}),
-    });
+      ...(pool ? { prepare: async (people: Identity[]) => { await Promise.all(people.map((i) => pool.get(i))); } } : {}),
+    }));
   }
 
   /** Replays every locked boundary. */
@@ -66,6 +87,19 @@ export class RealRatchet implements Ratchet {
     const bs = loadBoundaries(this.paths)
       .map((s) => s.boundary)
       .filter((b) => b.locked && (!want || want.has(b.id)));
-    return replayBoundaries(bs, ids, { paths: this.paths, config: this.config(), kane: this.kane, oracle: this.oracle });
+    if (!bs.length) return [];
+    return this.withChromes(async (pool, oracle) => {
+      const out: ProbeResult[] = [];
+      for (const b of bs) {
+        if (pool) {
+          const viewer = ids.find((i) => i.id === b.viewer);
+          // A guest replays on a wiped profile: no cookies from earlier runs.
+          if (b.kind === 'guest' && viewer) await wipeProfile(viewer, { stateDir: this.paths.dir, pool });
+          await Promise.all([b.owner, b.viewer].map((id) => ids.find((i) => i.id === id)).filter((i): i is Identity => !!i).map((i) => pool.get(i)));
+        }
+        out.push(...(await replayBoundaries([b], ids, { paths: this.paths, config: this.config(), kane: this.kane, oracle })));
+      }
+      return out;
+    });
   }
 }

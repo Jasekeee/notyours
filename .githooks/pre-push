@@ -21,6 +21,11 @@ github_pat_[A-Za-z0-9_]{30,}
 sk-[A-Za-z0-9_-]{20,}
 LT_[A-Za-z0-9]{20,}
 (api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|auth[_-]?token|access[_-]?token|passw(or)?d|secret)["']?[[:space:]]*[:=][[:space:]]*["'][^"'[:space:]]{8,}["']
+EOF
+
+# Case-SENSITIVE: .env-style "NAME = value" with an UPPERCASE env name, so ordinary code such as
+# `viewerSeesOwnToken = seesToken(...)` is not mistaken for a secret.
+cat > "$tmp/patterns_cs" <<'EOF'
 \|NY\|[[:space:]]*(export[[:space:]]+)?[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*[[:space:]]*=[[:space:]]*["']?[^[:space:]"'#$]{6,}
 EOF
 
@@ -58,8 +63,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         /^\+\+\+ / { f = substr($0, 7); next }
         /^\+/      { print f sep substr($0, 2) }' |
       grep -v -E '^(.*/)?\.env\.example\|NY\|' |
-      grep -v 'notyours:allow-secret' |
-      grep -i -E -f "$tmp/patterns" |
+      grep -v 'notyours:allow-secret' > "$tmp/added"
+    { grep -i -E -f "$tmp/patterns" "$tmp/added"; grep -E -f "$tmp/patterns_cs" "$tmp/added"; } |
       sed 's/|NY|.*//' | sort -u > "$tmp/hits"
     if [ -s "$tmp/hits" ]; then
       while read -r f; do echo "pre-push: BLOCKED $short: possible secret in $f" >&2; done < "$tmp/hits"

@@ -147,10 +147,15 @@ export async function runDemo(o: DemoOpts): Promise<number> {
       const authored = await author(project, fresh);
       results.push(...authored);
       // Lock what was proven so the next run (with --dir) replays it for 0 credits.
-      const ratchet = getRatchet();
+      const ratchet = getRatchet(work);
       for (const r of authored) {
         const b = fresh.find((x) => x.id === r.boundaryId);
-        if (b && r.verdict !== 'HARNESS_BROKEN') await ratchet.lock(b, r);
+        if (!b || r.verdict !== 'HELD') continue; // only proven HELD boundaries are locked
+        try {
+          await ratchet.lock(b, r);
+        } catch (e) {
+          console.log(pc.dim(`  not locked: ${b.id}: ${(e as Error).message.replace(/^notyours: /, '')}`));
+        }
       }
     }
     const fin = finish(work, 'demo', started, results, project);

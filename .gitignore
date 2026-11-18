@@ -14,3 +14,5 @@ dist/
 *.log
 .DS_Store
 spike/logs/
+**/.notyours/dirty.json
+**/.notyours/attempts.json

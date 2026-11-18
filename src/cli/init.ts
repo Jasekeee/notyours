@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { z } from 'zod';
-import { IdentityIdSchema, PlanSchema, RoleSchema } from '../schemas.js';
+import { IdentityIdSchema, IdentitySchema, PlanSchema, RoleSchema } from '../schemas.js';
 import { makeToken } from '../shared/token.js';
 import type { Identity } from '../types.js';
 import { LOCAL_HOSTS, checkHost, isLocalHost } from './hosts.js';
@@ -88,7 +88,24 @@ export interface InitResult {
   allowHosts: string[];
 }
 
-export function runInit(root: string, opts: InitOptions, existingIdentities: Identity[] = []): InitResult {
+/**
+ * Committed, public identities (`.notyours/identities.json`: tokens, ports, profiles; never passwords).
+ * init keeps these tokens/ports, so seeded demo data and recorded Kane tests stay valid across copies.
+ */
+export function readPublicIdentities(root: string): Identity[] {
+  const file = path.join(nyPaths(root).dir, 'identities.json');
+  if (!fs.existsSync(file)) return [];
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
+  const list = Array.isArray(raw) ? raw : Object.values((raw as Record<string, unknown>) ?? {});
+  return list.map((i, n) => {
+    const r = IdentitySchema.safeParse(i);
+    if (!r.success) throw new UserError(`.notyours/identities.json identity #${n + 1} is invalid: ${r.error.issues.map((x) => x.path.join('.') || x.message).join(', ')}`);
+    const { password: _never, ...pub } = r.data;
+    return { ...pub, userDataDir: path.resolve(root, pub.userDataDir) };
+  });
+}
+
+export function runInit(root: string, opts: InitOptions, existingIdentities: Identity[] = readPublicIdentities(root)): InitResult {
   const prev = readConfigIfExists(root);
   const allowHosts = [...new Set([...(prev?.allowHosts ?? LOCAL_HOSTS), ...(opts.allowHost ?? []).map((h) => h.toLowerCase())])];
   let check;

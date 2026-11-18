@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -29,6 +29,24 @@ describe('lock', () => {
   beforeEach(() => {
     project = tempProject([unlocked], { comment: true });
     kane = new FakeKane();
+  });
+
+  it('adopts the probe\'s own recordings (same names) instead of authoring: 0 runs', async () => {
+    const p = notyoursPaths(project);
+    mkdirSync(p.kaneTests, { recursive: true });
+    for (const id of ['alice', 'bob']) {
+      writeFileSync(path.join(p.kaneTests, `notes-cross-user_${id}_test.md`), '## Step 1\nrecorded by the probe\n');
+      mkdirSync(path.join(p.kaneTests, `output-notes-cross-user_${id}`), { recursive: true });
+      writeFileSync(path.join(p.kaneTests, `output-notes-cross-user_${id}`, '.env.example'), 'LT_USERNAME=\n');
+    }
+    await ratchet().lock(unlocked, heldWithUrl);
+    expect(kane.authored).toEqual([]);
+    for (const id of ['alice', 'bob']) {
+      expect(readFileSync(testFile(p, 'notes-cross-user', id), 'utf8')).toContain('recorded by the probe');
+      expect(existsSync(path.join(p.tests, `output-notes-cross-user_${id}`, '.env.example'))).toBe(false);
+    }
+    expect(YAML.parse(readFileSync(p.boundariesFile, 'utf8')).boundaries[0].locked).toBe(true);
+    expect(readCreditLog(p).filter((e) => e.kind === 'author')).toEqual([]);
   });
 
   it('records owner + viewer tests, moves them (with recordings) into .notyours/tests, sets locked:true', async () => {

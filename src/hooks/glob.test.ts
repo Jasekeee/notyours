@@ -37,4 +37,11 @@ describe('toProjectPath', () => {
   it('resolves relative paths against the project', () => expect(toProjectPath('/p', 'src/a.ts')).toBe('src/a.ts'));
   it('returns undefined outside the project', () => expect(toProjectPath('/p', '/q/a.ts')).toBeUndefined());
   it('returns undefined for a sibling that shares a prefix', () => expect(toProjectPath('/p', '/p2/a.ts')).toBeUndefined());
+
+  it('matches Next.js bracket route folders literally, and still supports [..] classes', () => {
+    expect(matchesGlob('src/app/notes/[id]/page.tsx', 'src/app/notes/[id]/page.tsx')).toBe(true);
+    expect(matchesGlob('src/app/[...slug]/page.tsx', 'src/app/[...slug]/page.tsx')).toBe(true);
+    expect(matchesGlob('a/b.ts', 'a/[ab].ts')).toBe(true);
+    expect(matchesGlob('a/c.ts', 'a/[ab].ts')).toBe(false);
+  });
 });

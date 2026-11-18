@@ -1,0 +1,16 @@
+# Demo personas for `notyours demo` / `notyours init --users`. These are the Jotter seed accounts
+# (demo/seed.js). Fixed tokens and ports live in identities.json so recorded tests stay valid.
+users:
+  - id: alice
+    role: owner
+    plan: pro
+    email: alice@jotter.test
+    password: alice-jotter-dev # notyours:allow-secret (local demo default)
+  - id: bob
+    role: viewer
+    plan: free
+    email: bob@jotter.test
+    password: bob-jotter-dev # notyours:allow-secret (local demo default)
+  - id: guest
+    role: guest
+    plan: null

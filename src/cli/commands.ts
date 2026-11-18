@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pc from 'picocolors';
-import { getEngine, getRatchet, useReal } from './backends.js';
+import { getEngine, getRatchet } from './backends.js';
 import { createReport } from '../report/index.js';
 import { credits, headline, isLeak, parties, verdictExplanation, verdictGroup } from '../report/summary.js';
 import { fmtCredits } from '../report/html.js';
@@ -11,7 +11,8 @@ import type { Boundary, Config, Identity, ProbeResult } from '../types.js';
 import { runDoctor } from './doctor.js';
 import { hostOf, isLocalHost } from './hosts.js';
 import { isOwnedHost } from './owned.js';
-import { guard, guardOutput, installHooks, postTool, type HookInput } from './hooks.js';
+import { guard, guardOutput, installHooks, type HookInput } from './hooks.js';
+import { postToolHook, stopHook, type HookResult } from '../hooks/index.js';
 import { runInit } from './init.js';
 import type { Actions, GlobalOpts, HookEvent } from './program.js';
 import { safeAppendFile } from './safe-fs.js';
@@ -23,12 +24,10 @@ import {
   readBoundaries,
   readConfig,
   readConfigIfExists,
-  readDirty,
   readIdentities,
   readLatestRun,
   saveRun,
   selectBoundaries,
-  writeDirty,
   type LoadedBoundary,
 } from './workspace.js';
 
@@ -69,7 +68,7 @@ const FILE_EXT = new Set(['html', 'htm', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx',
 export function boundaryUrls(b: Boundary): string[] {
   // NFKC maps fullwidth letters/dots to ASCII; the other ideographic full stops are mapped by hand.
   const objectives = nfkc([b.create.objective, b.proAction?.objective ?? ''].join('\n'));
-  const text = [objectives, ...b.targets.ui.map(nfkc), ...b.targets.api.map(nfkc)].join('\n');
+  const text = [objectives, ...b.targets.ui, ...b.targets.api, ...(b.viewerOwn?.ui ?? []), ...(b.viewerOwn?.api ?? [])].map(nfkc).join('\n');
   const urls = [...text.matchAll(/https?:\/\/[^\s'"`<>)]+/gi)].map((m) => m[0].replace(/[.,;]+$/, ''));
   // Unicode-aware: internationalised names are checked as the punycode host the browser would use.
   const hostTokens = [...objectives.matchAll(/(?<![\p{L}\p{N}_@.-])((?:[\p{L}\p{N}-]+\.)+\p{L}{2,}|\d{1,3}(?:\.\d{1,3}){3})(?![\p{L}\p{N}_-]*@)(?![\p{L}\p{N}])/gu)]
@@ -146,8 +145,7 @@ function assertIdentities(boundaries: Boundary[], identities: Identity[]): void 
 }
 
 /** Refuse authoring when the Kane balance is below creditFloor (project rule). */
-export async function ensureCredits(cfg: Config, authoringRuns: number, balance: () => Promise<number | undefined> = kaneBalance, real = useReal()): Promise<void> {
-  if (!real) return; // mock engine: nothing is spent
+export async function ensureCredits(cfg: Config, authoringRuns: number, balance: () => Promise<number | undefined> = kaneBalance): Promise<void> {
   const bal = await balance();
   if (bal === undefined) throw new UserError('Could not read your Kane balance (`kane-cli balance`). Run: notyours doctor');
   if (bal < cfg.creditFloor) {
@@ -199,11 +197,13 @@ export function finish(root: string, command: string, startedAt: Date, results: 
 
 /** Run the engine over boundaries one at a time (each boundary uses all persona Chromes). */
 export async function author(p: Project, boundaries: Boundary[]): Promise<ProbeResult[]> {
-  const engine = getEngine();
+  const engine = getEngine(p.root);
   const results: ProbeResult[] = [];
   for (const b of boundaries) {
     log(pc.dim(`→ ${b.id}: ${b.owner} creates, ${b.viewer} looks`));
-    const r = await engine.runBoundary(b, p.identities, p.cfg);
+    // Authoring on purpose: the engine treats locked:true as judge-only, so drop it for a fresh probe.
+    const { locked: _locked, ...fresh } = b;
+    const r = await engine.runBoundary(fresh, p.identities, p.cfg);
     printResults([r], boundaries);
     results.push(r);
   }
@@ -212,7 +212,7 @@ export async function author(p: Project, boundaries: Boundary[]): Promise<ProbeR
 
 /** Replay locked boundaries (0 credits), optionally narrowed to ids. */
 export async function replayLocked(p: Project, ids: string[]): Promise<ProbeResult[]> {
-  const results = await getRatchet().replay(p.identities);
+  const results = await getRatchet(p.root).replayIds(p.identities, ids.length ? ids : undefined);
   const wanted = ids.length ? results.filter((r) => ids.includes(r.boundaryId)) : results;
   const missing = ids.filter((id) => !results.some((r) => r.boundaryId === id));
   if (missing.length) warn(`Not locked, so not replayed: ${missing.join(', ')}. Lock them with: notyours lock ${missing.join(' ')}`);
@@ -319,7 +319,7 @@ export const actions: Actions = {
     assertHostsAllowed(p.cfg, chosen, root);
     assertIdentities(chosen, p.identities);
     const estimate = chosen.length * CREDITS_PER_AUTHORING;
-    const cost = useReal() ? `~${estimate} Kane credits (authoring)` : `mock engine, 0 credits (real: ~${estimate})`;
+    const cost = `~${estimate} Kane credits (authoring)`;
     log(`${chosen.length} boundar${chosen.length === 1 ? 'y' : 'ies'} against ${p.cfg.baseUrl}: ${cost}. Replays after \`notyours lock\` are free.`);
     if (o.dryRun) {
       for (const b of chosen) log(`  ${pc.bold(b.id)}  ${b.kind}: ${b.owner} → ${b.viewer}  ui ${b.targets.ui.length}, api ${b.targets.api.length}${b.locked ? pc.dim('  (locked)') : ''}`);
@@ -347,7 +347,7 @@ export const actions: Actions = {
       fresh = await author(p, chosen);
     }
     const latest = latestResultsByBoundary(root);
-    const ratchet = getRatchet();
+    const ratchet = getRatchet(root);
     let locked = 0;
     for (const b of chosen) {
       const r = fresh.find((x) => x.boundaryId === b.id) ?? latest.get(b.id);
@@ -359,7 +359,13 @@ export const actions: Actions = {
         warn(`${b.id}: last result was HARNESS (a control failed), nothing to lock. Fix the harness and rerun.`);
         continue;
       }
-      await ratchet.lock(b, r);
+      try {
+        await ratchet.lock(b, r);
+      } catch (e) {
+        // The ratchet only locks HELD results with both controls proven (a recording of a leak proves nothing).
+        warn(`${b.id}: ${(e as Error).message.replace(/^notyours: /, '')}`);
+        continue;
+      }
       locked++;
       log(`${pc.green('✓')} locked ${pc.bold(b.id)} ${pc.dim(`(${isLeak(r) ? 'currently LEAKS: replay after your fix' : 'held'})`)}`);
     }
@@ -416,8 +422,12 @@ export const actions: Actions = {
       const root = path.resolve(process.env.CLAUDE_PROJECT_DIR ?? o.cwd);
       const raw = await readStdin();
       const input = (raw.trim() ? JSON.parse(raw) : {}) as HookInput;
-      const out = await runHook(event, input, root);
-      if (out) process.stdout.write(`${out}\n`);
+      const r = await runHook(event, input, root);
+      // Pipes are asynchronous on macOS: wait for each write before the process exits.
+      const write = (s: NodeJS.WriteStream, t: string) => new Promise<void>((res) => s.write(t, () => res()));
+      if (r.stdout) await write(process.stdout, r.stdout);
+      if (r.stderr) await write(process.stderr, r.stderr);
+      return r.exitCode;
     } catch (e) {
       console.error(`notyours hook ${event}: ${(e as Error).message}`);
     }
@@ -425,53 +435,18 @@ export const actions: Actions = {
   },
 };
 
-export async function runHook(event: HookEvent, input: HookInput, root: string): Promise<string | undefined> {
-  if (event === 'guard') return guardOutput(guard(input, root));
-  if (!fs.existsSync(nyPaths(root).config)) return undefined; // not a notyours project
-  const all = readBoundaries(root);
-  if (event === 'post-tool') return postTool(input, root, all.map((b) => b.boundary));
-
-  // stop
-  if (input.stop_hook_active) return undefined; // we already blocked once; let the agent stop
-  const dirty = readDirty(root);
-  if (!dirty.length) return undefined;
-  writeDirty(root, []);
-  const byId = new Map(all.map((b) => [b.boundary.id, b.boundary]));
-  const locked = dirty.filter((id) => byId.get(id)?.locked);
-  const unlocked = dirty.filter((id) => byId.has(id) && !byId.get(id)?.locked);
-  const notes: string[] = [];
-  if (unlocked.length) notes.push(`notyours: you changed code behind ${unlocked.join(', ')} (not locked). Ask the user before re-proving (~30 credits each): npx notyours run ${unlocked.join(' ')}`);
-  if (!locked.length) return notes.length ? JSON.stringify({ systemMessage: notes.join('\n') }) : undefined;
-
-  const p: Project = { root, cfg: readConfig(root), identities: readIdentities(root), all };
-  assertHostsAllowed(p.cfg, locked.map((id) => byId.get(id)!), root);
-  const started = new Date();
-  const origLog = console.log;
-  console.log = (...a: unknown[]) => console.error(...a); // stdout is reserved for the hook JSON
-  let fin: Finished;
-  try {
-    const results = await replayLocked(p, locked);
-    if (!results.length) {
-      notes.push(`notyours: ${locked.join(', ')} changed but had no recorded test to replay. Lock them: npx notyours lock ${locked.join(' ')}`);
-      return JSON.stringify({ systemMessage: notes.join('\n') });
-    }
-    fin = finish(root, 'hook stop', started, results, p);
-  } finally {
-    console.log = origLog;
+/**
+ * Hook dispatch. guard: the CLI's hardened guard (canonical paths, Bash allowlist, hook config read-only).
+ * post-tool / stop: the ratchet's hooks (dirty set with file + glob evidence; Stop replays the dirty locked
+ * boundaries for 0 credits, exits 2 with a leak report, escalates to the human after 3 attempts).
+ */
+export async function runHook(event: HookEvent, input: HookInput, root: string): Promise<HookResult> {
+  if (event === 'guard') {
+    const out = guardOutput(guard(input, root));
+    return { exitCode: 0, ...(out ? { stdout: `${out}\n` } : {}) };
   }
-  const leaks = fin.results.filter(isLeak);
-  if (leaks.length) {
-    const lines = leaks.map((r) => {
-      const b = byId.get(r.boundaryId);
-      const hit = r.hits[0];
-      return `- ${r.boundaryId}: ${verdictExplanation(r, parties(r, b))}${hit ? ` Seen at ${hit.url}: ${hit.snippet.slice(0, 160)}` : ''}${b?.surface.length ? ` Code: ${b.surface.join(', ')}` : ''}`;
-    });
-    return JSON.stringify({
-      decision: 'block',
-      reason: [`notyours: ${headline(fin.results, byId).title}. Replayed for 0 credits after your edits:`, ...lines, `Fix the access check in that code (not the test), then stop again. Report: ${fin.reportPath}`, ...notes].join('\n'),
-    });
-  }
-  const held = fin.results.filter((r) => verdictGroup(r.verdict) === 'HELD').map((r) => r.boundaryId);
-  notes.unshift(`notyours: replayed ${fin.results.length} locked boundar${fin.results.length === 1 ? 'y' : 'ies'} for 0 credits: ${held.length} held${held.length < fin.results.length ? `, ${fin.results.length - held.length} could not be judged (see ${fin.reportPath})` : ''}.`);
-  return JSON.stringify({ systemMessage: notes.join('\n') });
+  const withCwd = { ...input, cwd: typeof input.cwd === 'string' ? input.cwd : root };
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: root };
+  if (event === 'post-tool') return postToolHook(withCwd, env);
+  return stopHook(withCwd, { env });
 }

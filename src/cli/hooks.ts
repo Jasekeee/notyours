@@ -11,7 +11,7 @@ import { MAP_COMMAND_MD } from '../map/command.js';
 import { matchesGlob } from './glob.js';
 import { ownedStorePath } from './owned.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
-import { NY_DIR, readDirty, writeDirty } from './workspace.js';
+import { NY_DIR } from './workspace.js';
 
 export interface HookInput {
   hook_event_name?: string;
@@ -187,26 +187,6 @@ export function guardOutput(r: GuardResult): string | undefined {
 }
 
 /** Boundaries whose surface matches the edited file. */
-export function implicated(rel: string, boundaries: Boundary[]): Boundary[] {
-  return boundaries.filter((b) => b.surface.some((g) => matchesGlob(rel, g)));
-}
-
-export function postTool(input: HookInput, root: string, boundaries: Boundary[]): string | undefined {
-  if (!WRITE_TOOLS.has(input.tool_name ?? '')) return undefined;
-  const p = toolPath(input);
-  const rel = p ? relPath(root, p, input.cwd ?? root) : undefined;
-  if (!rel || rel.startsWith(`${NY_DIR}/`)) return undefined;
-  const hits = implicated(rel, boundaries);
-  if (!hits.length) return undefined;
-  writeDirty(root, [...readDirty(root), ...hits.map((b) => b.id)]);
-  const locked = hits.filter((b) => b.locked).map((b) => b.id);
-  const unlocked = hits.filter((b) => !b.locked).map((b) => b.id);
-  const parts = [`notyours: ${rel} is the surface of boundary ${hits.map((b) => b.id).join(', ')}.`];
-  if (locked.length) parts.push(`Locked ones are replayed for 0 credits when you stop (or now: npx notyours replay ${locked.join(' ')}).`);
-  if (unlocked.length) parts.push(`Not locked yet (re-proving costs ~30 credits each, ask the user first): npx notyours run ${unlocked.join(' ')}.`);
-  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: parts.join(' ') } });
-}
-
 // ---------- install ----------
 
 interface HookCmd {
@@ -242,7 +222,8 @@ export function mergeHookSettings(settings: Settings, cli: string): Settings {
   };
   add('PreToolUse', { matcher: 'Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: `${cli} hook guard` }] });
   add('PostToolUse', { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: `${cli} hook post-tool` }] });
-  add('Stop', { hooks: [{ type: 'command', command: `${cli} hook stop`, timeout: 600 }] });
+  // 900 s: a Stop replays every dirty locked boundary (Chromes + login replays + oracle visits).
+  add('Stop', { hooks: [{ type: 'command', command: `${cli} hook stop`, timeout: 900 }] });
   // Second layer, enforced by Claude Code itself: deny rules for the secrets and the oracle.
   const perms = (settings.permissions ?? {}) as { deny?: string[] } & Record<string, unknown>;
   const deny = [...new Set([...(perms.deny ?? []), ...PERMISSION_DENY])];

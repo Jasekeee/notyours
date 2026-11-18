@@ -1,0 +1,5 @@
+[
+  { "id": "alice", "role": "owner", "plan": "pro", "email": "alice@jotter.test", "token": "NY-ALICE-JOTTERSEED2A", "cdpPort": 9301, "userDataDir": ".notyours/profiles/alice" },
+  { "id": "bob", "role": "viewer", "plan": "free", "email": "bob@jotter.test", "token": "NY-BOB-JOTTERSEED2B", "cdpPort": 9302, "userDataDir": ".notyours/profiles/bob" },
+  { "id": "guest", "role": "guest", "plan": null, "token": "NY-GUEST-JOTTERSEED2G", "cdpPort": 9303, "userDataDir": ".notyours/profiles/guest" }
+]

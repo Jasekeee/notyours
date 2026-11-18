@@ -11,5 +11,9 @@ create:
 targets:
   ui: ["http://127.0.0.1:3077/notes", "http://127.0.0.1:3077/account"]
   api: []
+# CC-1: where Bob must see his OWN token (positive control). The engine skips Bob's create run.
+viewerOwn:
+  ui: ["http://127.0.0.1:3077/notes/1002"]
+  api: []
 expect: denied
 surface: ["routes/notes.js", "routes/account.js"]

@@ -31,8 +31,11 @@ function source(glob: string): string {
       const end = glob.indexOf(']', i + 1);
       if (end === -1) re += '\\[';
       else {
-        const body = glob.slice(i + 1, end).replace(/^!/, '^').replace(/\\/g, '\\\\');
-        re += `[${body}]`;
+        const raw = glob.slice(i + 1, end);
+        const body = raw.replace(/^!/, '^').replace(/\\/g, '\\\\');
+        // Also match the brackets literally: Next.js route folders are named like `[id]` or `[...slug]`.
+        const literal = `\\[${raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`;
+        re += `(?:[${body}]|${literal})`;
         i = end;
       }
     } else re += SPECIAL.test(c) ? `\\${c}` : c;

@@ -105,6 +105,12 @@ export function logCredits(stateDir: string, entry: Record<string, unknown>): vo
 export const runKane: KaneRunner = async (objective, identity, vars, opts) => {
   if (opts.name !== undefined && !/^[a-zA-Z0-9_-]+$/.test(opts.name)) throw new Error(`Invalid Kane test name "${opts.name}" (allowed: [a-zA-Z0-9_-]+).`);
   await assertCreditFloor(opts.cfg.creditFloor);
+  if (opts.name) {
+    // A fresh recording: never let kane-cli build on a stale local test of the same name.
+    const tests = join(opts.cwd ?? process.cwd(), '.testmuai', 'tests');
+    rmSync(join(tests, `${opts.name}_test.md`), { force: true });
+    rmSync(join(tests, `output-${opts.name}`), { recursive: true, force: true });
+  }
 
   const dir = mkdtempSync(join(tmpdir(), 'ny-vars-'));
   const varsFile = join(dir, 'vars.json');
@@ -139,7 +145,8 @@ export const runKane: KaneRunner = async (objective, identity, vars, opts) => {
     identity: identity.id,
     status,
     exitCode,
-    finalState: end?.final_state ?? {},
+    // Stored values ride along in finalState: the ratchet resolves {{name}} templates from it when locking.
+    finalState: { ...(end?.final_state ?? {}), ...stored },
     creditsConsumed: Math.max(0, end?.credits_consumed ?? 0),
     durationS: end?.duration ?? (Date.now() - t0) / 1000,
     ...(end?.test_url ? { testUrl: end.test_url } : {}),
