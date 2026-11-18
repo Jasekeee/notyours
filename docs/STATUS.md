@@ -87,7 +87,12 @@ From the automated security review. By decision, only real secret or credential 
 - Raw kane-cli stderr can contain local paths and share links; replay reasons use only `err.code` or redacted text.
 - Agents may run `notyours install-hooks` (by decision), so an agent could re-install the hooks with a different
   `--cli` command, swapping in its own guard. Direct edits to `.claude/settings.json` stay blocked; the change would
-  show in `git diff`.
+  show in `git diff`. Likewise, by decision, agents may `init` (rewriting config and identities) and `lock`/`run`
+  (re-recording the oracle).
+- The budget is per project: an agent can start a fresh project dir (or delete `.notyours/` through an unguarded
+  path) and get a new daily cap. A per-machine or per-account cap is not implemented.
+- The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and
+  overshoot the cap by the number of parallel runs (the engine runs at most 2 at once).
 
 ## Top 3 fixes
 1. **Make replays fast and free.**
