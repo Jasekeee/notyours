@@ -1,0 +1,169 @@
+// Claude Code hooks: `notyours hook guard|post-tool|stop`, and `notyours install-hooks`.
+// guard (PreToolUse): the oracle is read-only to the coding agent: no edits to locked boundaries, Kane
+//   recordings, run results or config, no reading identity passwords, no self-approving new hosts.
+// post-tool (PostToolUse): an edit to a boundary's `surface` marks that boundary dirty.
+// stop (Stop): dirty locked boundaries are replayed (0 credits); a leak blocks the stop with the evidence.
+import fs from 'node:fs';
+import path from 'node:path';
+import YAML from 'yaml';
+import type { Boundary } from '../types.js';
+import { MAP_COMMAND_MD } from '../map/command.js';
+import { matchesGlob } from './glob.js';
+import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
+import { NY_DIR, readDirty, writeDirty } from './workspace.js';
+
+export interface HookInput {
+  hook_event_name?: string;
+  tool_name?: string;
+  tool_input?: Record<string, unknown>;
+  cwd?: string;
+  stop_hook_active?: boolean;
+}
+
+export type GuardResult = { allow: true } | { allow: false; reason: string };
+
+const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'NotebookRead']);
+
+/** Project-relative path with forward slashes; undefined if outside the project. */
+export function relPath(root: string, p: string, cwd = root): string | undefined {
+  const abs = path.resolve(cwd, p);
+  const rel = path.relative(root, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return undefined;
+  return rel.split(path.sep).join('/');
+}
+
+function toolPath(input: HookInput): string | undefined {
+  const t = input.tool_input ?? {};
+  for (const k of ['file_path', 'notebook_path', 'path']) if (typeof t[k] === 'string') return t[k] as string;
+  return undefined;
+}
+
+const SECRET_PATHS = [`${NY_DIR}/secrets.json`, `${NY_DIR}/profiles`];
+const READONLY_PATHS = [`${NY_DIR}/runs`, `${NY_DIR}/config.yaml`, '.testmuai'];
+
+const under = (rel: string, p: string) => rel === p || rel.startsWith(`${p}/`);
+
+/** Boundary files (project-relative) whose YAML has locked: true. */
+export function lockedBoundaryFiles(root: string): string[] {
+  const dir = path.join(root, NY_DIR, 'boundaries');
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => /\.ya?ml$/.test(f))
+    .filter((f) => {
+      try {
+        return (YAML.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as { locked?: unknown } | null)?.locked === true;
+      } catch {
+        return false;
+      }
+    })
+    .map((f) => `${NY_DIR}/boundaries/${f}`);
+}
+
+const WRITE_SHELL_RE = /(?:^|[^<0-9&])>{1,2}|\b(?:rm|mv|cp|tee|truncate|chmod|chown|unlink|ln|dd|install|rsync)\b|\bsed\s+(?:-[a-zA-Z]*\s+)*-[a-zA-Z]*i|\bperl\s+-[a-zA-Z]*i|\bgit\s+(?:checkout|restore|rm|reset|clean|stash)\b|writeFile|\bnpx?\s+notyours\s+lock\b/;
+
+export function guard(input: HookInput, root: string): GuardResult {
+  const tool = input.tool_name ?? '';
+  const cwd = input.cwd ?? root;
+  const deny = (reason: string): GuardResult => ({ allow: false, reason: `notyours guard: ${reason}` });
+
+  if (tool === 'Bash') {
+    const cmd = typeof input.tool_input?.command === 'string' ? (input.tool_input.command as string) : '';
+    if (/secrets\.json|\.notyours\/profiles/.test(cmd)) return deny('.notyours/secrets.json and browser profiles hold identity passwords and sessions; they are off limits.');
+    if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
+      return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
+    }
+    const locked = lockedBoundaryFiles(root);
+    const touchesOracle = [...READONLY_PATHS, ...locked].some((p) => cmd.includes(p)) || /\.testmuai\b/.test(cmd);
+    if (touchesOracle && WRITE_SHELL_RE.test(cmd)) {
+      return deny('locked boundaries, Kane recordings (.testmuai/), run results and config are read-only. Fix the app code, then replay: npx notyours replay');
+    }
+    return { allow: true };
+  }
+
+  const p = toolPath(input);
+  if (!p) return { allow: true };
+  const rel = relPath(root, p, cwd);
+  if (rel === undefined) return { allow: true };
+
+  if ((READ_TOOLS.has(tool) || WRITE_TOOLS.has(tool)) && SECRET_PATHS.some((s) => under(rel, s))) {
+    return deny(`${rel} holds identity passwords/sessions and is off limits. Use identity ids from .notyours/map.json.`);
+  }
+  if (WRITE_TOOLS.has(tool)) {
+    if (READONLY_PATHS.some((s) => under(rel, s))) {
+      return deny(`${rel} is part of the test oracle (recordings, results, config) and is read-only. Fix the app code, then: npx notyours replay`);
+    }
+    if (lockedBoundaryFiles(root).includes(rel)) {
+      return deny(`${rel} is a locked boundary and is read-only. If it leaks, fix the code in its surface, not the test.`);
+    }
+  }
+  return { allow: true };
+}
+
+export function guardOutput(r: GuardResult): string | undefined {
+  if (r.allow) return undefined;
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: r.reason } });
+}
+
+/** Boundaries whose surface matches the edited file. */
+export function implicated(rel: string, boundaries: Boundary[]): Boundary[] {
+  return boundaries.filter((b) => b.surface.some((g) => matchesGlob(rel, g)));
+}
+
+export function postTool(input: HookInput, root: string, boundaries: Boundary[]): string | undefined {
+  if (!WRITE_TOOLS.has(input.tool_name ?? '')) return undefined;
+  const p = toolPath(input);
+  const rel = p ? relPath(root, p, input.cwd ?? root) : undefined;
+  if (!rel || rel.startsWith(`${NY_DIR}/`)) return undefined;
+  const hits = implicated(rel, boundaries);
+  if (!hits.length) return undefined;
+  writeDirty(root, [...readDirty(root), ...hits.map((b) => b.id)]);
+  const locked = hits.filter((b) => b.locked).map((b) => b.id);
+  const unlocked = hits.filter((b) => !b.locked).map((b) => b.id);
+  const parts = [`notyours: ${rel} is the surface of boundary ${hits.map((b) => b.id).join(', ')}.`];
+  if (locked.length) parts.push(`Locked ones are replayed for 0 credits when you stop (or now: npx notyours replay ${locked.join(' ')}).`);
+  if (unlocked.length) parts.push(`Not locked yet (re-proving costs ~30 credits each, ask the user first): npx notyours run ${unlocked.join(' ')}.`);
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: parts.join(' ') } });
+}
+
+// ---------- install ----------
+
+interface HookCmd {
+  type: 'command';
+  command: string;
+  timeout?: number;
+}
+interface HookGroup {
+  matcher?: string;
+  hooks: HookCmd[];
+}
+type Settings = { hooks?: Record<string, HookGroup[]> } & Record<string, unknown>;
+
+const OURS_RE = /\bhook (?:guard|post-tool|stop)\s*$/;
+
+/** Merge notyours hooks into Claude Code settings, replacing earlier notyours entries. */
+export function mergeHookSettings(settings: Settings, cli: string): Settings {
+  const hooks: Record<string, HookGroup[]> = { ...(settings.hooks ?? {}) };
+  const add = (event: string, group: HookGroup) => {
+    const kept = (hooks[event] ?? [])
+      .map((g) => ({ ...g, hooks: g.hooks.filter((h) => !(OURS_RE.test(h.command) && /notyours|cli\/index/.test(h.command))) }))
+      .filter((g) => g.hooks.length > 0);
+    hooks[event] = [...kept, group];
+  };
+  add('PreToolUse', { matcher: 'Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: `${cli} hook guard` }] });
+  add('PostToolUse', { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: `${cli} hook post-tool` }] });
+  add('Stop', { hooks: [{ type: 'command', command: `${cli} hook stop`, timeout: 600 }] });
+  return { ...settings, hooks };
+}
+
+export function installHooks(root: string, cli: string): { settingsFile: string; commandFile: string } {
+  const dir = path.join(root, '.claude');
+  const settingsFile = path.join(dir, 'settings.json');
+  assertNoSymlinks(root, settingsFile);
+  const current = fs.existsSync(settingsFile) ? (JSON.parse(fs.readFileSync(settingsFile, 'utf8')) as Settings) : {};
+  safeWriteFile(root, settingsFile, `${JSON.stringify(mergeHookSettings(current, cli), null, 2)}\n`);
+  const commandFile = path.join(dir, 'commands', 'notyours-map.md');
+  safeWriteFile(root, commandFile, MAP_COMMAND_MD);
+  return { settingsFile, commandFile };
+}

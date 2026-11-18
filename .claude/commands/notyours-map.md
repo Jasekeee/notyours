@@ -39,7 +39,7 @@ Filter (optional): $ARGUMENTS
 6. Check your work with `npx notyours run --dry-run`. It validates every boundary and prints the
    plan and the credit estimate without starting Kane.
 7. Stop and tell the user what you wrote and the command to prove it: `npx notyours run <ids>`.
-   Do not run it yourself: each new boundary costs about 16 Kane credits to author
+   Do not run it yourself: each new boundary costs about 30 Kane credits per Kane run to author
    (replays of locked boundaries are free).
 
 ## Example

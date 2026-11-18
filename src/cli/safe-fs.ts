@@ -37,6 +37,9 @@ export function safeWriteFile(root: string, file: string, data: string, opts: fs
   safeMkdir(root, path.dirname(file));
   assertNoSymlinks(root, file);
   fs.writeFileSync(file, data, opts);
+  // `mode` only applies when the file is created; tighten an existing file too (e.g. secrets.json at 0644).
+  const mode = typeof opts === 'object' && opts !== null ? opts.mode : undefined;
+  if (mode !== undefined) fs.chmodSync(file, mode);
 }
 
 export function safeAppendFile(root: string, file: string, data: string): void {
