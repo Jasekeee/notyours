@@ -260,11 +260,17 @@ describe('allowHosts', () => {
 
   it('the owned-hosts store has a fixed location and ignores files writable by others', () => {
     setOwnedStorePathForTests(undefined);
+    const realHome = os.userInfo().homedir;
+    const savedHome = process.env.HOME;
     process.env.NOTYOURS_HOME = '/tmp/fake';
+    process.env.HOME = '/tmp/fake-home';
+    process.env.XDG_CONFIG_HOME = '/tmp/fake-xdg';
     try {
-      expect(ownedStorePath()).toBe(path.join(os.homedir(), '.config/notyours/owned-hosts.json'));
+      expect(ownedStorePath()).toBe(path.join(realHome, '.config/notyours/owned-hosts.json'));
     } finally {
       delete process.env.NOTYOURS_HOME;
+      delete process.env.XDG_CONFIG_HOME;
+      process.env.HOME = savedHome;
       setOwnedStorePathForTests(TEST_STORE);
     }
     const root = tmp();
@@ -419,6 +425,9 @@ describe('hooks', () => {
     expect(g('Bash', { command: 'rg --pre ./x.sh foo .notyours/boundaries' }).allow).toBe(false);
     expect(g('Bash', { command: 'git diff --output=.testmuai/tests/x .' }).allow).toBe(false);
     expect(g('Bash', { command: 'ls src/*.ts' }).allow).toBe(true);
+    expect(g('Bash', { command: 'HOME=/tmp/fake npx notyours run' }).allow).toBe(false);
+    expect(g('Bash', { command: 'XDG_CONFIG_HOME=/tmp/x notyours replay' }).allow).toBe(false);
+    expect(g('Bash', { command: 'env -i PATH=$PATH npx notyours run' }).allow).toBe(false);
     expect(g('Bash', { command: 'jq . .notyours/runs/latest.json | head' }).allow).toBe(true);
     expect(g('Bash', { command: 'npm test && npx notyours replay notes' }).allow).toBe(true);
     expect(g('Bash', { command: 'npx notyours run --dry-run' }).allow).toBe(true);

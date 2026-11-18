@@ -13,9 +13,18 @@ export function setOwnedStorePathForTests(file: string | undefined): void {
   testOverride = file;
 }
 
-/** Fixed location: no environment variable can point notyours at a store someone else wrote. */
+/** The account's home from the passwd database: unlike os.homedir() it ignores $HOME / $USERPROFILE. */
+function accountHome(): string {
+  try {
+    return os.userInfo().homedir;
+  } catch {
+    return os.homedir();
+  }
+}
+
+/** Fixed location: no environment variable (NOTYOURS_HOME, HOME, XDG_CONFIG_HOME) can move the store. */
 export function ownedStorePath(): string {
-  return testOverride ?? path.join(os.homedir(), '.config', 'notyours', 'owned-hosts.json');
+  return testOverride ?? path.join(accountHome(), '.config', 'notyours', 'owned-hosts.json');
 }
 
 function key(root: string): string {

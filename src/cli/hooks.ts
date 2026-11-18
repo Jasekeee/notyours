@@ -115,6 +115,10 @@ export function guard(input: HookInput, root: string): GuardResult {
     // Best-effort normalisation of shell quoting (se'cr'ets.json, se\crets.json, $'...'). This is a
     // guardrail for a cooperating agent, not a sandbox: see README.
     const cmd = raw.toLowerCase().replace(/\$'/g, "'").replace(/['"\\]/g, '');
+    // Running notyours with a different home/config dir would let it read a forged owned-hosts store.
+    if (/\bnotyours\b/.test(cmd) && /(?:^|[\s;&|(])(?:home|xdg_config_home|userprofile|appdata|notyours_home)=|(?:^|[\s;&|(])env\s/.test(cmd)) {
+      return deny('run notyours without overriding HOME / XDG_CONFIG_HOME / USERPROFILE or via `env`.');
+    }
     // Shell expansion next to a protected folder can produce any path (cat .notyours/$(...)): refuse it.
     if (PROTECTED_IN_SHELL_RE.test(cmd) && /[$`~]|\.\.\//.test(raw)) {
       return deny('commands that touch .notyours/, .testmuai/ or .claude/settings may not use $, backticks, ~ or ../');
