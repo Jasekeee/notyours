@@ -134,6 +134,16 @@ export async function startFixture(port = 0): Promise<FixtureApp> {
   app.get('/export', (req, res) => { const u = needLogin(req, res); if (u) exportPage(u, true, res); });
   app.get('/export-leaky', (req, res) => { const u = needLogin(req, res); if (u) exportPage(u, false, res); });
 
+  // POST-only export API (like the demo's): pro-gated, plus a leaky twin. Other methods get 405.
+  const exportApi = (gated: boolean) => (req: Request, res: Response) => {
+    const u = me(req); if (!u) return res.status(401).json({ error: 'login required' });
+    if (gated && u.plan !== 'pro') return res.status(402).json({ error: 'Pro plan required' });
+    res.json({ notes: [...notes.values()].filter((n) => n.owner === u.email) });
+  };
+  app.post('/api/export', exportApi(true));
+  app.post('/api/export-leaky', exportApi(false));
+  app.all(['/api/export', '/api/export-leaky'], (_req, res) => res.status(405).setHeader('Allow', 'POST').json({ error: 'method not allowed' }));
+
   // 404 that echoes the requested path.
   app.use((req, res) => page(res, 'Not found', `<h1>Not found</h1><p class="echo">Cannot GET ${esc(decodeURIComponent(req.path))}</p>`, 404, me(req)));
 

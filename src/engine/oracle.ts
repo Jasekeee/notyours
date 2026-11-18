@@ -32,6 +32,16 @@ export interface Visit {
   page: Page;
 }
 
+const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+export type Method = (typeof METHODS)[number];
+
+/** targets.api entries may carry an HTTP method: "POST http://host/api/export". Default GET. */
+export function parseTarget(target: string): { method: Method; url: string } {
+  const m = /^([A-Za-z]+)\s+(\S+)$/.exec(target.trim());
+  if (m && (METHODS as readonly string[]).includes(m[1]!.toUpperCase())) return { method: m[1]!.toUpperCase() as Method, url: m[2]! };
+  return { method: 'GET', url: target.trim() };
+}
+
 function safeDecode(s: string): string {
   try { return decodeURIComponent(s); } catch { return s; }
 }
@@ -90,13 +100,13 @@ export class Capture {
     if (this.watched.has(page)) return;
     this.watched.add(page);
     page.on('response', (r) => {
-      const p = this.record(r, page);
+      const p = this.record(r, this.tags.get(page) ?? 'kane'); // tag as of the response, not after the body read
       this.pending.add(p);
       void p.finally(() => this.pending.delete(p));
     });
   }
 
-  private async record(r: HTTPResponse, page: Page): Promise<void> {
+  private async record(r: HTTPResponse, tag: string): Promise<void> {
     const status = r.status();
     if (status >= 300 && status < 400 && status !== 304) return; // 304: Chrome may still hand us the cached body
     const headers = r.headers();
@@ -104,7 +114,7 @@ export class Capture {
     if (Number(headers['content-length'] ?? 0) > MAX_BODY) return;
     let body: string;
     try { body = (await r.text()).slice(0, MAX_BODY); } catch { return; }
-    this.records.push({ url: r.url(), status, tag: this.tags.get(page) ?? 'kane', tokens: scanText(body, r.url()) });
+    this.records.push({ url: r.url(), status, tag, tokens: scanText(body, r.url()) });
   }
 
   /** Wait for in-flight body reads. */
@@ -112,18 +122,35 @@ export class Capture {
     while (this.pending.size) await Promise.allSettled([...this.pending]);
   }
 
-  /** Open a URL in a new tab (never a Kane-controlled page), capture its DOM tokens and responses. */
-  async visit(url: string, tag: string, kind: 'ui' | 'api', maxAttempts = 1): Promise<Visit> {
+  /**
+   * Open a target in a new tab (never a Kane-controlled page), capture its DOM tokens and responses.
+   * `target` is a URL, or for api targets optionally "METHOD URL": non-GET calls are made with fetch()
+   * from a tab on the app's origin, so the identity's cookies apply.
+   */
+  async visit(target: string, tag: string, kind: 'ui' | 'api', maxAttempts = 1): Promise<Visit> {
+    const { method, url } = kind === 'api' ? parseTarget(target) : { method: 'GET' as Method, url: target };
     const page = await this.browser.newPage();
     // Fresh 200s with bodies: a warm cache (Kane already loaded these URLs) yields 304s with no body.
     await page.setCacheEnabled(false);
-    this.watch(page, tag);
+    if (method === 'GET') this.watch(page, tag);
     let status = 0;
     let error: string | undefined;
     for (let attempt = 1; attempt <= Math.max(1, maxAttempts); attempt++) {
       try {
-        const resp = await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
-        status = resp?.status() ?? 0;
+        if (method === 'GET') {
+          const resp = await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
+          status = resp?.status() ?? 0;
+        } else {
+          // The origin page itself is not the target: tag the tab only once it has loaded.
+          await page.goto(new URL(url).origin + '/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+          this.watch(page, tag);
+          const r = await page.evaluate(async (u: string, m: string) => {
+            const res = await fetch(u, { method: m, credentials: 'include', headers: { accept: 'application/json, text/html;q=0.9, */*;q=0.8' } });
+            return { status: res.status, body: await res.text() };
+          }, url, method);
+          status = r.status;
+          this.records.push({ url, status, tag, tokens: scanText(r.body.slice(0, MAX_BODY), url) });
+        }
         error = undefined;
         break;
       } catch (e) {
@@ -133,7 +160,7 @@ export class Capture {
     await new Promise((r) => setTimeout(r, 750)); // late fetches (SPAs)
     await this.flush();
     const dom = kind === 'ui' ? await scanDom(page, url) : [];
-    return { url, tag, kind, status, ...(error ? { error } : {}), dom, page };
+    return { url: target, tag, kind, status, ...(error ? { error } : {}), dom, page };
   }
 
   async detach(): Promise<void> {

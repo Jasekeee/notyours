@@ -6,7 +6,7 @@ import type { Boundary, Config, Identity, KaneRun, ProbeResult } from '../types.
 import type { ChromePool } from './chrome.js';
 import { byId } from './identities.js';
 import type { KaneOutcome, KaneRunner, KaneVars } from './kane.js';
-import { Capture, judge, seesToken, type NetRecord, type Visit } from './oracle.js';
+import { Capture, judge, parseTarget, seesToken, type NetRecord, type Visit } from './oracle.js';
 
 export interface ProbeDeps {
   runner: KaneRunner;
@@ -96,17 +96,19 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
       () => kane(b.create.objective, owner, createVars(owner)),
       () => (b.kind === 'guest' ? Promise.resolve(undefined) : kane(b.create.objective, viewer, createVars(viewer))),
     );
-    for (const [who, out] of [['owner', oCreate], ['viewer', vCreate]] as const) {
-      if (!out) continue;
+    // The owner's create run is required. The viewer's is best-effort: it only feeds the viewer's positive
+    // control, and seeded boundaries (fixed owner URLs) legitimately fail it as the viewer.
+    const createProblem = (out: KaneOutcome) => {
       const missing = b.create.store.filter((k) => !out.stored[k]);
-      if (out.run.status !== 'passed' || missing.length) {
-        notes.push(`${who} create run ${out.run.status}${missing.length ? `; did not store ${missing.join(', ')}` : ''}`);
-      }
-    }
-    if (notes.length) return finish('HARNESS_BROKEN');
+      return out.run.status !== 'passed' || missing.length ? `${out.run.status}${missing.length ? `; did not store ${missing.join(', ')}` : ''}` : undefined;
+    };
+    const ownerProblem = createProblem(oCreate);
+    if (ownerProblem) { notes.push(`owner create run ${ownerProblem}`); return finish('HARNESS_BROKEN'); }
+    const viewerProblem = vCreate && createProblem(vCreate);
+    if (viewerProblem) notes.push(`viewer create run ${viewerProblem} (viewer control may be unavailable)`);
 
     const ownerCtx = ctxOf(owner, oCreate.stored);
-    const viewerCtx = ctxOf(viewer, vCreate?.stored ?? {});
+    const viewerCtx = ctxOf(viewer, vCreate && !viewerProblem ? vCreate.stored : {});
     const resolveAll = (ctx: Ctx): Targets => ({ ui: b.targets.ui.map((u) => resolveTemplate(u, ctx)), api: b.targets.api.map((u) => resolveTemplate(u, ctx)) });
     const leakCtx = b.kind === 'cross-user' || b.kind === 'guest' ? ownerCtx : viewerCtx;
     const leakTargets = resolveAll(leakCtx);
@@ -114,7 +116,7 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     const all = [...leakTargets.ui, ...leakTargets.api, ...ownerTargets.ui, ...ownerTargets.api];
     const unresolved = all.filter((u) => /\{\{/.test(u));
     if (unresolved.length) { notes.push(`unresolved target templates: ${unresolved.join(', ')}`); return finish('HARNESS_BROKEN'); }
-    for (const u of all) assertAllowed(u, cfg);
+    for (const u of all) assertAllowed(parseTarget(u).url, cfg);
     if (!leakTargets.ui.length && !leakTargets.api.length) { notes.push('boundary has no targets'); return finish('HARNESS_BROKEN'); }
 
     // Phase 2: the viewer acts (visit, or the pro action) with live capture attached BEFORE its Kane run.
@@ -122,14 +124,16 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     if (vcapLive) captures.push(vcapLive);
     const ocapLive = cfg.liveCapture && b.kind === 'plan-gate' ? await Capture.attach(oc.endpoint) : undefined;
     if (ocapLive) captures.push(ocapLive);
-    const visitVars = (ctx: Ctx, t: Targets): KaneVars =>
-      ({ ...ctx, ...Object.fromEntries([...t.ui, ...t.api].map((u, i) => [`t${i + 1}`, u])) });
+    // Kane can only open pages: give it the ui targets and GET api targets ("POST …" ones are the oracle's job).
+    const kaneUrls = (t: Targets) => [...t.ui, ...t.api.filter((u) => parseTarget(u).method === 'GET').map((u) => parseTarget(u).url)];
+    const visitVars = (ctx: Ctx, urls: string[]): KaneVars => ({ ...ctx, ...Object.fromEntries(urls.map((u, i) => [`t${i + 1}`, u])) });
     if (b.kind === 'plan-gate') {
       const proAction = b.proAction!.objective;
       await both(cfg.parallel, () => kane(proAction, owner, ownerCtx), () => kane(proAction, viewer, viewerCtx));
     } else {
-      const n = leakTargets.ui.length + leakTargets.api.length;
-      await kane(visitObjective(n), viewer, visitVars(leakCtx, leakTargets));
+      const urls = kaneUrls(leakTargets);
+      if (urls.length) await kane(visitObjective(urls.length), viewer, visitVars(leakCtx, urls));
+      else notes.push('no GET targets: skipped the Kane visit run (the oracle still calls every target)');
     }
 
     // Phase 3: the oracle opens every target itself (new tabs) and checks the positive controls.
@@ -156,7 +160,10 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
       if (own) { assertAllowed(own, cfg); viewerCtlVisits = [await vcap.visit(own, 'vctl:ui0', 'ui', cfg.maxAttempts)]; }
       viewerOk = seesToken(viewer.token, viewerCtlVisits, vcap.records);
     } else {
-      viewerCtlVisits = await visitAll(vcap, resolveAll(viewerCtx), 'vctl');
+      const own = resolveAll(viewerCtx);
+      const ready = { ui: own.ui.filter((u) => !/\{\{/.test(u)), api: own.api.filter((u) => !/\{\{/.test(u)) };
+      for (const u of [...ready.ui, ...ready.api]) assertAllowed(parseTarget(u).url, cfg);
+      viewerCtlVisits = await visitAll(vcap, ready, 'vctl');
       viewerOk = seesToken(viewer.token, viewerCtlVisits, vcap.records);
     }
     const ownerSeesOwnToken = seesToken(owner.token, ownerVisits, ocap.records);
@@ -171,7 +178,7 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     if (b.kind === 'plan-gate') {
       leakTokens.add(viewer.token);
       judgedVisits = leakVisits;
-      const targetUrls = new Set([...leakTargets.ui, ...leakTargets.api]);
+      const targetUrls = new Set([...leakTargets.ui, ...leakTargets.api.map((u) => parseTarget(u).url)]);
       judgedRecords = vcap.records.filter((r) => r.tag.startsWith('leak:') || (r.tag === 'kane' && targetUrls.has(r.url)));
     } else {
       if (b.kind === 'sweep') for (const i of ids) { if (i.id !== viewer.id) leakTokens.add(i.token); }
@@ -180,7 +187,14 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
       judgedRecords = vcap.records;
     }
     await vcap.flush();
-    const { verdict, hits } = judge(leakTokens, judgedVisits, judgedRecords, { ownerSeesOwnToken, viewerSeesOwnToken: viewerOk });
+    const judged = judge(leakTokens, judgedVisits, judgedRecords, { ownerSeesOwnToken, viewerSeesOwnToken: viewerOk });
+    const { hits } = judged;
+    let { verdict } = judged;
+    // A 404/405 on an api target means the call never reached the endpoint (wrong method or path): never HELD.
+    const misfired = [...ownerVisits.filter((v) => v.kind === 'api' && (v.status === 404 || v.status === 405)),
+      ...leakVisits.filter((v) => v.kind === 'api' && v.status === 405)];
+    for (const v of misfired) notes.push(`api target "${v.url}" answered ${v.status}: wrong method or path? (never counted as HELD)`);
+    if (verdict === 'HELD' && misfired.length) verdict = 'HARNESS_BROKEN';
 
     // Screenshots: every hit page and every control page.
     const hitTags = new Set(judgedRecords.filter((r) => r.tokens.some((o) => !o.echo && leakTokens.has(o.token))).map((r) => r.tag));

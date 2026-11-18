@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { isUrlEcho, judge, scanText, type NetRecord, type Visit } from '../oracle.js';
+import { isUrlEcho, judge, parseTarget, scanText, type NetRecord, type Visit } from '../oracle.js';
 
 const T = 'NY-ALICE-AAAAAAAAAAAA';
 const B = 'NY-BOB-BBBBBBBBBBBB';
 
 describe('oracle', () => {
+  it('parseTarget: optional HTTP method prefix, default GET', () => {
+    expect(parseTarget('POST http://127.0.0.1:3077/api/export')).toEqual({ method: 'POST', url: 'http://127.0.0.1:3077/api/export' });
+    expect(parseTarget('delete  http://h/x')).toEqual({ method: 'DELETE', url: 'http://h/x' });
+    expect(parseTarget('http://h/api/notes/1')).toEqual({ method: 'GET', url: 'http://h/api/notes/1' });
+    expect(parseTarget('FETCH http://h/x').method).toBe('GET'); // unknown verb: treated as part of a URL string
+  });
+
   it('URL echo: token came in the URL and the text repeats the path', () => {
     expect(isUrlEcho(T, [`Cannot GET /missing/${T}`], `http://127.0.0.1:3000/missing/${T}`)).toBe(true);
     expect(isUrlEcho(T, [`No results for /search?q=${T}`], `http://127.0.0.1:3000/search?q=${T}`)).toBe(true);

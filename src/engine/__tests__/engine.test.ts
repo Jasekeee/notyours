@@ -14,6 +14,8 @@ import type { KaneRunner } from '../kane.js';
 import { startFixture, type FixtureApp } from './fixture-app.js';
 
 const CREATE = 'Create a note containing {{token}} and store the current page URL as item_url';
+const SEEDED = 'Go to the seeded note, verify it contains {{token}}, store the current page URL as item_url';
+let seededUrl = '';
 let app: FixtureApp;
 let cfg: Config;
 let ids: Identity[];
@@ -26,7 +28,11 @@ const objectives: string[] = [];
 const fakeRunner: KaneRunner = async (objective, identity, vars) => {
   objectives.push(`${identity.id}: ${objective}`);
   const stored: Record<string, string> = {};
-  if (objective === CREATE) {
+  if (objective === SEEDED) {
+    // Seed-confirm objective (fixed owner URL): works for the owner, fails for anyone else.
+    if (identity.id !== 'alice') return { run: { objective, identity: identity.id, status: 'failed', exitCode: 1, finalState: {}, creditsConsumed: 0, durationS: 0.1 }, stored, text: 'note does not contain the token' };
+    stored.item_url = seededUrl;
+  } else if (objective === CREATE) {
     const token = typeof vars.token === 'string' ? vars.token : vars.token!.value;
     const n = app.addNote(identity.email!, `Note ${token}`, `Secret body ${token}`);
     stored.item_url = `${app.url}/notes/${n.id}`;
@@ -132,6 +138,37 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
     const gated = await engine.runBoundary(pg('pg-gated', '/export'), ids, cfg);
     expect(gated.verdict).toBe('HELD');
     expect(gated.controls).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true });
+  }, 60_000);
+
+  it('plan-gate via a POST-only API: leaky export -> LEAK_PAYLOAD; gated -> HELD', async () => {
+    const pg = (id: string, api: string) => boundary({ id, kind: 'plan-gate', owner: 'pro_user', viewer: 'free_user', proAction: { objective: 'Export my notes' }, targets: { ui: [], api: [api] } });
+    const leaky = await engine.runBoundary(pg('pg-post-leaky', 'POST {{base_url}}/api/export-leaky'), ids, cfg);
+    expect(leaky.verdict).toBe('LEAK_PAYLOAD');
+    expect(leaky.hits.length).toBeGreaterThan(0);
+    expect(leaky.hits.every((h) => h.where === 'network' && h.token === byId(ids, 'free_user').token)).toBe(true);
+    const gated = await engine.runBoundary(pg('pg-post-gated', 'POST {{base_url}}/api/export'), ids, cfg);
+    expect(gated.verdict).toBe('HELD');
+    expect(gated.controls).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true });
+  }, 60_000);
+
+  it('wrong method on a POST-only API (405) is never HELD -> HARNESS_BROKEN', async () => {
+    const b = boundary({ id: 'pg-wrong-method', kind: 'plan-gate', owner: 'pro_user', viewer: 'free_user', proAction: { objective: 'Export my notes' }, targets: { ui: ['{{base_url}}/export'], api: ['{{base_url}}/api/export'] } });
+    const r = await engine.runBoundary(b, ids, cfg);
+    // Both controls pass (gated UI export works for pro), so only the 405 stops this from reading as HELD.
+    expect(r.controls).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true });
+    expect(r.hits).toEqual([]);
+    expect(r.verdict).toBe('HARNESS_BROKEN');
+    const diag = JSON.parse(readFileSync(join(stateDir, 'runs', 'test', 'pg-wrong-method.json'), 'utf8'));
+    expect(diag.notes.join(' ')).toMatch(/answered 405/);
+  }, 60_000);
+
+  it('seeded boundary: the viewer cannot run the owner-only create, the probe still finds the leak', async () => {
+    seededUrl = `${app.url}/notes/${app.addNote(alice().email!, 'Seeded', `Seeded body ${alice().token}`).id}`;
+    const r = await engine.runBoundary(boundary({ id: 'seeded', create: { objective: SEEDED, store: ['item_url'] } }), ids, cfg);
+    expect(r.verdict).toBe('LEAK_VISIBLE');
+    expect(r.kaneRuns.map((k) => `${k.identity}:${k.status}`).sort()).toEqual(['alice:passed', 'bob:failed', 'bob:passed']);
+    const diag = JSON.parse(readFileSync(join(stateDir, 'runs', 'test', 'seeded.json'), 'utf8'));
+    expect(diag.notes.join(' ')).toMatch(/viewer create run failed/);
   }, 60_000);
 
   it('guest: fresh profile, no login, sees nothing -> HELD', async () => {
