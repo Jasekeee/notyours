@@ -135,7 +135,9 @@ From the automated security review. By decision, only real secret or credential 
   CLI host gate).
 - `install-hooks` writes this CLI's absolute path into `.claude/settings.json` (an `npx github:` start takes 5–9 s, too
   slow for the per-tool-call guard). After the npx cache is cleared or the clone moves, rerun `install-hooks`. Don't
-  commit that file as is: it names a local path. `--cli "<command>"` overrides it.
+  commit that file as is: it names a local path. `--cli "<command>"` overrides it. If that path disappears, the hook
+  command fails with "not found". Claude Code treats that as a non-blocking error, so the guard **fails open** until
+  `install-hooks` is rerun (`doctor` doesn't check the hook command yet).
 - The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and
   overshoot the cap by the number of parallel runs (the engine runs at most 2 at once).
 
