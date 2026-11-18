@@ -471,9 +471,13 @@ describe('hooks', () => {
       'npx notyours run b1\necho --dry-run', 'npx notyours run b1 # --dry-run', 'npx notyours run b1 -- --dry-run',
       'npx notyours demo', 'npx notyours init --url http://127.0.0.1:3077', 'npx notyours -C . lock', 'node dist/cli/index.js lock',
       'npx notyours $(echo lock)', './node_modules/.bin/notyours lock', 'true && npx notyours install-hooks',
+      // from the security review: quoting, continuations, xargs, versioned/suffixed entry points, bare invocation
+      'npx notyours run "--dry-run x" b1', "npx notyours 'lock'", 'npx notyours run b1 \\\n--dry-run', 'echo lock | xargs npx notyours',
+      'npx notyours@0.1.0 lock', './node_modules/.bin/notyours.cmd lock', 'sh -c "npx notyours lock"', 'npx notyours',
     ];
     for (const c of bad) expect([c, g('Bash', { command: c }).allow]).toEqual([c, false]);
-    const ok = ['npx notyours replay b1', 'npx notyours run --dry-run', 'npx notyours -C . run b1 --dry-run', 'npx notyours report --open', 'npx notyours doctor', 'git log --grep notyours'];
+    for (const c of ['nohup npx notyours lock', 'env FOO=1 notyours run b1', 'find . -exec notyours lock {} +', 'npm exec notyours lock']) expect([c, g('Bash', { command: c }).allow]).toEqual([c, false]);
+    const ok = ['npx notyours replay b1', 'npx notyours run --dry-run', 'npx notyours -C . run b1 --dry-run', 'npx notyours report --open', 'npx notyours doctor', 'git log --grep notyours', 'grep -rn notyours README.md'];
     for (const c of ok) expect([c, g('Bash', { command: c }).allow]).toEqual([c, true]);
   });
 

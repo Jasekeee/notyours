@@ -124,34 +124,46 @@ export function hasDangerousGlob(raw: string): boolean {
 }
 
 /** notyours subcommands an agent may run itself; everything else (run, lock, demo, init, hook, install-hooks) is the human's. */
-const AGENT_NOTYOURS = new Set(['replay', 'report', 'map', 'doctor', 'help', '--help', '-h', '--version', '-v']);
+const AGENT_NOTYOURS = new Set(['replay', 'report', 'map', 'doctor']);
+/** A token that starts notyours: npx notyours, notyours@1.2, ./node_modules/.bin/notyours(.cmd), node .../cli/index.js */
+const NOTYOURS_ENTRY_RE = /(?:^|\/)notyours(?:@[\w.^~<>=-]*)?(?:\.(?:c?js|mjs|cmd|ps1|exe))?$|(?:^|\/)cli\/index\.(?:c?js|mjs|ts)$/i;
+/** Commands whose arguments are themselves a command: notyours after one of these is an invocation. */
+const COMMAND_RUNNERS = new Set(['xargs', 'env', 'nohup', 'time', 'watch', 'nice', 'timeout', 'sudo', 'doas', 'command', 'builtin', 'parallel', 'npm', 'pnpm', 'yarn', 'bunx', 'bun']);
+/** Plain argv words only: no quoting, expansion or redirection can hide inside an allowed invocation. */
+const PLAIN_ARG_RE = /^[A-Za-z0-9._\/:=@+-]+$/;
 
 /**
- * Parsed (not regex) check of every notyours invocation in a Bash command: split into segments on newlines,
- * `;`, `&`, `|`, drop comments, find the notyours entry point and decide on its subcommand token.
+ * Deny-by-default check of every notyours invocation in a Bash command, decided on the RAW command:
+ * a segment (split on newlines, `;`, `&`, `|`) that invokes notyours must be exactly
+ * `[npx] <entry> [-C|--cwd <dir>] <replay|report|map|doctor|run --dry-run> [plain args]`.
+ * Quotes, backslashes, `$`, backticks, xargs/sh -c/eval/exec near notyours, or no visible subcommand: denied.
  * Returns a deny reason, or undefined when the command may run.
  */
-export function agentNotyoursDenied(cmd: string): string | undefined {
+export function agentNotyoursDenied(raw: string): string | undefined {
   const human = '`notyours run/lock/demo/init` author Kane recordings (credits) or change the oracle: ask the user to run them. Replays are fine: npx notyours replay';
-  for (const raw of cmd.split(/[\n;&|]+/)) {
-    const seg = raw.replace(/(^|\s)#.*$/, '').trim();
-    const words = seg.toLowerCase().split(/\s+/).filter(Boolean); // the guard may pass a lowercased command
-    const at = words.findIndex((w) => /(^|\/)notyours$/.test(w.replace(/^['"]|['"]$/g, '')) || /cli\/index\.(?:js|ts)$/.test(w));
-    if (at < 0) continue;
-    // Skip global options (-C dir, --cwd dir, --debug) to reach the subcommand.
-    let i = at + 1;
-    while (i < words.length && words[i]!.startsWith('-') && !['--help', '-h', '--version', '-v'].includes(words[i]!)) {
-      i += ['-c', '--cwd'].includes(words[i]!) ? 2 : 1;
+  const invokes = (seg: string) => seg.split(/\s+/).some((w) => NOTYOURS_ENTRY_RE.test(w.replace(/^['"]+|['"]+$/g, '')));
+  if (!invokes(raw.replace(/\\\n/g, ' ').replace(/['"\\]/g, ''))) return undefined; // notyours only mentioned as data, or not at all
+  if (/['"\\$`]/.test(raw) || /\b(?:xargs|eval|exec)\b|\b(?:ba|z|da)?sh\s+-c\b/.test(raw)) {
+    return 'notyours commands from the agent must be plain words (no quotes, backslashes, $, backticks, xargs, sh -c, eval or exec).';
+  }
+  for (const segRaw of raw.split(/[\n;&|]+/)) {
+    const seg = segRaw.replace(/(^|\s)#.*$/, '').trim();
+    if (!seg || !invokes(seg)) continue;
+    const words = seg.split(/\s+/);
+    let i = 0;
+    if (words[i] === 'npx') i++;
+    if (words[i] === 'node') i++;
+    if (!NOTYOURS_ENTRY_RE.test(words[i] ?? '')) {
+      // notyours as an argument: fine for ordinary commands (git log --grep notyours), not for command runners.
+      if (COMMAND_RUNNERS.has((words[0] ?? '').replace(/^.*\//, '')) || words.includes('-exec') || words.includes('-execdir')) return human;
+      continue;
     }
+    i++;
+    if (words[i] === '-C' || words[i] === '--cwd') i += 2;
     const sub = words[i];
-    if (sub === undefined) continue; // bare `notyours` prints help
-    if (/[$`(){}<>]/.test(sub)) return 'notyours with an expanded/computed subcommand is not allowed for the agent.';
-    if (sub === 'run') {
-      const rest = words.slice(i + 1);
-      const end = rest.indexOf('--');
-      if ((end < 0 ? rest : rest.slice(0, end)).includes('--dry-run')) continue;
-      return human;
-    }
+    const args = words.slice(i + 1);
+    if (!sub || !args.every((a) => PLAIN_ARG_RE.test(a))) return human;
+    if (sub === 'run') { if (args.includes('--dry-run') && !args.includes('--')) continue; return human; }
     if (!AGENT_NOTYOURS.has(sub)) return human;
   }
   return undefined;
@@ -181,7 +193,7 @@ export function guard(input: HookInput, root: string): GuardResult {
     if (/\.notyours\/[^\s/'"]*[*?[{]/.test(cmd)) return deny(secretMsg);
     if (/\.notyours\/?(?=$|[\s'";|&)])/.test(cmd) && /\b(?:grep|rg|ag|find|tar|zip|cp|rsync|cat|less|head|tail|xxd|strings|base64|scp|curl)\b/.test(cmd)) return deny(secretMsg);
     // Authoring spends Kane credits and (re)records the oracle: the human's call, never the agent's.
-    const notyoursDenied = agentNotyoursDenied(cmd);
+    const notyoursDenied = agentNotyoursDenied(raw); // decided on the raw command, not the normalised one
     if (notyoursDenied) return deny(notyoursDenied);
     if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');

@@ -14,7 +14,6 @@ trap 'rm -rf "$tmp"' EXIT
 # Extended regexes, one per line, matched case-insensitively against "path|NY|added line".
 cat > "$tmp/patterns" <<'EOF'
 -----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----
-(AKIA|ASIA)[0-9A-Z]{16}
 ghp_[A-Za-z0-9]{30,}
 gh[ousr]_[A-Za-z0-9]{30,}
 github_pat_[A-Za-z0-9_]{30,}
@@ -23,9 +22,11 @@ LT_[A-Za-z0-9]{20,}
 (api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|auth[_-]?token|access[_-]?token|passw(or)?d|secret)["']?[[:space:]]*[:=][[:space:]]*["'][^"'[:space:]]{8,}["']
 EOF
 
-# Case-SENSITIVE: .env-style "NAME = value" with an UPPERCASE env name, so ordinary code such as
+# Case-SENSITIVE: AWS key ids (uppercase only; with -i, base64 blobs match) and .env-style "NAME = value"
+# with an UPPERCASE env name, so ordinary code such as
 # `viewerSeesOwnToken = seesToken(...)` is not mistaken for a secret.
 cat > "$tmp/patterns_cs" <<'EOF'
+(AKIA|ASIA)[0-9A-Z]{16}
 \|NY\|[[:space:]]*(export[[:space:]]+)?[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*[[:space:]]*=[[:space:]]*["']?[^[:space:]"'#$]{6,}
 EOF
 
