@@ -28,6 +28,8 @@ export interface ReportOpts extends GlobalOpts {
 export interface DemoOpts extends GlobalOpts {
   dir?: string;
   open: boolean;
+  /** Only B1 (Bob opens Alice's note): one real leak, the fastest real run. */
+  quick?: boolean;
 }
 export interface InstallHooksOpts extends GlobalOpts {
   cli: string;
@@ -123,7 +125,8 @@ export function buildProgram(actions: Actions, { onExit = (c) => void (process.e
     .description('run the bundled demo app on :3077 and probe it end to end')
     .option('--dir <dir>', 'working directory to reuse (keeps recordings, so reruns replay for 0 credits)')
     .option('--no-open', 'do not open the report')
-    .action(async (o: { dir?: string; open: boolean }, cmd: Command) => done(actions.demo({ ...g(cmd), dir: o.dir, open: o.open })));
+    .option('--quick', "only B1 (Bob opens Alice's note): one real leak in ~4 min")
+    .action(async (o: { dir?: string; open: boolean; quick?: boolean }, cmd: Command) => done(actions.demo({ ...g(cmd), dir: o.dir, open: o.open, quick: o.quick === true })));
 
   program
     .command('install-hooks')

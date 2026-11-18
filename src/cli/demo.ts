@@ -18,6 +18,23 @@ import { isPortFree, openFile, waitForHttp } from './system.js';
 import { UserError, nyPaths, readBoundaries, readConfig, readIdentities } from './workspace.js';
 
 export const DEMO_URL = `http://127.0.0.1:${DEMO_PORT}`;
+
+/** `--quick`: only B1 (Bob opens Alice's note), the clearest real leak. */
+export const QUICK_BOUNDARY = 'b1-notes-cross-user';
+
+/**
+ * What a fresh demo costs, from the measured E2E runs on kane-cli 0.10.0 (docs/E2E.md): each persona's first
+ * login is recorded (1 authoring run each), then every boundary is authored. Recordings stay local
+ * (never committed: they hold account ids), so `--dir <same dir>` is what makes a rerun cheap.
+ */
+export function demoEstimate(quick: boolean): string {
+  const lines = [
+    `${quick ? pc.bold('→ quick') : '  quick'}  (B1 only, --quick): ~4 min, ~45 Kane credits (4 authoring runs: 2 logins + B1)`,
+    `${quick ? '  full ' : pc.bold('→ full ')}  (B1–B4):            ~10 min, ~120 Kane credits (12 authoring runs)`,
+    pc.dim('  Rerun with --dir <same dir> to replay recorded logins for 0 credits. No credits at all: docs/sample-report/report.html'),
+  ];
+  return lines.join('\n');
+}
 const USERS_FILES = ['users.yaml', 'users.yml', 'users.json'];
 /** Never copied from the package into the work dir: deps, and run state under .notyours/ or .testmuai/. */
 export function copyFilter(p: string): boolean {
@@ -87,6 +104,7 @@ export async function runDemo(o: DemoOpts): Promise<number> {
   if (!src) throw new UserError('The demo app is missing from this notyours package (demo/ not found).');
   if (!(await isPortFree(DEMO_PORT))) throw new UserError(`Port ${DEMO_PORT} is in use; the demo app needs it. Find it: lsof -i :${DEMO_PORT}`);
 
+  console.log(demoEstimate(o.quick === true));
   const work = path.resolve(o.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'notyours-demo-')));
   fs.mkdirSync(work, { recursive: true });
   fs.cpSync(src, work, { recursive: true, force: false, errorOnExist: false, filter: copyFilter });
@@ -107,7 +125,8 @@ export async function runDemo(o: DemoOpts): Promise<number> {
   const identities = readIdentities(work);
   const all = readBoundaries(work);
   if (!all.length) throw new UserError(`The demo has no boundaries in ${path.join(work, '.notyours/boundaries')}`);
-  const boundaries = all.map((b) => b.boundary);
+  const boundaries = all.map((b) => b.boundary).filter((b) => !o.quick || b.id === QUICK_BOUNDARY);
+  if (!boundaries.length) throw new UserError(`--quick needs boundary ${QUICK_BOUNDARY} in the demo`);
   assertHostsAllowed(cfg, boundaries, work);
 
   const logFile = path.join(work, 'demo-server.log');

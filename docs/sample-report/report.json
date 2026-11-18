@@ -1,0 +1,200 @@
+{
+  "generatedAt": "2026-11-18T14:09:08.367Z",
+  "startedAt": "2026-11-18T13:53:54.841Z",
+  "finishedAt": "2026-11-18T13:55:37.792Z",
+  "runTimeS": 102.951,
+  "headline": "2 leaks across 2 pairs of users",
+  "summary": {
+    "total": 4,
+    "leaks": 2,
+    "held": 2,
+    "harness": 0,
+    "credits": 2.558572
+  },
+  "results": [
+    {
+      "boundaryId": "b1-notes-cross-user",
+      "verdict": "LEAK_VISIBLE",
+      "controls": {
+        "ownerSeesOwnToken": true,
+        "viewerSeesOwnToken": true
+      },
+      "hits": [
+        {
+          "token": "NY-ALICE-JOTTERSEED2A",
+          "where": "dom",
+          "url": "http://127.0.0.1:3077/notes/1001",
+          "snippet": "Passport no. NY-ALICE-JOTTERSEED2A"
+        },
+        {
+          "token": "NY-ALICE-JOTTERSEED2A",
+          "where": "network",
+          "url": "http://127.0.0.1:3077/notes/1001",
+          "snippet": "p class=\"meta\">[email] · Nov 2, 2026</p> <p class=\"body\">Passport no. NY-ALICE-JOTTERSEED2A</p> </article> </main> </body> </html>"
+        },
+        {
+          "token": "NY-ALICE-JOTTERSEED2A",
+          "where": "network",
+          "url": "http://127.0.0.1:3077/api/notes/1001",
+          "snippet": "wner_email\":\"[email]\",\"title\":\"Travel documents\",\"body\":\"Passport no. NY-ALICE-JOTTERSEED2A\",\"created_at\":\"2026-11-02T09:14:00.000Z\"}"
+        }
+      ],
+      "screenshots": [],
+      "kaneRuns": [
+        {
+          "objective": "replay .notyours/tests/b1-notes-cross-user_alice_test.md",
+          "identity": "alice",
+          "status": "passed",
+          "exitCode": 0,
+          "finalState": {},
+          "creditsConsumed": 0,
+          "durationS": 2
+        },
+        {
+          "objective": "replay .notyours/tests/b1-notes-cross-user_bob_test.md",
+          "identity": "bob",
+          "status": "passed",
+          "exitCode": 0,
+          "finalState": {},
+          "creditsConsumed": 0,
+          "durationS": 50
+        }
+      ],
+      "ts": "2026-11-18T13:53:54.841Z",
+      "group": "LEAK",
+      "owner": "alice",
+      "viewer": "bob",
+      "kind": "cross-user",
+      "whoAndWhat": "Bob tried to open data Alice created.",
+      "surface": [
+        "routes/notes.js"
+      ]
+    },
+    {
+      "boundaryId": "b2-notes-guest",
+      "verdict": "HELD",
+      "controls": {
+        "ownerSeesOwnToken": true,
+        "viewerSeesOwnToken": true
+      },
+      "hits": [],
+      "screenshots": [],
+      "kaneRuns": [
+        {
+          "objective": "replay .notyours/tests/b2-notes-guest_alice_test.md",
+          "identity": "alice",
+          "status": "passed",
+          "exitCode": 0,
+          "finalState": {},
+          "creditsConsumed": 0,
+          "durationS": 2
+        },
+        {
+          "objective": "replay .notyours/tests/b2-notes-guest_guest_test.md",
+          "identity": "guest",
+          "status": "passed",
+          "exitCode": 0,
+          "finalState": {},
+          "creditsConsumed": 0,
+          "durationS": 2
+        }
+      ],
+      "ts": "2026-11-18T13:54:17.006Z",
+      "group": "HELD",
+      "owner": "alice",
+      "viewer": "guest",
+      "kind": "guest",
+      "whoAndWhat": "A signed-out guest tried to open data Alice created.",
+      "surface": [
+        "routes/notes.js"
+      ]
+    },
+    {
+      "boundaryId": "b3-export-plan-gate",
+      "verdict": "LEAK_PAYLOAD",
+      "controls": {
+        "ownerSeesOwnToken": true,
+        "viewerSeesOwnToken": true
+      },
+      "hits": [
+        {
+          "token": "NY-BOB-JOTTERSEED2B",
+          "where": "network",
+          "url": "http://127.0.0.1:3077/api/export",
+          "snippet": "rted 2026-11-18T13:55:06.886Z # Reminder (note 1002, 2026-11-03T18:40:00.000Z) NY-BOB-JOTTERSEED2B "
+        }
+      ],
+      "screenshots": [],
+      "kaneRuns": [
+        {
+          "objective": "replay .notyours/tests/b3-export-plan-gate_alice_test.md",
+          "identity": "alice",
+          "status": "passed",
+          "exitCode": 0,
+          "finalState": {},
+          "creditsConsumed": 0,
+          "durationS": 2
+        },
+        {
+          "objective": "replay .notyours/tests/b3-export-plan-gate_bob_test.md",
+          "identity": "bob",
+          "status": "failed",
+          "exitCode": 1,
+          "finalState": {},
+          "creditsConsumed": 2.558572,
+          "durationS": 28,
+          "reason": "step 1 failed"
+        }
+      ],
+      "ts": "2026-11-18T13:55:05.055Z",
+      "group": "LEAK",
+      "owner": "alice",
+      "viewer": "bob",
+      "kind": "plan-gate",
+      "whoAndWhat": "Bob (free plan) tried a Pro-only action.",
+      "surface": [
+        "routes/pro.js"
+      ]
+    },
+    {
+      "boundaryId": "b4-bob-sweep",
+      "verdict": "HELD",
+      "controls": {
+        "ownerSeesOwnToken": true,
+        "viewerSeesOwnToken": true
+      },
+      "hits": [],
+      "screenshots": [],
+      "kaneRuns": [
+        {
+          "objective": "replay .notyours/tests/b4-bob-sweep_alice_test.md",
+          "identity": "alice",
+          "status": "passed",
+          "exitCode": 0,
+          "finalState": {},
+          "creditsConsumed": 0,
+          "durationS": 2
+        },
+        {
+          "objective": "replay .notyours/tests/b4-bob-sweep_bob_test.md",
+          "identity": "bob",
+          "status": "passed",
+          "exitCode": 0,
+          "finalState": {},
+          "creditsConsumed": 0,
+          "durationS": 11
+        }
+      ],
+      "ts": "2026-11-18T13:55:37.792Z",
+      "group": "HELD",
+      "owner": "alice",
+      "viewer": "bob",
+      "kind": "sweep",
+      "whoAndWhat": "Bob swept every page, looking for anything Alice created.",
+      "surface": [
+        "routes/notes.js",
+        "routes/account.js"
+      ]
+    }
+  ]
+}

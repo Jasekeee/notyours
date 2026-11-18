@@ -106,8 +106,8 @@ describe('argument parsing', () => {
     expect(h.calls).toEqual([
       ['report', { cwd, open: false }],
       ['report', { cwd, open: true }],
-      ['demo', { cwd, dir: undefined, open: true }],
-      ['demo', { cwd, dir: 'work', open: false }],
+      ['demo', { cwd, dir: undefined, open: true, quick: false }],
+      ['demo', { cwd, dir: 'work', open: false, quick: false }],
     ]);
   });
 
@@ -590,6 +590,18 @@ describe('safe-fs', () => {
 });
 
 describe('demo helpers', () => {
+  it('--quick parses, and the estimate shows both modes with time and credits', async () => {
+    const { demoEstimate, QUICK_BOUNDARY } = await import('./demo.js');
+    expect(QUICK_BOUNDARY).toBe('b1-notes-cross-user');
+    const quick = demoEstimate(true);
+    expect(quick).toMatch(/quick.*~4 min.*~45 Kane credits/);
+    expect(quick).toMatch(/full.*~10 min.*~120 Kane credits/);
+    const h = harness();
+    await h.parse('demo', '--quick', '--no-open');
+    expect(h.calls[0]?.[0]).toBe('demo');
+    expect(h.calls[0]?.[1]).toMatchObject({ quick: true, open: false });
+  });
+
   it('copy filter skips deps, secrets and run state but keeps app code and recordings', () => {
     expect(copyFilter('/d/node_modules')).toBe(false);
     expect(copyFilter('/d/.notyours/secrets.json')).toBe(false);

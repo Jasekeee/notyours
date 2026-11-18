@@ -16,8 +16,6 @@ dist/
 spike/logs/
 **/.notyours/dirty.json
 **/.notyours/attempts.json
-# Recorded logins contain the typed password (kane-cli frontmatter): local only. The demo's are public dev defaults.
-**/.notyours/tests/login_*_test.md
-**/.notyours/tests/output-login_*/
-!demo/.notyours/tests/login_*_test.md
-!demo/.notyours/tests/output-login_*/
+# Kane recordings stay local, never committed: they hold the TestMu org_id/user_id/project_id (kane-cli
+# needs them to replay), and recorded logins hold the typed password.
+**/.notyours/tests/

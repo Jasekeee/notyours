@@ -2,7 +2,7 @@
 // Parsing is pure so tests can feed recorded NDJSON. Never retries: each call is exactly one kane-cli invocation.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { execa } from 'execa';
 import type { KaneRun, KaneRunStatus } from '../types.js';
 
@@ -165,7 +165,9 @@ export class KaneCli implements KaneClient {
         args.push('--variables-file', file);
       }
       const r = await execa(this.bin, args, { cwd: req.cwd, reject: false, env: KANE_ENV, timeout: (timeoutS + 60) * 1000 });
-      return parseReplay(String(r.stdout ?? ''), r.exitCode ?? 2, req.testPath, req.identity);
+      // Reports and run logs show the project-relative path, never an absolute local one.
+      const shown = relative(req.cwd, req.testPath);
+      return parseReplay(String(r.stdout ?? ''), r.exitCode ?? 2, shown && !shown.startsWith('..') ? shown : basename(req.testPath), req.identity);
     } finally {
       if (dir) rmSync(dir, { recursive: true, force: true });
     }

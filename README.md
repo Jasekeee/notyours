@@ -20,8 +20,9 @@ notyours does exactly that, in real browsers:
   open a link).
 - **A canary-token oracle** decides. A token looks like `NY-ALICE-K7Q2MZX4P3RA`, so a match can't be
   a coincidence and nothing depends on an AI judging the page.
-- **The ratchet** turns every proven boundary into a recorded Kane test. Replays cost 0 credits and
-  take about a second, so they run every time your agent stops.
+- **The ratchet** turns every proven boundary into a recorded Kane test. Replays cost no authoring
+  (a passing replay is 0 credits; a replay Kane marks failed costs a few credits of triage) and take
+  about 40–50 s per boundary including the oracle's own checks, so they run every time your agent stops.
 
 ## Install
 
@@ -44,16 +45,24 @@ You also need Google Chrome and an authenticated [kane-cli](https://www.testmuai
 ## Judges' quick start
 
 ```sh
-npx notyours doctor   # everything green? (it tells you how to fix anything that isn't)
-npx notyours demo     # starts the demo app on :3077, probes it, opens the report
+npx notyours doctor        # everything green? (it tells you how to fix anything that isn't)
+npx notyours demo --quick  # B1 only: Bob opens Alice's note, one real leak. ~4 min, ~45 Kane credits
+npx notyours demo          # all four boundaries (B1–B4). ~10 min, ~120 Kane credits
 ```
 
-The report opens with a headline like **"Bob saw Alice's data: 2 leaks"**, then one card per
-boundary: the verdict, who tried what, the positive controls, where the token showed up (with the
-token highlighted), screenshots, links to the Kane test runs, and the credits each one used.
-Demo boundaries that ship with a recording replay for 0 credits. Any boundary without one is
-authored once (about 30 credits per Kane run), then locked. Rerun with `--dir <folder>` to reuse
-that folder's recordings.
+Both modes print the expected time and credits before they start. **No credits at all:** open
+[`docs/sample-report/report.html`](docs/sample-report/report.html), a redacted result of the full demo
+(2 leaks, 2 held; no screenshots, emails, account ids or links).
+
+The report opens with a headline like **"Bob saw Alice's data"**, then one card per boundary: the
+verdict, who tried what, the positive controls, where the token showed up (with the token
+highlighted), screenshots, and the credits each one used.
+
+**Why the demo authors instead of replaying:** Kane recordings only replay when they keep the
+TestMu account ids (`org_id`, `user_id`, `project_id`) of the machine that recorded them, so notyours
+never commits them (`.notyours/tests/` is gitignored; recorded logins also hold the typed password). Each
+fresh demo therefore records its personas' logins and boundaries once. Rerun with `--dir <folder>`
+to reuse that folder's recordings: logins and locked boundaries then replay without authoring.
 
 ## How it works
 
@@ -79,7 +88,7 @@ npx notyours map                  # writes .notyours/boundaries/_draft_*.yaml an
 npx notyours run --dry-run        # validate + credit estimate, starts nothing
 npx notyours run                  # prove them with Kane (authoring)
 npx notyours lock                 # record them
-npx notyours replay               # 0 credits, about a second each
+npx notyours replay               # no authoring; ~40–50 s per boundary
 npx notyours report --open
 ```
 
@@ -136,8 +145,10 @@ If either fails, the verdict is HARNESS (yellow), not HELD (green).
 
 ## The ratchet
 
-`notyours lock` turns a proven boundary into a recorded Kane test. From then on, `notyours replay`
-re-checks it for 0 credits in about a second. Locked boundaries only move one way: once a boundary
+`notyours lock` turns a proven boundary into a recorded Kane test (it reuses the proving run's own
+recordings, so locking itself costs nothing). From then on, `notyours replay` re-checks it without
+authoring: the recorded runs replay and the oracle judges, even when a replay diverges because the app
+changed. Measured on the demo: ~3 min and ~3–7 credits for all four boundaries (docs/E2E.md). Locked boundaries only move one way: once a boundary
 holds, a later leak is a regression your agent has to fix in the app code, not in the test.
 Use `lock --reauthor` to re-record when the UI changes enough that a replay no longer applies.
 
@@ -157,7 +168,7 @@ This merges three hooks and a few `permissions.deny` rules (for the secrets and 
   write new or unlocked boundaries.
 - **post-tool** (PostToolUse): when the agent edits a file in a boundary's `surface`, that boundary
   is marked for re-checking.
-- **stop** (Stop): before the agent finishes, changed locked boundaries are replayed for 0 credits.
+- **stop** (Stop): before the agent finishes, changed locked boundaries are replayed (no authoring).
   A leak blocks the stop and hands the agent the evidence and the code to fix. Unlocked
   boundaries are never re-authored automatically; the agent is told to ask you first.
 
@@ -171,8 +182,9 @@ passwords, for your identities.
 
 | Action | Kane credits |
 |---|---|
-| First run of a boundary (authoring) | about 30 per Kane run (varies about 2× for the same task) |
-| `replay`, the stop hook, demo replays | 0 |
+| First run of a boundary (authoring) | ~5–30 per Kane run (measured on the demo; varies 2× for the same task) |
+| Each persona's first login on a machine | one authoring run (~10–17), then replayed for 0 |
+| `replay`, the stop hook | 0 for a replay that passes; a few credits when Kane marks a replay failed (its triage) |
 | `doctor`, `map`, `report`, `run --dry-run` | 0 |
 
 notyours refuses to start authoring runs when your balance is below `creditFloor` (default 300,
