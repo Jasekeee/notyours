@@ -16,7 +16,7 @@ export function proRoutes(db) {
       : `<p><span class="badge pro">PRO</span> Export is a Jotter Pro feature. Upgrade to Pro to download your notes.</p>`;
     const body = `<h1>Export notes</h1>
 <div class="card">
-<p>Download all ${esc(n)} of your notes as a plain text file.</p>
+<p>Download ${n === 1 ? 'your note' : `all ${esc(n)} of your notes`} as a plain text file.</p>
 ${action}
 </div>`;
     res.send(page({ title: 'Export notes', user: req.user, active: 'export', body }));

@@ -9,6 +9,10 @@ export function esc(value) {
     .replaceAll("'", '&#39;');
 }
 
+const FAVICON = `data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#2f6f5e"/><path d="M10 9h12M10 15h12M10 21h7" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>',
+)}`;
+
 const CSS = `
 :root {
   --bg: #f7f6f3; --card: #ffffff; --ink: #1f2328; --muted: #6b6f76; --line: #e6e3dd;
@@ -72,6 +76,7 @@ export function page({ title, user, active = '', body }) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} · Jotter</title>
+<link rel="icon" href="${FAVICON}">
 <style>${CSS}</style>
 </head>
 <body>
