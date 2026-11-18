@@ -1,9 +1,9 @@
 // PreToolUse (Edit|Write|MultiEdit|Bash): .notyours/ (boundaries, tests, attempts, config) is read-only for the agent.
 // This is a speed bump, not a sandbox: shell variables or an interpreter can still reach the files. The backstop
 // is that .notyours/ changes show up in git, where the human reviews them.
-import { lstatSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import { globToRegExp, toProjectPath } from './glob.js';
+import { physicalPath } from './physical.js';
 import { ok, projectDirOf, type HookInput, type HookResult } from './types.js';
 
 export const GUARD_MESSAGE =
@@ -60,54 +60,6 @@ export function bashTouchesNotyours(command: string): boolean {
   if (MUTATING_CLI.test(command) || MUTATING_CLI.test(norm)) return true;
   const mentions = [command, norm].some((c) => NOTYOURS_PATH.test(c) || globReachesNotyours(c));
   return mentions && !(isReadOnly(command) && isReadOnly(norm));
-}
-
-class Unresolvable extends Error {}
-const MAX_LINKS = 40; // macOS gives up at 32 links, Linux at 40
-
-/**
- * Where the kernel would put `p`, walked one component at a time the way path lookup works: `..` applies to the
- * physical directory reached so far (never to the raw string, which path.resolve/join would do), and every symlink,
- * dangling ones included, is spliced into the remaining components. Components that don't exist yet are taken as
- * plain directories, since Write creates missing parents. Throws Unresolvable on a loop; callers fail closed.
- */
-export function physicalPath(p: string): string {
-  if (!path.isAbsolute(p)) throw new Unresolvable(p);
-  const todo = p.split(/[\\/]+/).filter(Boolean);
-  let cur = path.parse(p).root || '/';
-  let links = 0;
-  let missing = false; // once a component is missing, nothing below it exists either
-  while (todo.length) {
-    const c = todo.shift() as string;
-    if (c === '.') continue;
-    if (c === '..') {
-      cur = path.dirname(cur);
-      missing = false;
-      continue;
-    }
-    const next = path.join(cur, c);
-    if (missing) {
-      cur = next;
-      continue;
-    }
-    let st: import('node:fs').Stats;
-    try {
-      st = lstatSync(next);
-    } catch {
-      missing = true;
-      cur = next;
-      continue;
-    }
-    if (!st.isSymbolicLink()) {
-      cur = next;
-      continue;
-    }
-    if (++links > MAX_LINKS) throw new Unresolvable(p);
-    const target = readlinkSync(next);
-    if (path.isAbsolute(target)) cur = path.parse(target).root || '/';
-    todo.unshift(...target.split(/[\\/]+/).filter(Boolean)); // relative targets resolve from cur (the link's physical parent)
-  }
-  return cur;
 }
 
 const hasNotyoursComponent = (p: string): boolean => p.split(/[\\/]/).some((c) => c.toLowerCase() === '.notyours');

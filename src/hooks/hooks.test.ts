@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notyoursPaths } from '../ratchet/paths.js';
 import { readDirty } from '../ratchet/store.js';
 import { lockedBoundary, tempProject } from '../ratchet/testkit.js';
+import { isAppDir } from './appdir.js';
 import { bashTouchesNotyours, GUARD_MESSAGE, runHook, type HookName } from './index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -73,6 +74,31 @@ describe('post-tool hook', () => {
     expect(existsSync(path.join(repo, '.notyours'))).toBe(false); // nothing written at the repo root
     await edit(path.join(demo, '.notyours', 'boundaries.yaml')); // edits to .notyours itself never dirty
     expect(Object.keys(readDirty(notyoursPaths(demo)))).toEqual(['b1-notes-cross-user']);
+  });
+
+  it('marks dirty when the edit goes through a symlink into the app (physical path)', async () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'ny-repo-'));
+    const demo = path.join(repo, 'demo');
+    renameSync(project, demo);
+    mkdirSync(path.join(demo, 'src', 'app', 'api', 'notes'), { recursive: true });
+    symlinkSync(path.join(demo, 'src', 'app', 'api', 'notes'), path.join(repo, 'lnk'));
+    await runHook('post-tool', JSON.stringify({ cwd: repo, tool_name: 'Edit', tool_input: { file_path: `${repo}/lnk/route.ts` } }));
+    expect(readDirty(notyoursPaths(demo))['notes-cross-user']?.files).toEqual(['src/app/api/notes/route.ts']);
+  });
+
+  it('a nested .notyours/ does not shadow the outer app', async () => {
+    const inner = path.join(project, 'src', 'app');
+    mkdirSync(path.join(inner, '.notyours'), { recursive: true });
+    writeFileSync(path.join(inner, '.notyours', 'config.yaml'), 'baseUrl: http://127.0.0.1:1\n');
+    await runHook('post-tool', fixture('post-tool-edit-surface', project));
+    expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
+  });
+
+  it('a bare .notyours/ without config or boundaries is not an app folder', () => {
+    const d = mkdtempSync(path.join(os.tmpdir(), 'ny-bare-'));
+    mkdirSync(path.join(d, '.notyours'));
+    expect(isAppDir(d)).toBe(false);
+    expect(isAppDir(project)).toBe(true);
   });
 
   it('is fast: 200 boundaries, well under 300ms in-process', async () => {

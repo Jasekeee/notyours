@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,8 @@ import { engineOracle } from '../ratchet/replay.js';
 import { readAttempts, readDirty, writeAttempts, writeDirty } from '../ratchet/store.js';
 import { FakeKane, lockedBoundary, tempProject } from '../ratchet/testkit.js';
 import type { Boundary, Config, Engine, Identity, ProbeResult } from '../types.js';
+import { scanAppDirs } from './appdir.js';
+import { postToolHook } from './post-tool.js';
 import { parseHookInput } from './types.js';
 import { LAST_LINE, MAX_REPORT_LINES, stopHook, type StopDeps } from './stop.js';
 import { formatLeakReport } from './stop.js';
@@ -187,6 +189,24 @@ describe('stop hook with the app in a subfolder (demo/)', () => {
     expect(readAttempts(notyoursPaths(demo))).toEqual({ 'notes-cross-user': 1 });
     expect((await stopHook(input('stop-continuation', repo), d)).exitCode).toBe(0);
     expect(readDirty(notyoursPaths(demo))).toEqual({});
+  });
+
+  it('reaches an app folder the scan misses (deep, under a dot folder) through the post-tool index', async () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'ny-repo-'));
+    const deep = path.join(repo, '.hidden', 'a', 'b', 'c', 'd', 'e', 'f', 'app');
+    mkdirSync(path.dirname(deep), { recursive: true });
+    renameSync(project, deep);
+    expect(scanAppDirs(repo)).toEqual([]); // too deep for the scan
+    mkdirSync(path.join(deep, 'src', 'app', 'api', 'notes'), { recursive: true });
+    await postToolHook(parseHookInput(JSON.stringify({ cwd: repo, tool_name: 'Edit', tool_input: { file_path: `${deep}/src/app/api/notes/route.ts` } })), { CLAUDE_PROJECT_DIR: repo });
+    const seen: string[] = [];
+    const r = await stopHook(input('stop-first', repo), {
+      env: { CLAUDE_PROJECT_DIR: repo },
+      replay: async (ids, ctx) => (seen.push(ctx.projectDir), ids.map((boundaryId) => ({ ...mockHeldResult, boundaryId }))),
+    });
+    expect(r.exitCode).toBe(0);
+    expect(seen).toEqual([deep]);
+    expect(readDirty(notyoursPaths(deep))).toEqual({});
   });
 
   it('exits 0 fast when no app folder has dirty boundaries', async () => {
