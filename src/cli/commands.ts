@@ -68,15 +68,27 @@ const FILE_EXT = new Set(['html', 'htm', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx',
  * Email domains (alice@demo.test) are not navigation targets and are skipped.
  */
 export function boundaryUrls(b: Boundary): string[] {
-  // Unicode full stops (。．｡) are treated as dots by URL parsers: normalise before scanning.
-  const objectives = [b.create.objective, b.proAction?.objective ?? ''].join('\n').replace(/[\u3002\uFF0E\uFF61]/g, '.');
-  const text = [objectives, ...b.targets.ui, ...b.targets.api].join('\n');
+  // NFKC maps fullwidth letters/dots to ASCII; the other ideographic full stops are mapped by hand.
+  const objectives = nfkc([b.create.objective, b.proAction?.objective ?? ''].join('\n'));
+  const text = [objectives, ...b.targets.ui.map(nfkc), ...b.targets.api.map(nfkc)].join('\n');
   const urls = [...text.matchAll(/https?:\/\/[^\s'"`<>)]+/gi)].map((m) => m[0].replace(/[.,;]+$/, ''));
-  const hostTokens = [...objectives.matchAll(/(?<![\w@.-])((?:[a-z0-9-]+\.)+[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3})(?![\w-]*@)\b/gi)]
-    .map((m) => m[1]!.toLowerCase())
+  // Unicode-aware: internationalised names are checked as the punycode host the browser would use.
+  const hostTokens = [...objectives.matchAll(/(?<![\p{L}\p{N}_@.-])((?:[\p{L}\p{N}-]+\.)+\p{L}{2,}|\d{1,3}(?:\.\d{1,3}){3})(?![\p{L}\p{N}_-]*@)(?![\p{L}\p{N}])/gu)]
+    .map((m) => toAsciiHost(m[1]!))
     .filter((h) => /^\d/.test(h) || !FILE_EXT.has(h.slice(h.lastIndexOf('.') + 1)))
     .map((h) => `http://${h}/`);
   return [...new Set([...urls, ...hostTokens])];
+}
+
+const nfkc = (s: string) => s.normalize('NFKC').replace(/[\u3002\uFF0E\uFF61]/g, '.');
+
+/** Host as the URL parser sees it (lowercase, punycode); unparseable tokens stay as-is and fail the check. */
+function toAsciiHost(token: string): string {
+  try {
+    return new URL(`http://${token}/`).hostname;
+  } catch {
+    return token.toLowerCase();
+  }
 }
 
 /** A target is an absolute http(s) URL, or exactly a stored value optionally followed by a path/query. */
@@ -104,7 +116,7 @@ export function assertHostsAllowed(cfg: Config, boundaries: Boundary[], root: st
   };
   check(cfg.baseUrl, 'config.yaml baseUrl');
   for (const b of boundaries) {
-    for (const t of [...b.targets.ui, ...b.targets.api]) {
+    for (const t of [...b.targets.ui, ...b.targets.api].map(nfkc)) {
       if (!TARGET_RE.test(t) || /[\s'"`<>()\\]/.test(t)) {
         throw new UserError(`boundary ${b.id}: target "${t}" must be an absolute http(s) URL, or a {{stored}} value optionally followed by /path`);
       }

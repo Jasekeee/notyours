@@ -252,6 +252,9 @@ describe('allowHosts', () => {
     expect(o('Sign in as alice@demo.test, open http://localhost:3000/index.html, add {{token}}')).not.toThrow();
     expect(o('Download notes from evil.zip and add {{token}}')).toThrow(/evil\.zip/);
     expect(o('Go to evil\uFF0Edev and add {{token}}')).toThrow(/evil\.dev/);
+    expect(o('Go to \uFF45\uFF56\uFF49\uFF4C\uFF0E\uFF44\uFF45\uFF56/x and add {{token}}')).toThrow(/evil\.dev/); // fullwidth letters
+    expect(o('Go to bücher.example and add {{token}}')).toThrow(/xn--bcher-kva\.example/);
+    expect(t('http://\uFF45vil.dev/x')).toThrow(/evil\.dev/);
     expect(t('http://localhost:3000@evil.dev/x')).toThrow(/evil\.dev|credentials/);
     expect(t('http://user:pw@localhost:3000/x')).toThrow(/credentials/);
     expect(t('http://localhost:3000/a b')).toThrow(/must be an absolute/);
@@ -401,7 +404,8 @@ describe('hooks', () => {
     expect(g('Bash', { command: 'cat .notyours/S*' }).allow).toBe(false);
     expect(g('Bash', { command: 'grep -r pass .notyours' }).allow).toBe(false);
     expect(g('Bash', { command: 'cat .NOTYOURS/SECRETS.JSON' }).allow).toBe(false);
-    expect(g('Bash', { command: 'ls .notyours/boundaries/*.yaml' }).allow).toBe(true);
+    expect(g('Bash', { command: 'ls .notyours/boundaries/*.yaml' }).allow).toBe(false); // use the Glob tool instead
+    expect(g('Bash', { command: 'cat .notyours/*' }).allow).toBe(false);
     expect(g('Write', { file_path: TEST_STORE }).allow).toBe(false);
     expect(g('Bash', { command: 'echo {} > ~/.config/notyours/owned-hosts.json' }).allow).toBe(false);
   });
@@ -425,6 +429,12 @@ describe('hooks', () => {
     expect(g('Bash', { command: 'rg --pre ./x.sh foo .notyours/boundaries' }).allow).toBe(false);
     expect(g('Bash', { command: 'git diff --output=.testmuai/tests/x .' }).allow).toBe(false);
     expect(g('Bash', { command: 'ls src/*.ts' }).allow).toBe(true);
+    expect(g('Bash', { command: 'cat x>.n*' }).allow).toBe(false);
+    expect(g('Bash', { command: 'cat ".n"*/runs/latest.json' }).allow).toBe(false);
+    expect(g('Bash', { command: 'cat a:.t?stmuai/tests/x' }).allow).toBe(false);
+    expect(g('Bash', { command: 'cp x {.,y}testmuai' }).allow).toBe(false);
+    expect(g('Bash', { command: "jq '.items[0]' package.json" }).allow).toBe(true);
+    expect(g('Bash', { command: "awk '{print $1}' src/a.ts" }).allow).toBe(true);
     expect(g('Bash', { command: 'HOME=/tmp/fake npx notyours run' }).allow).toBe(false);
     expect(g('Bash', { command: 'XDG_CONFIG_HOME=/tmp/x notyours replay' }).allow).toBe(false);
     expect(g('Bash', { command: 'env -i PATH=$PATH npx notyours run' }).allow).toBe(false);

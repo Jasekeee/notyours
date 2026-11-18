@@ -105,6 +105,16 @@ export function lockedBoundaryFiles(root: string): string[] {
 }
 
 
+/**
+ * Globs the shell would expand into a dot-path (.n*, x/.t?stmuai, ">.c*"), or any unquoted brace expansion.
+ * Quoted text doesn't glob in the shell, so it's checked with its metacharacters removed (jq '.items[0]' is fine),
+ * but its dots still count (".n"* expands like .n*).
+ */
+export function hasDangerousGlob(raw: string): boolean {
+  const unquoted = raw.replace(/'[^']*'|"[^"]*"/g, (m) => m.slice(1, -1).replace(/[*?[\]{}]/g, ''));
+  return /(?:^|[\s/=><(;|&:])\.[^\s]*[*?[{]/.test(unquoted) || /\{[^}\s]*(?:,|\.\.)[^}\s]*\}/.test(unquoted);
+}
+
 export function guard(input: HookInput, root: string): GuardResult {
   const tool = input.tool_name ?? '';
   const cwd = input.cwd ?? root;
@@ -132,7 +142,7 @@ export function guard(input: HookInput, root: string): GuardResult {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
     }
     // Globs/braces on any dot-path could expand to a protected folder (.n*, ./.t?stmuai, .{notyours,x}).
-    if (/(?:^|[\s/=])\.[^\s/]*[*?[{]/.test(cmd)) return deny('globs and braces on dot-paths (like .n*) are not allowed: name the file explicitly.');
+    if (hasDangerousGlob(raw)) return deny('unquoted globs or braces on dot-paths (like .n*) are not allowed: name the file explicitly.');
     // Every segment that mentions a protected folder must be an allowlisted read-only command.
     const segments = cmd.split(/&&|\|\||;|\||\n|\$\(|`/).map((s) => s.trim()).filter(Boolean);
     for (const seg of segments) {
