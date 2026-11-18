@@ -30,6 +30,15 @@ const fakeRunner: KaneRunner = async (objective, identity, vars) => {
     const token = typeof vars.token === 'string' ? vars.token : vars.token!.value;
     const n = app.addNote(identity.email!, `Note ${token}`, `Secret body ${token}`);
     stored.item_url = `${app.url}/notes/${n.id}`;
+  } else {
+    // Like Kane: open the {{tN}} pages in the identity's own Chrome first (this warms its HTTP cache).
+    const urls = Object.entries(vars).filter(([k]) => /^t\d+$/.test(k)).map(([, v]) => (typeof v === 'string' ? v : v.value));
+    if (urls.length) {
+      const b = await puppeteer.connect({ browserURL: (await pool.get(identity)).endpoint, defaultViewport: null });
+      const p = (await b.pages())[0] ?? (await b.newPage());
+      for (const u of urls) await p.goto(u, { waitUntil: 'networkidle2' }).catch(() => {});
+      await b.disconnect();
+    }
   }
   return { run: { objective, identity: identity.id, status: 'passed', exitCode: 0, finalState: {}, creditsConsumed: 0, durationS: 0.1 }, stored, text: '' };
 };
@@ -89,6 +98,8 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
     expect(r.hits.every((h) => h.where === 'network')).toBe(true);
     expect(r.hits.some((h) => /\/api\/notes\//.test(h.url) && h.token === alice().token)).toBe(true);
     expect(r.controls).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true });
+    // The oracle's own visit (after "Kane" warmed the cache) must still see the payload: hit page screenshot.
+    expect(r.screenshots.some((s) => s.endsWith('payload-bob-leak-ui0.png'))).toBe(true);
   }, 60_000);
 
   it('URL echo is not a leak: a 404 that repeats the requested path -> HELD', async () => {

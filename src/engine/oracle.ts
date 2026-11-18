@@ -98,7 +98,7 @@ export class Capture {
 
   private async record(r: HTTPResponse, page: Page): Promise<void> {
     const status = r.status();
-    if (status >= 300 && status < 400) return;
+    if (status >= 300 && status < 400 && status !== 304) return; // 304: Chrome may still hand us the cached body
     const headers = r.headers();
     if (!/text\/|json|html/i.test(headers['content-type'] ?? '')) return;
     if (Number(headers['content-length'] ?? 0) > MAX_BODY) return;
@@ -115,6 +115,8 @@ export class Capture {
   /** Open a URL in a new tab (never a Kane-controlled page), capture its DOM tokens and responses. */
   async visit(url: string, tag: string, kind: 'ui' | 'api', maxAttempts = 1): Promise<Visit> {
     const page = await this.browser.newPage();
+    // Fresh 200s with bodies: a warm cache (Kane already loaded these URLs) yields 304s with no body.
+    await page.setCacheEnabled(false);
     this.watch(page, tag);
     let status = 0;
     let error: string | undefined;
