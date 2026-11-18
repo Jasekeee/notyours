@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -77,6 +77,17 @@ describe('guard hook', () => {
       expect(r.stderr?.trim()).toBe(GUARD_MESSAGE);
     });
   }
+  it('blocks a different-case path (case-insensitive filesystems)', async () => {
+    const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Write', tool_input: { file_path: `${project}/.NotYours/attempts.json` } }));
+    expect(r.exitCode).toBe(2);
+  });
+
+  it('blocks a write through a symlink that points into .notyours', async () => {
+    symlinkSync(path.join(project, '.notyours'), path.join(project, 'innocent'));
+    const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Edit', tool_input: { file_path: `${project}/innocent/boundaries.yaml` } }));
+    expect(r.exitCode).toBe(2);
+  });
+
   for (const name of ['guard-edit-app', 'guard-bash-npm-test']) {
     it(`allows ${name}`, async () => expect((await runHook('guard', fixture(name, project))).exitCode).toBe(0));
   }
@@ -91,6 +102,17 @@ describe('guard hook', () => {
     ['cat $(echo .notyours/config.yaml)', true],
     ['npx notyours lock --reauthor notes-cross-user', true],
     ['git checkout -- .notyours/boundaries.yaml', true],
+    ['ls .notyours/tests | xargs rm', true],
+    ['cat .notyours/a && npm test', true],
+    ['rm -rf .noty*/tests', true],
+    ['rm -rf .n?tyours', true],
+    ['rm .[n]otyours/attempts.json', true],
+    ['echo {} > .NOTYOURS/dirty.json', true],
+    ['rg --pre "rm -f" x .notyours', true],
+    ['tree -o .notyours/attempts.json .', true],
+    ['cat $D/.notyours/config.yaml', true],
+    ['rm -rf build/* dist/*', false],
+    ['ls .git .github', false],
     ['cat .notyours/runs/last/report.md', false],
     ['ls -la .notyours/runs 2>&1 | head -20', false],
     ['grep -r NY-ALICE .notyours/runs > /dev/null', false],

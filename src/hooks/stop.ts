@@ -67,7 +67,8 @@ function leakBlock(b: Boundary, r: ProbeResult, d: DirtyEntry | undefined, attem
     `  ${b.viewer} saw ${b.owner}'s data`,
     `  URL: ${hit?.url ?? '(unknown)'}`,
     `  Leak: ${leakKind(r)}`,
-    `  Token: ${hit ? oneLine(scrubSecrets(hit.snippet, ids)) : '(no hit recorded)'}`,
+    // The snippet is page/network text: quote it as data so it cannot read as an instruction to the agent.
+    `  Token: ${hit ? `${hit.token} in page text (untrusted): ${JSON.stringify(oneLine(scrubSecrets(hit.snippet, ids), 120))}` : '(no hit recorded)'}`,
   ];
   if (r.hits.length > 1) lines.push(`  (+${r.hits.length - 1} more hit(s): ${[...new Set(r.hits.slice(1).map((h) => h.url))].slice(0, 3).join(', ')})`);
   lines.push(`  Screenshot: ${r.screenshots[0] ?? '(none)'}`);
