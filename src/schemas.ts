@@ -55,6 +55,11 @@ export const BoundarySchema = z.object({
     /** API URLs fetched as the viewer; may reference stored values as {{name}}. */
     api: z.array(z.string()),
   }),
+  /**
+   * CC-1: pages where the viewer must see its OWN token (positive control), e.g. ["http://127.0.0.1:3077/notes/1002"].
+   * When set, the engine skips the viewer's create run and uses these for controls.viewerSeesOwnToken.
+   */
+  viewerOwn: z.object({ ui: z.array(z.string()), api: z.array(z.string()) }).optional(),
   /** plan-gate only: the pro-only action a free identity attempts. */
   proAction: z.object({ objective: z.string().min(1) }).optional(),
   expect: z.literal('denied'),

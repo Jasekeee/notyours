@@ -94,7 +94,8 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     const [oCreate, vCreate] = await both(
       cfg.parallel,
       () => kane(b.create.objective, owner, createVars(owner)),
-      () => (b.kind === 'guest' ? Promise.resolve(undefined) : kane(b.create.objective, viewer, createVars(viewer))),
+      // CC-1: with viewerOwn the viewer's control pages are given, so its create run is skipped (one run saved).
+      () => (b.kind === 'guest' || b.viewerOwn ? Promise.resolve(undefined) : kane(b.create.objective, viewer, createVars(viewer))),
     );
     // The owner's create run is required. The viewer's is best-effort: it only feeds the viewer's positive
     // control, and seeded boundaries (fixed owner URLs) legitimately fail it as the viewer.
@@ -150,7 +151,17 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     const ownerVisits = await visitAll(ocap, ownerTargets, 'octl');
     let viewerCtlVisits: Visit[] = [];
     let viewerOk: boolean;
-    if (b.kind === 'guest') {
+    if (b.viewerOwn && b.kind === 'guest') notes.push('viewerOwn is ignored for guest boundaries (a guest has no own page)');
+    if (b.viewerOwn && b.kind !== 'guest') {
+      // CC-1: explicit pages where the viewer must see its own token.
+      const own = { ui: b.viewerOwn.ui.map((u) => resolveTemplate(u, viewerCtx)), api: b.viewerOwn.api.map((u) => resolveTemplate(u, viewerCtx)) };
+      const unresolvedOwn = [...own.ui, ...own.api].filter((u) => /\{\{/.test(u));
+      if (unresolvedOwn.length) notes.push(`unresolved viewerOwn templates: ${unresolvedOwn.join(', ')}`);
+      const ready = { ui: own.ui.filter((u) => !/\{\{/.test(u)), api: own.api.filter((u) => !/\{\{/.test(u)) };
+      for (const u of [...ready.ui, ...ready.api]) assertAllowed(parseTarget(u).url, cfg);
+      viewerCtlVisits = await visitAll(vcap, ready, 'vctl');
+      viewerOk = seesToken(viewer.token, viewerCtlVisits, vcap.records);
+    } else if (b.kind === 'guest') {
       viewerOk = leakVisits.every((v) => v.status > 0 && !v.error);
       if (!viewerOk) notes.push('guest browser could not load every target');
     } else if (b.kind === 'sweep') {

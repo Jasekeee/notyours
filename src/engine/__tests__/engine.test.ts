@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ConfigSchema } from '../../schemas.js';
+import { BoundarySchema, ConfigSchema } from '../../schemas.js';
 import type { Boundary, Config, Identity } from '../../types.js';
 import { ChromePool } from '../chrome.js';
 import { byId, createIdentities } from '../identities.js';
@@ -170,6 +170,68 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
     const diag = JSON.parse(readFileSync(join(stateDir, 'runs', 'test', 'seeded.json'), 'utf8'));
     expect(diag.notes.join(' ')).toMatch(/viewer create run failed/);
   }, 60_000);
+
+  describe('CC-1 viewerOwn', () => {
+    const noteUrl = (id: string, body: string) => `${app.url}/notes/${app.addNote(byId(ids, id).email!, 'Seeded', body).id}`;
+
+    it('schema: optional, needs both ui and api', () => {
+      const base = boundary({ id: 'schema' });
+      expect(BoundarySchema.safeParse(base).success).toBe(true);
+      expect(BoundarySchema.safeParse({ ...base, viewerOwn: { ui: ['http://127.0.0.1/notes/2'], api: [] } }).success).toBe(true);
+      expect(BoundarySchema.safeParse({ ...base, viewerOwn: { ui: ['http://127.0.0.1/notes/2'] } }).success).toBe(false);
+    });
+
+    it('seeded cross-user, safe route: viewer create skipped, control from viewerOwn -> HELD', async () => {
+      seededUrl = noteUrl('alice', `Alice seed ${alice().token}`);
+      const bobOwn = noteUrl('bob', `Bob seed ${byId(ids, 'bob').token}`);
+      const r = await engine.runBoundary(boundary({
+        id: 'own-held', create: { objective: SEEDED, store: ['item_url'] },
+        targets: { ui: [`${seededUrl}/safe`], api: [] }, viewerOwn: { ui: [`${bobOwn}/safe`], api: [] },
+      }), ids, cfg);
+      expect(r.verdict).toBe('HELD');
+      expect(r.controls).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true });
+      expect(r.kaneRuns.map((k) => `${k.identity}:${k.status}`)).toEqual(['alice:passed', 'bob:passed']); // owner create + viewer visit
+      expect(r.screenshots.some((f) => f.endsWith('own-held-bob-vctl-ui0.png'))).toBe(true);
+    }, 60_000);
+
+    it('seeded cross-user, IDOR route: -> LEAK_VISIBLE with both controls', async () => {
+      seededUrl = noteUrl('alice', `Alice seed ${alice().token}`);
+      const bobOwn = noteUrl('bob', `Bob seed ${byId(ids, 'bob').token}`);
+      const r = await engine.runBoundary(boundary({
+        id: 'own-leak', create: { objective: SEEDED, store: ['item_url'] },
+        targets: { ui: [seededUrl], api: [] }, viewerOwn: { ui: [bobOwn], api: [] },
+      }), ids, cfg);
+      expect(r.verdict).toBe('LEAK_VISIBLE');
+      expect(r.controls).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true });
+    }, 60_000);
+
+    it('B3 shape (plan-gate, store: [], POST export): gated -> HELD, leaky -> LEAK_PAYLOAD', async () => {
+      noteUrl('pro_user', `Pro seed ${byId(ids, 'pro_user').token}`); // the pro owner's export must contain its own token
+      const freeOwn = noteUrl('free_user', `Free seed ${byId(ids, 'free_user').token}`);
+      const b3 = (id: string, api: string) => boundary({
+        id, kind: 'plan-gate', owner: 'pro_user', viewer: 'free_user',
+        create: { objective: 'Verify the export button is visible', store: [] },
+        proAction: { objective: 'Export my notes' }, targets: { ui: [], api: [api] }, viewerOwn: { ui: [freeOwn], api: [] },
+      });
+      const gated = await engine.runBoundary(b3('own-b3-gated', 'POST {{base_url}}/api/export'), ids, cfg);
+      expect(gated.verdict).toBe('HELD');
+      expect(gated.controls).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true });
+      expect(gated.kaneRuns.map((k) => k.identity).sort()).toEqual(['free_user', 'pro_user', 'pro_user']); // no free create
+      const leaky = await engine.runBoundary(b3('own-b3-leaky', 'POST {{base_url}}/api/export-leaky'), ids, cfg);
+      expect(leaky.verdict).toBe('LEAK_PAYLOAD');
+    }, 60_000);
+
+    it('viewerOwn page the viewer cannot see (not signed in) -> HARNESS_BROKEN', async () => {
+      seededUrl = noteUrl('alice', `Alice seed ${alice().token}`);
+      const daveOwn = noteUrl('dave', `Dave seed ${byId(ids, 'dave').token}`);
+      const r = await engine.runBoundary(boundary({
+        id: 'own-broken', viewer: 'dave', create: { objective: SEEDED, store: ['item_url'] },
+        targets: { ui: [`${seededUrl}/safe`], api: [] }, viewerOwn: { ui: [`${daveOwn}/safe`], api: [] },
+      }), ids, cfg);
+      expect(r.verdict).toBe('HARNESS_BROKEN');
+      expect(r.controls.viewerSeesOwnToken).toBe(false);
+    }, 60_000);
+  });
 
   it('guest: fresh profile, no login, sees nothing -> HELD', async () => {
     const r = await engine.runBoundary(boundary({ id: 'guest', kind: 'guest', viewer: 'guest' }), ids, cfg);
