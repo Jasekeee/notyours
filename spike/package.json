@@ -1,0 +1,11 @@
+{
+  "name": "notyours-spike",
+  "version": "1.0.0",
+  "description": "kane-cli G1 spike",
+  "scripts": {},
+  "type": "commonjs",
+  "private": "true",
+  "dependencies": {
+    "puppeteer-core": "^25.18.1"
+  }
+}
