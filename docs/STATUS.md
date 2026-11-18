@@ -53,7 +53,24 @@ The floor is Kane, not notyours. The demo's boundaries all include Alice, so the
 path. It helps projects whose boundaries use different personas. Stopped after 18 of the 90 timeboxed minutes:
 the rest would have been Kane time.
 
-## Credits spent in this prompt
+## Judge path (measured on a clean copy, kane-cli 0.10.0)
+| Step | Time |
+|---|---|
+| `git clone` (fresh, `/tmp/judge`) | 2 s |
+| `npm ci` (runs `prepare` → build; warm npm cache) | 2 s |
+| `npm run build` | <1 s |
+| `node dist/cli/index.js doctor` | 3 s, all green, `kane-cli version 0.10.0 (tested 0.10.0–0.10.6)` |
+| `node dist/cli/index.js demo --quick` | **4 m 17 s**, B1 **LEAK_VISIBLE** with both controls, 60.90 credits (4 authoring runs) |
+| `npx --yes github:Jasekeee/notyours demo --quick` (empty folder) | **5 m 9 s** total (install + `prepare` build ≈ 27 s, then the demo 4 m 42 s); B1 **LEAK_VISIBLE**, 30.94 credits |
+
+The demo copy contains no `test/` or `vitest.config.js`.
+
+### Feature-freeze prompt (catch every edit, faster replays, judge path)
+**12 authoring runs** of the 15 allowed (B3 re-recorded on a non-gated page: 4; judge path A: 4; judge path B: 4).
+About **153 Kane credits**: B3 re-recording 40.06, judge A 60.90, judge B 30.94, and the Stop-pass measurements 21.46.
+Balance is now 10,163.58.
+
+## Credits spent in the integration prompt
 **529.17 Kane credits** (balance 10,960.34 → 10,431.17), **44 authoring runs** of the 52 approved, plus about $2.48 of
 Claude Code usage for the four headless sessions.
 
@@ -113,6 +130,9 @@ From the automated security review. By decision, only real secret or credential 
   goes unnoticed. In a git repo, gitignored files under a surface aren't scanned, and the agent could edit
   `.gitignore`. Git file listings aren't `-z`-quoted, so unusual file names may be missed. The non-git walk skips
   `node_modules`, `dist`, `data` (and others) at any depth and stops at 50,000 files.
+- `planLock` writes plan-gate `viewerOwn` URLs into the recorded objective after filling in stored values; a
+  templated host in `viewerOwn` isn't re-checked against `allowHosts` at that point (literal URLs are checked by the
+  CLI host gate).
 - The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and
   overshoot the cap by the number of parallel runs (the engine runs at most 2 at once).
 

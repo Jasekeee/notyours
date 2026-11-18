@@ -44,25 +44,49 @@ You also need Google Chrome and an authenticated [kane-cli](https://www.testmuai
 
 ## Judges' quick start
 
+You need Node 22+, Google Chrome, and an authenticated [kane-cli](https://www.testmuai.com/kane-cli/)
+(`kane-cli login`). `npx notyours doctor` checks all of it, including the kane-cli version, and tells you how
+to fix anything that isn't ready. Until notyours is on npm, use `npx github:Jasekeee/notyours` wherever
+`npx notyours` is written below.
+
+**(a) No credits: the sample report.** Open [`docs/sample-report/report.html`](docs/sample-report/report.html),
+a redacted result of the full demo: 2 leaks, 2 held. It has no screenshots, emails, account ids or links.
+
+**(b) One real leak: `npx notyours demo --quick`.** B1 only: Bob opens Alice's note.
+~4 min, ~45 Kane credits (4 authoring runs: both personas' first login, then B1). Expect `LEAK_VISIBLE` with both
+positive controls passing.
+
+**(c) The full demo: `npx notyours demo`.** B1–B4. ~10 min, ~120 Kane credits. Expect B1 LEAK, B2 HELD, B3 LEAK (a
+free user gets the Pro export through the API), B4 HELD.
+
+Both modes print the expected time and credits before they start. Times are measured on kane-cli 0.10.0. On
+**0.10.6, expect about 2.5× longer**, with replays that cost a few credits ([docs/KANE_COMPAT.md](docs/KANE_COMPAT.md)).
+
+**(d) The loop with Claude Code.** Make a demo copy, install the hooks, and let Claude Code drive notyours:
+
 ```sh
-npx notyours doctor        # everything green? (it tells you how to fix anything that isn't)
-npx notyours demo --quick  # B1 only: Bob opens Alice's note, one real leak. ~4 min, ~45 Kane credits
-npx notyours demo          # all four boundaries (B1–B4). ~10 min, ~120 Kane credits
+npx notyours demo --dir ~/jotter-loop --no-open   # a copy of the demo app, proved once
+cd ~/jotter-loop && npx notyours install-hooks     # guard + post-tool + Stop replay hooks
+node server.js &                                  # keep the app running on :3077
+claude "Run npx notyours run, fix every leak it reports in the server code (not the tests), \
+        rerun until all boundaries hold, then npx notyours lock. Then add a 'duplicate note' button."
 ```
 
-Both modes print the expected time and credits before they start. **No credits at all:** open
-[`docs/sample-report/report.html`](docs/sample-report/report.html), a redacted result of the full demo
-(2 leaks, 2 held; no screenshots, emails, account ids or links).
+Once the boundaries are locked, every edit Claude makes to their code is replayed when it stops. A leak blocks the
+stop with the evidence, Claude fixes the access check, and the next replay is GREEN. Recorded runs are in
+[docs/loop-run-1/](docs/loop-run-1/)–[3](docs/loop-run-3/). Authoring runs are capped per project per day (20 by
+default); see below.
 
-The report opens with a headline like **"Bob saw Alice's data"**, then one card per boundary: the
-verdict, who tried what, the positive controls, where the token showed up (with the token
-highlighted), screenshots, and the credits each one used.
-
-**Why the demo authors instead of replaying:** Kane recordings only replay when they keep the
-TestMu account ids (`org_id`, `user_id`, `project_id`) of the machine that recorded them, so notyours
-never commits them (`.notyours/tests/` is gitignored; recorded logins also hold the typed password). Each
-fresh demo therefore records its personas' logins and boundaries once. Rerun with `--dir <folder>`
-to reuse that folder's recordings: logins and locked boundaries then replay without authoring.
+**Honest notes**
+- **Jotter's bugs are seeded on purpose.** Each is labelled `// SEEDED BUG #n` in `demo/routes/`. Jotter's own
+  tests, which assert those bugs, stay in this repo and are never copied into a demo.
+- **Why the demo authors instead of replaying:** Kane recordings only replay with the TestMu account ids of the
+  machine that recorded them, so notyours never commits them (`.notyours/tests/` is gitignored; recorded logins also
+  hold the typed password). Every fresh demo records its personas' logins and boundaries once. Rerun with
+  `--dir <folder>` to replay them.
+- **The report** opens with a headline like **"Bob saw Alice's data"**, then one card per boundary: the verdict,
+  who tried what, the positive controls, where the token showed up (highlighted), screenshots of hit pages, and
+  the credits each one used.
 
 ## How it works
 
@@ -209,7 +233,10 @@ npx notyours budget --set 40 # raise it (a person only)
 agent no TTY), so an agent can't raise its own cap. CI can opt in with `NOTYOURS_ALLOW_AGENT_AUTHORING=1`.
 The guard never lets the agent set that variable, or edit `budget.json` or the credit logs it is counted from.
 
-## Limits
+## Known limitations
+
+The full list, with measurements, is in [docs/STATUS.md](docs/STATUS.md). In short:
+
 
 - **Logins:** email + password forms only. No CAPTCHA, no OAuth-only sign-in, no SMS or
   authenticator codes.
@@ -221,6 +248,10 @@ The guard never lets the agent set that variable, or edit `budget.json` or the c
   in the repo, so neither a cloned `config.yaml` nor a coding agent can grant it. Boundaries that point anywhere else are refused.
 - `map` is a static heuristic. It drafts, your coding agent decides, and Kane proves. Express
   router mount prefixes aren't resolved.
+- **Replays aren't instant.** A 1-boundary Stop takes ~55 s on kane-cli 0.10.0 (Kane and Chrome time). On 0.10.6,
+  replays are slower and cost a few credits.
+- **The guard is a guardrail, not a sandbox.** It blocks a cooperating agent's edits to `.notyours/` and the hook
+  config. Credits are protected by the daily budget, which the CLI enforces itself.
 
 ## Development
 
