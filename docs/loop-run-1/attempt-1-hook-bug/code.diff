@@ -1,0 +1,100 @@
+diff --git a/README.md b/README.md
+index 33293d5..a6db56f 100644
+--- a/README.md
++++ b/README.md
+@@ -45,7 +45,8 @@ passwords.
+ | `/signup`, `/login`, `/logout` | Account basics (`/logout` takes GET or POST) |
+ | `/notes` | Your own notes (correctly scoped) |
+ | `/notes/new` | Write a note |
+-| `/notes/:id` | View a note (**SEEDED BUG #1**) |
++| `/notes/:id` | View a note (**SEEDED BUG #1**). The owner also sees a "Duplicate note" button |
++| `POST /notes/:id/duplicate` | Copy one of your own notes as "<title> (copy)" and open it (correctly scoped: other users' notes are a 404) |
+ | `/account` | Plan and profile bio, with bio editing (correctly scoped) |
+ | `/pro/export` | Export page: Pro users see an "Export my notes" button, free users see an upsell |
+ | `GET /api/notes/:id` | Note as JSON (**SEEDED BUG #2**) |
+diff --git a/routes/notes.js b/routes/notes.js
+index 9f43349..c081500 100644
+--- a/routes/notes.js
++++ b/routes/notes.js
+@@ -72,10 +72,29 @@ export function notesRoutes(db) {
+ <h1>${esc(note.title)}</h1>
+ <p class="meta">${esc(note.owner_email)} · ${esc(formatDate(note.created_at))}</p>
+ <p class="body">${esc(note.body)}</p>
+-</article>`;
++</article>${
++      note.owner_id === req.user.id
++        ? `
++<form method="post" action="/notes/${note.id}/duplicate"><button type="submit">Duplicate note</button></form>`
++        : ''
++    }`;
+     res.send(page({ title: note.title, user: req.user, active: 'notes', body }));
+   });
+ 
++  // Copies one of your own notes. Scoped to the owner: other people's notes are a 404.
++  r.post('/notes/:id/duplicate', requireLogin, (req, res) => {
++    const id = parseId(req.params.id);
++    const note = id === null ? undefined : db.get('SELECT title, body FROM notes WHERE id = ? AND owner_id = ?', [id, req.user.id]);
++    if (!note) {
++      return res.status(404).send(page({ title: 'Not found', user: req.user, body: '<h1>Note not found</h1><p><a href="/notes">Back to my notes</a></p>' }));
++    }
++    const suffix = ' (copy)';
++    const [copy] = db.run('INSERT INTO notes (owner_id, title, body, created_at) VALUES (?, ?, ?, ?) RETURNING id', [
++      req.user.id, `${String(note.title).slice(0, 200 - suffix.length)}${suffix}`, note.body, new Date().toISOString(),
++    ]);
++    res.redirect(302, `/notes/${copy.id}`);
++  });
++
+   r.get('/api/notes/:id', requireLoginApi, (req, res) => {
+     const id = parseId(req.params.id);
+     // SEEDED BUG #2 — returns the full record (owner email, body) for any id without checking the caller owns it.
+diff --git a/test/jotter.test.js b/test/jotter.test.js
+index b8e60e7..99c1dfe 100644
+--- a/test/jotter.test.js
++++ b/test/jotter.test.js
+@@ -208,6 +208,46 @@ describe('happy paths', () => {
+     expect(bad.status).toBe(400);
+   });
+ 
++  it('the owner can duplicate a note from its page', async () => {
++    const req = client();
++    await req('POST', '/signup', { name: 'Erin', email: 'erin@jotter.test', password: 'erin-pass-123' }); // notyours:allow-secret (fake test value)
++    const created = await req('POST', '/notes/new', { title: 'Recipe', body: 'flour & <water>' });
++    const id = Number(created.location.split('/').pop());
++
++    const view = await req('GET', `/notes/${id}`);
++    expect(view.text).toContain(`action="/notes/${id}/duplicate"`);
++
++    const dup = await req('POST', `/notes/${id}/duplicate`);
++    expect(dup.status).toBe(302);
++    const copyId = Number(dup.location.split('/').pop());
++    expect(copyId).toBeGreaterThan(id);
++
++    const copy = await req('GET', dup.location);
++    expect(copy.status).toBe(200);
++    expect(copy.text).toContain('Recipe (copy)');
++    expect(copy.text).toContain('flour &amp; &lt;water&gt;');
++
++    const list = await req('GET', '/notes');
++    expect(list.text).toContain(`href="/notes/${id}"`);
++    expect(list.text).toContain(`href="/notes/${copyId}"`);
++  });
++
++  it("duplicate is owner-scoped: Bob can't copy Alice's note and sees no button; guests are redirected", async () => {
++    const bob = await loginAs(BOB);
++    const view = await bob('GET', '/notes/1001'); // readable via SEEDED BUG #1
++    expect(view.text).not.toContain('/duplicate');
++    const res = await bob('POST', '/notes/1001/duplicate');
++    expect(res.status).toBe(404);
++    expect(res.text).not.toContain(ALICE.token);
++    const list = await bob('GET', '/notes');
++    expect(list.text).not.toContain(ALICE.token);
++    expect((await bob('POST', '/notes/abc/duplicate')).status).toBe(404);
++
++    const guest = await client()('POST', '/notes/1001/duplicate');
++    expect(guest.status).toBe(302);
++    expect(guest.location).toMatch(/^\/login\?next=/);
++  });
++
+   it('unknown note ids are 404', async () => {
+     const bob = await loginAs(BOB);
+     expect((await bob('GET', '/notes/999999')).status).toBe(404);

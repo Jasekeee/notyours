@@ -1,0 +1,15 @@
+deny   Edit  /tmp/ny-loop/.notyours/boundaries/b1-cross-user.ya notyours guard: .notyours/boundaries/b1-cross-user.yaml is a locked boundary and is read-only. If it leaks, fi
+deny   Write /tmp/ny-loop/.notyours/boundaries/b1-cross-user.ya notyours guard: .notyours/boundaries/b1-cross-user.yaml is a locked boundary and is read-only. If it leaks, fi
+deny   Write /tmp/ny-loop/.notyours/dirty.json                  notyours guard: .notyours/dirty.json is part of the test oracle (recordings, results, config) and is read-only
+deny   Write /tmp/ny-loop/.notyours/attempts.json               notyours guard: .notyours/attempts.json is part of the test oracle (recordings, results, config) and is read-o
+deny   Edit  /tmp/ny-loop/.notyours/tests/b1-notes-cross-user_b notyours guard: .notyours/tests/b1-notes-cross-user_bob_test.md is part of the test oracle (recordings, result
+deny   Write /tmp/ny-loop/.notyours/config.yaml                 notyours guard: .notyours/config.yaml is part of the test oracle (recordings, results, config) and is read-onl
+deny   Write /tmp/ny-loop/.claude/settings.json                 notyours guard: .claude/settings.json is part of the test oracle (recordings, results, config) and is read-onl
+deny   Read  /tmp/ny-loop/.notyours/secrets.json                notyours guard: .notyours/secrets.json holds (or contains) identity passwords/sessions and is off limits. Use 
+deny   Bash  rm .notyours/dirty.json                                    notyours guard: in Bash, .notyours/, .testmuai/ and .claude/settings are read-only (ls, cat, grep, jq, git dif
+deny   Bash  sed -i "" s/locked:.true/locked:.false/ .notyours/boundari notyours guard: in Bash, .notyours/, .testmuai/ and .claude/settings are read-only (ls, cat, grep, jq, git dif
+deny   Bash  echo {} > .notyours/attempts.json                          notyours guard: in Bash, .notyours/, .testmuai/ and .claude/settings are read-only (ls, cat, grep, jq, git dif
+       Bash  npx notyours lock --reauthor b1-notes-cross-user           
+deny   Bash  cat .notyours/profiles/bob/notyours-login/login_bob_test.m notyours guard: .notyours/secrets.json and browser profiles hold identity passwords and sessions; they are off
+       Edit  /tmp/ny-loop/routes/notes.js                       
+       Read  /tmp/ny-loop/.notyours/boundaries/b1-cross-user.ya 

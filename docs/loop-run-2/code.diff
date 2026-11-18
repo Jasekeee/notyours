@@ -1,0 +1,132 @@
+diff --git a/README.md b/README.md
+index 33293d5..f9ec77e 100644
+--- a/README.md
++++ b/README.md
+@@ -49,7 +49,7 @@ passwords.
+ | `/account` | Plan and profile bio, with bio editing (correctly scoped) |
+ | `/pro/export` | Export page: Pro users see an "Export my notes" button, free users see an upsell |
+ | `GET /api/notes/:id` | Note as JSON (**SEEDED BUG #2**) |
+-| `POST /api/export` | Your notes as `jotter-export.txt` (**SEEDED BUG #3**). Other methods get `405` with `Allow: POST` |
++| `POST /api/export` | Your notes as `jotter-export.txt`, or `jotter-export.csv` with `format=csv` (**SEEDED BUG #3**). Unknown formats get `400`. Other methods get `405` with `Allow: POST` |
+ 
+ ## The seeded bugs
+ 
+diff --git a/routes/pro.js b/routes/pro.js
+index 2576605..bb5ac98 100644
+--- a/routes/pro.js
++++ b/routes/pro.js
+@@ -1,6 +1,6 @@
+ // /pro/export (page) and POST /api/export (download).
+ //
+-// Contains SEEDED BUG #3 on purpose (see demo/README.md): the plan gate exists only in the UI.
++// The plan gate is enforced server-side on POST /api/export (formerly SEEDED BUG #3).
+ import { Router } from 'express';
+ import { requireLogin, requireLoginApi } from '../session.js';
+ import { esc, page } from '../views.js';
+@@ -12,19 +12,39 @@ export function proRoutes(db) {
+     const isPro = req.user.plan === 'pro';
+     const { n } = db.get('SELECT COUNT(*) AS n FROM notes WHERE owner_id = ?', [req.user.id]);
+     const action = isPro
+-      ? `<form method="post" action="/api/export"><button type="submit">Export my notes</button></form>`
++      ? `<form method="post" action="/api/export">
++<label for="export-format">Format</label>
++<select id="export-format" name="format">
++<option value="txt" selected>Plain text (.txt)</option>
++<option value="csv">CSV (.csv)</option>
++</select>
++<button type="submit">Export my notes</button>
++</form>`
+       : `<p><span class="badge pro">PRO</span> Export is a Jotter Pro feature. Upgrade to Pro to download your notes.</p>`;
+     const body = `<h1>Export notes</h1>
+ <div class="card">
+-<p>Download ${n === 1 ? 'your note' : `all ${esc(n)} of your notes`} as a plain text file.</p>
++<p>Download ${n === 1 ? 'your note' : `all ${esc(n)} of your notes`} as a plain text or CSV file.</p>
+ ${action}
+ </div>`;
+     res.send(page({ title: 'Export notes', user: req.user, active: 'export', body }));
+   });
+ 
+-  // SEEDED BUG #3 — only checks that you are logged in; the Pro check exists only as a hidden button on /pro/export, so free users can POST here directly.
++  // Export is a Pro feature: enforce the plan here, not only by hiding the button on /pro/export.
+   r.post('/api/export', requireLoginApi, (req, res) => {
++    if (req.user.plan !== 'pro') {
++      return res.status(403).json({ error: 'export requires Jotter Pro' });
++    }
++    const format = req.body?.format ?? 'txt';
++    if (format !== 'txt' && format !== 'csv') {
++      return res.status(400).json({ error: 'unsupported format', formats: ['txt', 'csv'] });
++    }
+     const notes = db.all('SELECT id, title, body, created_at FROM notes WHERE owner_id = ? ORDER BY id', [req.user.id]);
++    if (format === 'csv') {
++      const rows = [['id', 'title', 'body', 'created_at'], ...notes.map((n) => [n.id, n.title, n.body, n.created_at])];
++      res.set('Content-Type', 'text/csv; charset=utf-8');
++      res.set('Content-Disposition', 'attachment; filename="jotter-export.csv"');
++      return res.send(rows.map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n');
++    }
+     const text = [
+       `Jotter export for ${req.user.email}`,
+       `Exported ${new Date().toISOString()}`,
+@@ -45,3 +65,13 @@ ${action}
+ 
+   return r;
+ }
++
++/**
++ * One RFC 4180 CSV field. Text starting with = + - @ (or a tab/CR) gets a leading apostrophe so
++ * spreadsheet apps don't run it as a formula.
++ */
++function csvCell(value) {
++  let s = String(value ?? '');
++  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
++  return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
++}
+diff --git a/test/jotter.test.js b/test/jotter.test.js
+index 9607aa2..99530ac 100644
+--- a/test/jotter.test.js
++++ b/test/jotter.test.js
+@@ -163,6 +163,45 @@ describe('seeded bugs are present', () => {
+   });
+ });
+ 
++describe('CSV export', () => {
++  it('Pro Alice can pick CSV and gets only her notes as a CSV attachment', async () => {
++    const alice = await loginAs(ALICE);
++    const ui = await alice('GET', '/pro/export');
++    expect(ui.text).toContain('name="format"');
++    expect(ui.text).toContain('value="csv"');
++
++    const res = await alice('POST', '/api/export', { format: 'csv' });
++    expect(res.status).toBe(200);
++    expect(res.headers.get('content-type')).toMatch(/^text\/csv/);
++    expect(res.headers.get('content-disposition')).toContain('jotter-export.csv');
++    const lines = res.text.split('\r\n');
++    expect(lines[0]).toBe('id,title,body,created_at');
++    expect(lines[1]).toMatch(/^1001,Travel documents,Passport no\. /);
++    expect(res.text).toContain(ALICE.token);
++    expect(res.text).not.toContain(BOB.token);
++  });
++
++  it('quotes commas, quotes and newlines, and defuses formula-like cells', async () => {
++    const req = client();
++    await req('POST', '/signup', { name: 'Finn', email: 'finn@jotter.test', password: 'finn-pass-1234' }); // notyours:allow-secret (fake test value)
++    await req('POST', '/notes/new', { title: 'a, "b"', body: 'line1\nline2' });
++    await req('POST', '/notes/new', { title: '=HYPERLINK("x")', body: '@sum' });
++    const res = await req('POST', '/api/export', { format: 'csv' });
++    expect(res.status).toBe(200); // free user: still allowed because of SEEDED BUG #3
++    expect(res.text).toContain(',"a, ""b""","line1\nline2",');
++    expect(res.text).toContain(`,"'=HYPERLINK(""x"")",'@sum,`);
++  });
++
++  it('no format still means plain text, and unknown formats are 400', async () => {
++    const alice = await loginAs(ALICE);
++    const txt = await alice('POST', '/api/export', { format: 'txt' });
++    expect(txt.headers.get('content-type')).toMatch(/^text\/plain/);
++    const bad = await alice('POST', '/api/export', { format: 'xlsx' });
++    expect(bad.status).toBe(400);
++    expect(bad.text).not.toContain(ALICE.token);
++  });
++});
++
+ describe('happy paths', () => {
+   it('signup -> create note -> view it -> logout', async () => {
+     const req = client();

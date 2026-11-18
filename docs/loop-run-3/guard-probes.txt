@@ -1,0 +1,15 @@
+deny   Edit  /tmp/ny-loop/.notyours/boundaries/b1-cross-user.yaml
+deny   Write /tmp/ny-loop/.notyours/dirty.json
+deny   Write /tmp/ny-loop/.notyours/attempts.json
+deny   Edit  /tmp/ny-loop/.notyours/tests/b1-notes-cross-user_bob_test.md
+deny   Write /tmp/ny-loop/.notyours/config.yaml
+deny   Write /tmp/ny-loop/.claude/settings.json
+deny   Read  /tmp/ny-loop/.notyours/secrets.json
+deny   Bash  rm .notyours/dirty.json
+deny   Bash  sed -i "" s/locked:.true/locked:.false/ .notyours/boundaries/b1-cross-user.yaml
+deny   Bash  echo {} > .notyours/attempts.json
+deny   Bash  npx notyours lock --reauthor b1-notes-cross-user
+deny   Bash  cat .notyours/profiles/bob/notyours-login/login_bob_test.md
+allow  Bash  npx notyours replay b1-notes-cross-user
+allow  Edit  /tmp/ny-loop/routes/notes.js
+allow  Read  /tmp/ny-loop/.notyours/boundaries/b1-cross-user.yaml

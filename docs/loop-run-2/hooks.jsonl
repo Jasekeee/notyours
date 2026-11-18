@@ -1,0 +1,27 @@
+{"ts":"2026-11-18T14:45:27.934Z","event":"guard","tool":"Bash","target":"git ls-files && cat CLAUDE.md 2>/dev/null; ls -la .claude 2>/dev/null; grep -rni \"export\" --include=*.{js,ts,tsx,jsx,py} -l . | grep -v node_modules | head -30","exitCode":0,"ms":0,"stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"notyours guard: unquoted globs or braces on dot-paths (like .n*) are not allowed: name the file explicitly.\"}}\n","stderr":""}
+{"ts":"2026-11-18T14:45:30.550Z","event":"guard","tool":"Bash","target":"git ls-files && cat CLAUDE.md 2>/dev/null","exitCode":0,"ms":0,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:33.610Z","event":"guard","tool":"Read","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":0,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:33.913Z","event":"guard","tool":"Read","target":"/tmp/ny-loop/README.md","exitCode":0,"ms":0,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:34.111Z","event":"guard","tool":"Read","target":"/tmp/ny-loop/.claude/settings.json","exitCode":0,"ms":1,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:37.599Z","event":"guard","tool":"Bash","target":"grep -n \"export\" test/jotter.test.js test/boundaries.test.js | head -40; cat package.json 2>/dev/null; ls ..; ls node_modules 2>/dev/null | head","exitCode":0,"ms":0,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:39.499Z","event":"guard","tool":"Read","target":"/tmp/ny-loop/test/jotter.test.js","exitCode":0,"ms":0,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:43.941Z","event":"guard","tool":"Bash","target":"cat app.js && grep -n \"select\\|<form\" views.js routes/*.js | head -20","exitCode":0,"ms":0,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:48.710Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":8,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:48.883Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":11,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:51.933Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":5,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:52.114Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":8,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:53.727Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":8,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:45:53.889Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":10,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:46:01.993Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/test/jotter.test.js","exitCode":0,"ms":7,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:46:02.163Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/test/jotter.test.js","exitCode":0,"ms":9,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:46:03.510Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/README.md","exitCode":0,"ms":6,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:46:03.670Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/README.md","exitCode":0,"ms":9,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:46:05.468Z","event":"guard","tool":"Bash","target":"npx vitest run 2>&1 | tail -25","exitCode":0,"ms":1,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:46:09.417Z","event":"guard","tool":"Bash","target":"npx vitest run 2>&1 | grep -E \"FAIL|✓|×\" | head; echo ---; git stash -q && npx vitest run 2>&1 | grep -E \"FAIL|Tests \" ; git stash pop -q && git status --short","exitCode":0,"ms":1,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:47:29.782Z","event":"stop","exitCode":2,"ms":70264,"stdout":"","stderr":"notyours: LEAK in boundary b3-export-plan-gate (plan-gate), attempt 1/3\n  bob saw alice's data\n  URL: http://127.0.0.1:3077/api/export\n  Leak: PAYLOAD (in a network response, not necessarily rendered)\n  Token: NY-BOB-JOTTERSEED2B in page text (untrusted): \"rted 2026-11-18T14:47:24.462Z # Reminder (note 1002, 2026-11-03T18:40:00.000Z) NY-BOB-JOTTERSEED2B\"\n  Screenshot: /tmp/ny-loop/.notyours/runs/2026-11-18T14-47-22-617Z/b3-export-plan-gate-bob-leak-api0.png\n  Suspected files: routes/pro.js (matched routes/pro.js)\n  Repro: npx notyours replay b3-export-plan-gate\nFix server-side; do not edit tests.\n"}
+{"ts":"2026-11-18T14:47:42.327Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":8,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:47:42.482Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":8,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:47:43.481Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":7,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:47:43.636Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/routes/pro.js","exitCode":0,"ms":9,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:47:46.136Z","event":"guard","tool":"Bash","target":"npx vitest run 2>&1 | grep -E \"FAIL|×|Tests |expected\" | head -20","exitCode":0,"ms":1,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:49:39.074Z","event":"stop","exitCode":0,"ms":104214,"stdout":"","stderr":""}

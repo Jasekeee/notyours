@@ -1,0 +1,130 @@
+diff --git a/routes/notes.js b/routes/notes.js
+index 9f43349..bb4be17 100644
+--- a/routes/notes.js
++++ b/routes/notes.js
+@@ -1,8 +1,7 @@
+ // /notes, /notes/new, /notes/:id and GET /api/notes/:id
+ //
+-// Contains SEEDED BUG #1 and #2 on purpose (see demo/README.md). They are the kind of
+-// authorization mistake coding agents often ship: the route checks that you are logged in,
+-// but never checks that the note is yours.
++// SEEDED BUG #1 and #2 (see demo/README.md) are fixed here: every lookup by note id is also
++// scoped to the logged-in owner, so another user's note id is a 404.
+ import { Router } from 'express';
+ import { requireLogin, requireLoginApi } from '../session.js';
+ import { errorBox, esc, formatDate, page } from '../views.js';
+@@ -62,12 +61,16 @@ export function notesRoutes(db) {
+ 
+   r.get('/notes/:id', requireLogin, (req, res) => {
+     const id = parseId(req.params.id);
+-    // SEEDED BUG #1 — loads the note by id alone; any logged-in user can read anyone's note (missing `AND n.owner_id = ?`).
+-    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ?`, [id]);
++    // Owner-scoped: someone else's note id is a 404, the same as a missing one (was SEEDED BUG #1).
++    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ? AND n.owner_id = ?`, [id, req.user.id]);
+     if (!note) {
+       return res.status(404).send(page({ title: 'Not found', user: req.user, body: '<h1>Note not found</h1><p><a href="/notes">Back to my notes</a></p>' }));
+     }
+-    const body = `<p><a href="/notes">&larr; My notes</a></p>
++    // Only the owner gets the button (the duplicate route enforces this too).
++    const actions = note.owner_id === req.user.id
++      ? `<form method="post" action="/notes/${note.id}/duplicate"><button type="submit">Duplicate note</button></form>`
++      : '';
++    const body = `<div class="row"><a href="/notes">&larr; My notes</a>${actions}</div>
+ <article class="card">
+ <h1>${esc(note.title)}</h1>
+ <p class="meta">${esc(note.owner_email)} · ${esc(formatDate(note.created_at))}</p>
+@@ -76,10 +79,23 @@ export function notesRoutes(db) {
+     res.send(page({ title: note.title, user: req.user, active: 'notes', body }));
+   });
+ 
++  // Copies one of your own notes. Scoped to the owner: someone else's note id is a 404, never a copy.
++  r.post('/notes/:id/duplicate', requireLogin, (req, res) => {
++    const id = parseId(req.params.id);
++    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ? AND n.owner_id = ?`, [id, req.user.id]);
++    if (!note) {
++      return res.status(404).send(page({ title: 'Not found', user: req.user, body: '<h1>Note not found</h1><p><a href="/notes">Back to my notes</a></p>' }));
++    }
++    const [copy] = db.run('INSERT INTO notes (owner_id, title, body, created_at) VALUES (?, ?, ?, ?) RETURNING id', [
++      req.user.id, `Copy of ${note.title}`.slice(0, 200), note.body, new Date().toISOString(),
++    ]);
++    res.redirect(302, `/notes/${copy.id}`);
++  });
++
+   r.get('/api/notes/:id', requireLoginApi, (req, res) => {
+     const id = parseId(req.params.id);
+-    // SEEDED BUG #2 — returns the full record (owner email, body) for any id without checking the caller owns it.
+-    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ?`, [id]);
++    // Owner-scoped: someone else's note id is a 404, the same as a missing one (was SEEDED BUG #2).
++    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ? AND n.owner_id = ?`, [id, req.user.id]);
+     if (!note) return res.status(404).json({ error: 'not found' });
+     res.json(note);
+   });
+diff --git a/test/jotter.test.js b/test/jotter.test.js
+index b8e60e7..9607aa2 100644
+--- a/test/jotter.test.js
++++ b/test/jotter.test.js
+@@ -215,6 +215,64 @@ describe('happy paths', () => {
+   });
+ });
+ 
++describe('duplicate note', () => {
++  it('owner sees a Duplicate button and gets an independent copy', async () => {
++    const req = client();
++    await req('POST', '/signup', { name: 'Dana', email: 'dana@jotter.test', password: 'dana-pass-123' }); // notyours:allow-secret (fake test value)
++    const created = await req('POST', '/notes/new', { title: 'Recipe', body: 'flour\n& <sugar>' });
++    const id = Number(created.location.split('/').pop());
++
++    const view = await req('GET', `/notes/${id}`);
++    expect(view.text).toContain(`action="/notes/${id}/duplicate"`);
++
++    const dup = await req('POST', `/notes/${id}/duplicate`);
++    expect(dup.status).toBe(302);
++    const copyId = Number(dup.location.split('/').pop());
++    expect(copyId).toBeGreaterThan(id);
++
++    const copy = await req('GET', dup.location);
++    expect(copy.status).toBe(200);
++    expect(copy.text).toContain('Copy of Recipe');
++    expect(copy.text).toContain('flour\n&amp; &lt;sugar&gt;');
++
++    const list = await req('GET', '/notes');
++    expect(list.text).toContain(`href="/notes/${id}"`);
++    expect(list.text).toContain(`href="/notes/${copyId}"`);
++  });
++
++  it('long titles stay within the 200-character limit', async () => {
++    const req = client();
++    await req('POST', '/signup', { name: 'Eve', email: 'eve@jotter.test', password: 'eve-pass-1234' }); // notyours:allow-secret (fake test value)
++    const created = await req('POST', '/notes/new', { title: 'x'.repeat(200), body: 'b' });
++    const dup = await req('POST', `${created.location}/duplicate`);
++    const json = await req('GET', `/api/notes/${dup.location.split('/').pop()}`);
++    expect(JSON.parse(json.text).title).toBe(`Copy of ${'x'.repeat(192)}`);
++  });
++
++  it("Bob cannot duplicate Alice's note into his account, and sees no button for it", async () => {
++    const bob = await loginAs(BOB);
++    const view = await bob('GET', '/notes/1001'); // readable only because of SEEDED BUG #1
++    expect(view.text).not.toContain('/duplicate');
++
++    const dup = await bob('POST', '/notes/1001/duplicate');
++    expect(dup.status).toBe(404);
++    expect(dup.text).not.toContain(ALICE.token);
++    const list = await bob('GET', '/notes');
++    expect(list.text).not.toContain(ALICE.token);
++    expect(list.text).not.toContain('Travel documents');
++  });
++
++  it('guests are redirected to /login and bad ids are 404', async () => {
++    const guest = client();
++    const res = await guest('POST', '/notes/1001/duplicate');
++    expect(res.status).toBe(302);
++    expect(res.location).toMatch(/^\/login\?next=/);
++    const bob = await loginAs(BOB);
++    expect((await bob('POST', '/notes/abc/duplicate')).status).toBe(404);
++    expect((await bob('POST', '/notes/999999/duplicate')).status).toBe(404);
++  });
++});
++
+ describe('seed tokens', () => {
+   it('reads tokens from identities.json (array or keyed object), ignoring invalid ones', () => {
+     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jotter-'));

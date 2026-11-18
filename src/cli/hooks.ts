@@ -123,6 +123,40 @@ export function hasDangerousGlob(raw: string): boolean {
   return /(?:^|[\s/=><(;|&:])\.[^\s]*[*?[{]/.test(unquoted) || /\{[^}\s]*(?:,|\.\.)[^}\s]*\}/.test(unquoted);
 }
 
+/** notyours subcommands an agent may run itself; everything else (run, lock, demo, init, hook, install-hooks) is the human's. */
+const AGENT_NOTYOURS = new Set(['replay', 'report', 'map', 'doctor', 'help', '--help', '-h', '--version', '-v']);
+
+/**
+ * Parsed (not regex) check of every notyours invocation in a Bash command: split into segments on newlines,
+ * `;`, `&`, `|`, drop comments, find the notyours entry point and decide on its subcommand token.
+ * Returns a deny reason, or undefined when the command may run.
+ */
+export function agentNotyoursDenied(cmd: string): string | undefined {
+  const human = '`notyours run/lock/demo/init` author Kane recordings (credits) or change the oracle: ask the user to run them. Replays are fine: npx notyours replay';
+  for (const raw of cmd.split(/[\n;&|]+/)) {
+    const seg = raw.replace(/(^|\s)#.*$/, '').trim();
+    const words = seg.toLowerCase().split(/\s+/).filter(Boolean); // the guard may pass a lowercased command
+    const at = words.findIndex((w) => /(^|\/)notyours$/.test(w.replace(/^['"]|['"]$/g, '')) || /cli\/index\.(?:js|ts)$/.test(w));
+    if (at < 0) continue;
+    // Skip global options (-C dir, --cwd dir, --debug) to reach the subcommand.
+    let i = at + 1;
+    while (i < words.length && words[i]!.startsWith('-') && !['--help', '-h', '--version', '-v'].includes(words[i]!)) {
+      i += ['-c', '--cwd'].includes(words[i]!) ? 2 : 1;
+    }
+    const sub = words[i];
+    if (sub === undefined) continue; // bare `notyours` prints help
+    if (/[$`(){}<>]/.test(sub)) return 'notyours with an expanded/computed subcommand is not allowed for the agent.';
+    if (sub === 'run') {
+      const rest = words.slice(i + 1);
+      const end = rest.indexOf('--');
+      if ((end < 0 ? rest : rest.slice(0, end)).includes('--dry-run')) continue;
+      return human;
+    }
+    if (!AGENT_NOTYOURS.has(sub)) return human;
+  }
+  return undefined;
+}
+
 export function guard(input: HookInput, root: string): GuardResult {
   const tool = input.tool_name ?? '';
   const cwd = input.cwd ?? root;
@@ -147,9 +181,8 @@ export function guard(input: HookInput, root: string): GuardResult {
     if (/\.notyours\/[^\s/'"]*[*?[{]/.test(cmd)) return deny(secretMsg);
     if (/\.notyours\/?(?=$|[\s'";|&)])/.test(cmd) && /\b(?:grep|rg|ag|find|tar|zip|cp|rsync|cat|less|head|tail|xxd|strings|base64|scp|curl)\b/.test(cmd)) return deny(secretMsg);
     // Authoring spends Kane credits and (re)records the oracle: the human's call, never the agent's.
-    if (/\bnotyours\b[^|;&]*\block\b/.test(cmd) || (/\bnotyours\b[^|;&]*\brun\b/.test(cmd) && !/\brun\b[^|;&]*--dry-run/.test(cmd))) {
-      return deny('`notyours run` / `notyours lock` author Kane recordings (credits) and change the oracle: ask the user to run them. Replays are fine: npx notyours replay');
-    }
+    const notyoursDenied = agentNotyoursDenied(cmd);
+    if (notyoursDenied) return deny(notyoursDenied);
     if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
     }

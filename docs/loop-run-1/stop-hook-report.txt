@@ -1,0 +1,11 @@
+notyours: LEAK in boundary b1-notes-cross-user (cross-user), attempt 1/3
+  bob saw alice's data
+  URL: http://127.0.0.1:3077/notes/1001
+  Leak: VISIBLE (rendered on the page)
+  Token: NY-ALICE-JOTTERSEED2A in page text (untrusted): "Passport no. NY-ALICE-JOTTERSEED2A"
+  (+2 more hit(s): http://127.0.0.1:3077/notes/1001, http://127.0.0.1:3077/api/notes/1001)
+  Screenshot: /tmp/ny-loop/.notyours/runs/2026-11-18T14-38-25-333Z/b1-notes-cross-user-bob-leak-ui0.png
+  Suspected files: routes/notes.js (matched routes/notes.js)
+  Repro: npx notyours replay b1-notes-cross-user
+Fix server-side; do not edit tests.
+

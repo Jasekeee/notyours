@@ -466,6 +466,17 @@ describe('hooks', () => {
     expect(g('Bash', { command: "sed -i '' '/guard/d' .claude/settings.json" }).allow).toBe(false);
   });
 
+  it('guard: notyours commands are parsed, not pattern-matched (no newline/comment/flag tricks)', () => {
+    const bad = [
+      'npx notyours run b1\necho --dry-run', 'npx notyours run b1 # --dry-run', 'npx notyours run b1 -- --dry-run',
+      'npx notyours demo', 'npx notyours init --url http://127.0.0.1:3077', 'npx notyours -C . lock', 'node dist/cli/index.js lock',
+      'npx notyours $(echo lock)', './node_modules/.bin/notyours lock', 'true && npx notyours install-hooks',
+    ];
+    for (const c of bad) expect([c, g('Bash', { command: c }).allow]).toEqual([c, false]);
+    const ok = ['npx notyours replay b1', 'npx notyours run --dry-run', 'npx notyours -C . run b1 --dry-run', 'npx notyours report --open', 'npx notyours doctor', 'git log --grep notyours'];
+    for (const c of ok) expect([c, g('Bash', { command: c }).allow]).toEqual([c, true]);
+  });
+
   it('guard: the agent may replay but not author (run/lock spend credits and re-record the oracle)', () => {
     for (const c of ['npx notyours lock --reauthor b1', 'notyours lock', 'npx notyours run b1', 'node dist/cli/index.js run && echo x'.replace('node dist/cli/index.js', 'npx notyours')]) {
       expect(g('Bash', { command: c }).allow).toBe(false);

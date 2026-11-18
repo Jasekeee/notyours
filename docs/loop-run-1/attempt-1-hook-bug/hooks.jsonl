@@ -1,0 +1,11 @@
+{"ts":"2026-11-18T14:27:53.835Z","event":"guard","tool":"Bash","target":"git ls-files | head -100 && cat CLAUDE.md 2>/dev/null; ls -la","exitCode":0,"ms":1,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:27:56.844Z","event":"guard","tool":"Bash","target":"cat README.md routes/notes.js views.js db.js app.js .claude/settings.json; cat test/jotter.test.js | head -80","exitCode":0,"ms":0,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:28:01.546Z","event":"guard","tool":"Bash","target":"cat session.js; sed -n 80,400p test/jotter.test.js; cat KANE_RUNS.md","exitCode":0,"ms":0,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:28:12.117Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/routes/notes.js","exitCode":0,"ms":6,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:28:12.258Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/routes/notes.js","exitCode":0,"ms":8,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:28:21.930Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/test/jotter.test.js","exitCode":0,"ms":5,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:28:22.079Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/test/jotter.test.js","exitCode":0,"ms":7,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:28:23.833Z","event":"guard","tool":"Edit","target":"/tmp/ny-loop/README.md","exitCode":0,"ms":8,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:28:23.979Z","event":"post-tool","tool":"Edit","target":"/tmp/ny-loop/README.md","exitCode":0,"ms":6,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:28:24.244Z","event":"guard","tool":"Bash","target":"npx vitest run 2>&1 | tail -25","exitCode":0,"ms":1,"stdout":"","stderr":""}
+{"ts":"2026-11-18T14:30:48.220Z","event":"stop","exitCode":0,"ms":134630,"stdout":"{\"systemMessage\":\"notyours: replay failed, b1-notes-cross-user, b2-notes-guest, b4-bob-sweep not checked: Refusing to wipe /tmp/ny-loop/.notyours/profiles/guest: guest profiles must live under /tmp/ny-loop/.notyours/profiles.\"}\n","stderr":""}

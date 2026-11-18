@@ -1,0 +1,90 @@
+diff --git a/routes/notes.js b/routes/notes.js
+index 9f43349..bb4be17 100644
+--- a/routes/notes.js
++++ b/routes/notes.js
+@@ -1,8 +1,7 @@
+ // /notes, /notes/new, /notes/:id and GET /api/notes/:id
+ //
+-// Contains SEEDED BUG #1 and #2 on purpose (see demo/README.md). They are the kind of
+-// authorization mistake coding agents often ship: the route checks that you are logged in,
+-// but never checks that the note is yours.
++// SEEDED BUG #1 and #2 (see demo/README.md) are fixed here: every lookup by note id is also
++// scoped to the logged-in owner, so another user's note id is a 404.
+ import { Router } from 'express';
+ import { requireLogin, requireLoginApi } from '../session.js';
+ import { errorBox, esc, formatDate, page } from '../views.js';
+@@ -62,12 +61,16 @@ export function notesRoutes(db) {
+ 
+   r.get('/notes/:id', requireLogin, (req, res) => {
+     const id = parseId(req.params.id);
+-    // SEEDED BUG #1 — loads the note by id alone; any logged-in user can read anyone's note (missing `AND n.owner_id = ?`).
+-    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ?`, [id]);
++    // Owner-scoped: someone else's note id is a 404, the same as a missing one (was SEEDED BUG #1).
++    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ? AND n.owner_id = ?`, [id, req.user.id]);
+     if (!note) {
+       return res.status(404).send(page({ title: 'Not found', user: req.user, body: '<h1>Note not found</h1><p><a href="/notes">Back to my notes</a></p>' }));
+     }
+-    const body = `<p><a href="/notes">&larr; My notes</a></p>
++    // Only the owner gets the button (the duplicate route enforces this too).
++    const actions = note.owner_id === req.user.id
++      ? `<form method="post" action="/notes/${note.id}/duplicate"><button type="submit">Duplicate note</button></form>`
++      : '';
++    const body = `<div class="row"><a href="/notes">&larr; My notes</a>${actions}</div>
+ <article class="card">
+ <h1>${esc(note.title)}</h1>
+ <p class="meta">${esc(note.owner_email)} · ${esc(formatDate(note.created_at))}</p>
+@@ -76,10 +79,23 @@ export function notesRoutes(db) {
+     res.send(page({ title: note.title, user: req.user, active: 'notes', body }));
+   });
+ 
++  // Copies one of your own notes. Scoped to the owner: someone else's note id is a 404, never a copy.
++  r.post('/notes/:id/duplicate', requireLogin, (req, res) => {
++    const id = parseId(req.params.id);
++    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ? AND n.owner_id = ?`, [id, req.user.id]);
++    if (!note) {
++      return res.status(404).send(page({ title: 'Not found', user: req.user, body: '<h1>Note not found</h1><p><a href="/notes">Back to my notes</a></p>' }));
++    }
++    const [copy] = db.run('INSERT INTO notes (owner_id, title, body, created_at) VALUES (?, ?, ?, ?) RETURNING id', [
++      req.user.id, `Copy of ${note.title}`.slice(0, 200), note.body, new Date().toISOString(),
++    ]);
++    res.redirect(302, `/notes/${copy.id}`);
++  });
++
+   r.get('/api/notes/:id', requireLoginApi, (req, res) => {
+     const id = parseId(req.params.id);
+-    // SEEDED BUG #2 — returns the full record (owner email, body) for any id without checking the caller owns it.
+-    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ?`, [id]);
++    // Owner-scoped: someone else's note id is a 404, the same as a missing one (was SEEDED BUG #2).
++    const note = id === null ? undefined : db.get(`${NOTE_SELECT} WHERE n.id = ? AND n.owner_id = ?`, [id, req.user.id]);
+     if (!note) return res.status(404).json({ error: 'not found' });
+     res.json(note);
+   });
+diff --git a/vitest.config.js b/vitest.config.js
+index ba5475a..4dd2ee7 100644
+--- a/vitest.config.js
++++ b/vitest.config.js
+@@ -1,7 +1,24 @@
+ // Demo-only test config: `npx vitest run --root demo`.
++import fs from 'node:fs';
++import path from 'node:path';
++import { fileURLToPath } from 'node:url';
+ import { defineConfig } from 'vitest/config';
+ 
++const here = path.dirname(fileURLToPath(import.meta.url));
++
++// test/boundaries.test.js imports `../../src/schemas.ts`, which resolves when this folder lives at
++// notyours/demo. In a standalone checkout, point that import at the notyours repo instead:
++// $NOTYOURS_ROOT, or the repo that the symlinked node_modules belongs to.
++const alias = [];
++if (!fs.existsSync(path.join(here, '..', 'src', 'schemas.ts'))) {
++  const nyRoot = process.env.NOTYOURS_ROOT
++    ?? (fs.existsSync(path.join(here, 'node_modules')) ? path.dirname(fs.realpathSync(path.join(here, 'node_modules'))) : null);
++  const schemas = nyRoot && path.join(nyRoot, 'src', 'schemas.ts');
++  if (schemas && fs.existsSync(schemas)) alias.push({ find: '../../src/schemas.ts', replacement: schemas });
++}
++
+ export default defineConfig({
++  resolve: { alias },
+   test: {
+     include: ['test/**/*.test.js'],
+   },

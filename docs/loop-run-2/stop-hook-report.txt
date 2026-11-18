@@ -1,0 +1,10 @@
+notyours: LEAK in boundary b3-export-plan-gate (plan-gate), attempt 1/3
+  bob saw alice's data
+  URL: http://127.0.0.1:3077/api/export
+  Leak: PAYLOAD (in a network response, not necessarily rendered)
+  Token: NY-BOB-JOTTERSEED2B in page text (untrusted): "rted 2026-11-18T14:47:24.462Z # Reminder (note 1002, 2026-11-03T18:40:00.000Z) NY-BOB-JOTTERSEED2B"
+  Screenshot: /tmp/ny-loop/.notyours/runs/2026-11-18T14-47-22-617Z/b3-export-plan-gate-bob-leak-api0.png
+  Suspected files: routes/pro.js (matched routes/pro.js)
+  Repro: npx notyours replay b3-export-plan-gate
+Fix server-side; do not edit tests.
+
