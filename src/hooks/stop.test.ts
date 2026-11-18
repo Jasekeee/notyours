@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, renameSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -158,6 +159,40 @@ describe('stop hook', () => {
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain('kane-cli not found');
     expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
+  });
+});
+
+describe('stop hook with the app in a subfolder (demo/)', () => {
+  it('finds demo/.notyours, replays there, and shows project-relative suspected files', async () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'ny-repo-'));
+    const demo = path.join(repo, 'demo');
+    renameSync(project, demo);
+    project = demo;
+    writeDirty(notyoursPaths(demo), {
+      'notes-cross-user': { files: ['routes/notes.js'], globs: ['routes/notes.js'], ts: '2026-11-18T12:00:00.000Z' },
+    });
+    const seen: string[] = [];
+    const engine = new SequenceEngine([leak, mockHeldResult]);
+    const d: StopDeps = {
+      env: { CLAUDE_PROJECT_DIR: repo },
+      replay: (ids, ctx) => {
+        seen.push(ctx.projectDir);
+        return new RealRatchet({ projectDir: ctx.projectDir, kane, oracle: engineOracle(engine) }).replayIds(ctx.identities, ids);
+      },
+    };
+    const red = await stopHook(input('stop-first', repo), d);
+    expect(red.exitCode).toBe(2);
+    expect(seen).toEqual([demo]);
+    expect(red.stderr).toContain('Suspected files: demo/routes/notes.js (matched demo/routes/notes.js)');
+    expect(readAttempts(notyoursPaths(demo))).toEqual({ 'notes-cross-user': 1 });
+    expect((await stopHook(input('stop-continuation', repo), d)).exitCode).toBe(0);
+    expect(readDirty(notyoursPaths(demo))).toEqual({});
+  });
+
+  it('exits 0 fast when no app folder has dirty boundaries', async () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'ny-repo-'));
+    renameSync(project, path.join(repo, 'demo'));
+    expect(await stopHook(input('stop-first', repo), { env: { CLAUDE_PROJECT_DIR: repo }, replay: async () => { throw new Error('must not replay'); } })).toEqual({ exitCode: 0 });
   });
 });
 

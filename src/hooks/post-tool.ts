@@ -1,6 +1,8 @@
 // PostToolUse (Edit|Write|MultiEdit): mark boundaries whose code surface was just edited as dirty.
 // Must be fast (<300ms) and must never block the agent: every path exits 0. No Kane here.
+import path from 'node:path';
 import { notyoursPaths } from '../ratchet/paths.js';
+import { appDirForFile } from './appdir.js';
 import { loadBoundaries, loadMap, readDirty, writeDirty } from '../ratchet/store.js';
 import { matchesGlob, toProjectPath } from './glob.js';
 import { ok, projectDirOf, type HookInput, type HookResult } from './types.js';
@@ -20,10 +22,13 @@ export function postToolHook(input: HookInput, env: NodeJS.ProcessEnv = process.
     const filePath = input.tool_input?.file_path;
     if (typeof filePath !== 'string' || !filePath) return ok();
     const projectDir = projectDirOf(input, env);
-    const rel = toProjectPath(projectDir, filePath);
+    // Surface globs are relative to the app folder (the one holding .notyours/), which may be a subfolder.
+    const appDir = appDirForFile(filePath, projectDir);
+    if (!appDir) return ok();
+    const rel = toProjectPath(appDir, path.resolve(projectDir, filePath));
     if (!rel || rel === '.notyours' || rel.startsWith('.notyours/')) return ok();
 
-    const p = notyoursPaths(projectDir);
+    const p = notyoursPaths(appDir);
     const surfaces: Record<string, string[]> = {};
     for (const { boundary } of loadBoundaries(p)) surfaces[boundary.id] = [...boundary.surface];
     for (const [id, globs] of Object.entries(loadMap(p))) {

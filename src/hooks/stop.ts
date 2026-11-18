@@ -14,6 +14,7 @@ import {
   writeDirty,
   type DirtyEntry,
 } from '../ratchet/store.js';
+import { findAppDirs } from './appdir.js';
 import { ok, projectDirOf, tellHuman, type HookInput, type HookResult } from './types.js';
 
 export const MAX_REPORT_LINES = 40;
@@ -118,24 +119,35 @@ export function formatEscalation(
   return out.join('\n');
 }
 
-export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<HookResult> {
-  const env = deps.env ?? process.env;
-  const projectDir = projectDirOf(input, env);
-  const p = notyoursPaths(projectDir);
+/** What one app folder's Stop pass produced. */
+interface AppOutcome {
+  blocks: string[][];
+  escalated: string[];
+  humanNotes: string[];
+}
+
+/** The Stop pass for one app folder (the folder holding .notyours/); `projectDir` is only used for display paths. */
+async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, now: Date): Promise<AppOutcome> {
+  const p = notyoursPaths(appDir);
   const dirty = readDirty(p);
   const dirtyIds = Object.keys(dirty);
-  if (!dirtyIds.length) return ok();
+  const none: AppOutcome = { blocks: [], escalated: [], humanNotes: [] };
+  if (!dirtyIds.length) return none;
 
-  const now = (deps.now ?? (() => new Date()))();
   let boundaries: Boundary[];
   let identities: Identity[];
   try {
     boundaries = loadBoundaries(p).map((s) => s.boundary);
     identities = deps.identities ?? loadIdentities(p);
   } catch (e) {
-    return tellHuman(`notyours: could not check changed boundaries: ${(e as Error).message}`);
+    return { ...none, humanNotes: [`notyours: could not check changed boundaries in ${shown(projectDir, appDir)}: ${(e as Error).message}`] };
   }
   const cfg = loadConfigOr(p);
+  // dirty.json and surface globs are relative to the app folder; the agent works from the project root.
+  const prefix = path.relative(projectDir, appDir);
+  const up = (f: string) => (prefix && !prefix.startsWith('..') ? path.posix.join(prefix.split(path.sep).join('/'), f) : f);
+  const shownD = (d: DirtyEntry | undefined): DirtyEntry | undefined => d && { ...d, files: d.files.map(up), globs: d.globs.map(up) };
+  const shownB = (b: Boundary): Boundary => ({ ...b, surface: b.surface.map(up) });
   const byId = new Map(boundaries.map((b) => [b.id, b]));
   const humanNotes: string[] = [];
 
@@ -153,10 +165,10 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
   let results: ProbeResult[] = [];
   if (toReplay.length) {
     try {
-      results = await (deps.replay ?? defaultReplay)(toReplay, { projectDir, paths: p, identities });
+      results = await (deps.replay ?? defaultReplay)(toReplay, { projectDir: appDir, paths: p, identities });
     } catch (e) {
       writeDirty(p, dirty);
-      return tellHuman([...humanNotes, `notyours: replay failed, ${toReplay.join(', ')} not checked: ${(e as Error).message}`].join('\n'));
+      return { ...none, humanNotes: [...humanNotes, `notyours: replay failed, ${toReplay.join(', ')} not checked: ${(e as Error).message}`] };
     }
   }
 
@@ -176,10 +188,10 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
       const n = (attempts[b.id] ?? 0) + 1;
       attempts[b.id] = n;
       if (n >= cfg.maxAttempts) {
-        escalate.push({ b, r, d: dirty[b.id], attempts: n });
+        escalate.push({ b: shownB(b), r, d: shownD(dirty[b.id]), attempts: n });
         delete dirty[b.id]; // the human owns it now; stop replaying it on every Stop
       } else {
-        blocks.push(leakBlock(b, r, dirty[b.id], n, cfg.maxAttempts, identities));
+        blocks.push(leakBlock(shownB(b), r, shownD(dirty[b.id]), n, cfg.maxAttempts, identities));
       }
     }
   }
@@ -189,16 +201,37 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
   if (escalate.length) {
     writeFileSync(p.escalation, formatEscalation(escalate, cfg.maxAttempts, identities, now));
     humanNotes.push(
-      `notyours: ${escalate.map((e) => e.b.id).join(', ')} still leaking after ${cfg.maxAttempts} attempts. See ${path.relative(projectDir, p.escalation)}.`,
+      `notyours: ${escalate.map((e) => e.b.id).join(', ')} still leaking after ${cfg.maxAttempts} attempts. See ${shown(projectDir, p.escalation)}.`,
     );
   }
+  return { blocks, escalated: escalate.map((e) => e.b.id), humanNotes };
+}
+
+const shown = (projectDir: string, p: string): string => path.relative(projectDir, p) || '.';
+
+/** App folders under the project that have something in dirty.json. */
+function dirtyApps(projectDir: string): string[] {
+  return findAppDirs(projectDir).filter((d) => Object.keys(readDirty(notyoursPaths(d))).length > 0);
+}
+
+export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<HookResult> {
+  const env = deps.env ?? process.env;
+  const projectDir = projectDirOf(input, env);
+  // .notyours/ may live in a subfolder (demo/), so look for every app folder with dirty boundaries.
+  const apps = dirtyApps(projectDir);
+  if (!apps.length) return ok();
+
+  const now = (deps.now ?? (() => new Date()))();
+  const outcomes: AppOutcome[] = [];
+  for (const appDir of apps) outcomes.push(await stopForApp(appDir, projectDir, deps, now));
+  const blocks = outcomes.flatMap((o) => o.blocks);
+  const escalated = outcomes.flatMap((o) => o.escalated);
+  const humanNotes = outcomes.flatMap((o) => o.humanNotes);
 
   // Loop safety (stop_hook_active): this Stop may itself be a continuation we caused. Every block increments
   // attempts, so a RED boundary blocks at most maxAttempts-1 times in a row, then escalates and lets Claude stop.
   // That stays under Claude Code's 8-continuation cap. An early exit on stop_hook_active alone would let the agent
   // skip the check just by trying to stop twice, so the attempts counter is the guard.
-  if (blocks.length) {
-    return { exitCode: 2, stderr: formatLeakReport(blocks, escalate.map((e) => e.b.id)) };
-  }
+  if (blocks.length) return { exitCode: 2, stderr: formatLeakReport(blocks, escalated) };
   return humanNotes.length ? tellHuman(humanNotes.join('\n')) : ok();
 }

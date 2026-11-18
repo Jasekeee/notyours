@@ -1,11 +1,13 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import YAML from 'yaml';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { notyoursPaths } from '../ratchet/paths.js';
 import { readDirty } from '../ratchet/store.js';
-import { tempProject } from '../ratchet/testkit.js';
+import { lockedBoundary, tempProject } from '../ratchet/testkit.js';
 import { bashTouchesNotyours, GUARD_MESSAGE, runHook, type HookName } from './index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -55,6 +57,24 @@ describe('post-tool hook', () => {
     expect((await runHook('post-tool', fixture('post-tool-edit-surface', project))).exitCode).toBe(0);
   });
 
+  it('resolves surface globs relative to the app folder that holds .notyours/ (demo/ layout)', async () => {
+    // repo/ is the Claude Code project; the app (and its .notyours/) lives in repo/demo/.
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'ny-repo-'));
+    const demo = path.join(repo, 'demo');
+    renameSync(project, demo);
+    const b1 = { ...lockedBoundary, id: 'b1-notes-cross-user', surface: ['routes/notes.js'] };
+    writeFileSync(notyoursPaths(demo).boundariesFile, YAML.stringify({ boundaries: [b1] }));
+    const edit = (file: string) => runHook('post-tool', JSON.stringify({ cwd: repo, tool_name: 'Edit', tool_input: { file_path: file } }));
+
+    await edit(path.join(repo, 'routes', 'notes.js')); // same relative path, but outside the app folder
+    expect(readDirty(notyoursPaths(demo))).toEqual({});
+    await edit(path.join(demo, 'routes', 'notes.js'));
+    expect(readDirty(notyoursPaths(demo))['b1-notes-cross-user']?.files).toEqual(['routes/notes.js']);
+    expect(existsSync(path.join(repo, '.notyours'))).toBe(false); // nothing written at the repo root
+    await edit(path.join(demo, '.notyours', 'boundaries.yaml')); // edits to .notyours itself never dirty
+    expect(Object.keys(readDirty(notyoursPaths(demo)))).toEqual(['b1-notes-cross-user']);
+  });
+
   it('is fast: 200 boundaries, well under 300ms in-process', async () => {
     const many = Array.from({ length: 200 }, (_, n) => ({
       id: `b${n}`, kind: 'cross-user', owner: 'alice', viewer: 'bob',
@@ -92,6 +112,29 @@ describe('guard hook', () => {
     symlinkSync(path.join(project, '.notyours', 'not-yet'), path.join(project, 'sneaky'));
     const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Write', tool_input: { file_path: `${project}/sneaky/x.json` } }));
     expect(r.exitCode).toBe(2);
+  });
+
+  it.each([
+    ['link/../attempts.json (.. after a symlink resolves physically)', (prj: string) => {
+      symlinkSync(path.join(prj, '.notyours', 'tests'), path.join(prj, 'link'));
+      return `${prj}/link/../attempts.json`;
+    }],
+    ['relative link/../config.yaml', (prj: string) => {
+      symlinkSync('.notyours/tests', path.join(prj, 'rel'));
+      return 'rel/../config.yaml';
+    }],
+    ['a/missing/../../.notyours/x through a new dir', (prj: string) => `${prj}/a/missing/../../.notyours/x`],
+  ])('blocks %s', async (_n, make) => {
+    const file = make(project);
+    const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Write', tool_input: { file_path: file } }));
+    expect(r.exitCode).toBe(2);
+  });
+
+  it('allows .. that physically stays outside .notyours', async () => {
+    mkdirSync(path.join(project, 'src', 'a'), { recursive: true });
+    symlinkSync(path.join(project, 'src', 'a'), path.join(project, 'lnk'));
+    const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Write', tool_input: { file_path: `${project}/lnk/../b.ts` } }));
+    expect(r.exitCode).toBe(0); // physically src/b.ts
   });
 
   it('fails closed on a symlink loop', async () => {

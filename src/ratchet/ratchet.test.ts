@@ -3,14 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import YAML from 'yaml';
-import { mockHeldResult, mockIdentities, mockLeakResult } from '../mocks/fixtures.js';
+import { MOCK_TS, mockHeldResult, mockIdentities, mockLeakResult } from '../mocks/fixtures.js';
 import type { Engine, ProbeResult } from '../types.js';
 import { createRatchet, MockRatchet, RealRatchet } from './index.js';
 import { KaneCli, parseAuthorRun, parseBalance, parseReplay } from './kane.js';
 import { planLock, resolveTemplate } from './lock.js';
 import { notyoursPaths, testFile } from './paths.js';
 import { classify, engineOracle } from './replay.js';
-import { loadIdentities, readCreditLog } from './store.js';
+import { loadIdentities, logCredits, readCreditLog } from './store.js';
 import { FakeKane, heldWithUrl, lockedBoundary, tempProject } from './testkit.js';
 
 const unlocked = { ...lockedBoundary, locked: false };
@@ -90,6 +90,13 @@ describe('lock', () => {
     await expect(ratchet().lock(unlocked, heldWithUrl)).rejects.toThrow(/creditFloor/);
     kane.balanceValue = undefined;
     await expect(ratchet().lock(unlocked, heldWithUrl)).rejects.toThrow(/balance/);
+    expect(kane.authored).toHaveLength(0);
+  });
+
+  it('defaults to a budget of 8 authoring runs (4 boundaries)', async () => {
+    const p = notyoursPaths(project);
+    for (let n = 0; n < 7; n++) logCredits(p, { ts: MOCK_TS, kind: 'author', name: `x${n}`, identity: 'alice', status: 'passed', credits: 30 });
+    await expect(ratchet().lock(unlocked, heldWithUrl)).rejects.toThrow(/budget reached \(7\/8/);
     expect(kane.authored).toHaveLength(0);
   });
 
