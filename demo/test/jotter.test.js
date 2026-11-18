@@ -1,6 +1,6 @@
 // Route tests for the Jotter demo (real HTTP via fetch, no Kane).
 // They pin the demo's contract: the three seeded bugs are present, and guests are blocked.
-// Run: npm run test:demo  (or: npx vitest run --root demo)
+// Run: npx vitest run --root demo
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
