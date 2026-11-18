@@ -30,11 +30,14 @@ const fakeRunner: KaneRunner = async (objective, identity, vars, kopts) => {
   objectives.push(`${identity.id}: ${objective}`);
   if (kopts.name) names.push(kopts.name);
   const stored: Record<string, string> = {};
-  if (objective === SEEDED) {
+  // Objectives arrive with non-secret values inlined ({{token}} -> the identity's canary).
+  const is = (template: string) => objective === template.replace('{{token}}', identity.token);
+  if (is(SEEDED)) {
     // Seed-confirm objective (fixed owner URL): works for the owner, fails for anyone else.
     if (identity.id !== 'alice') return { run: { objective, identity: identity.id, status: 'failed', exitCode: 1, finalState: {}, creditsConsumed: 0, durationS: 0.1 }, stored, text: 'note does not contain the token' };
     stored.item_url = seededUrl;
-  } else if (objective === CREATE) {
+  } else if (is(CREATE)) {
+    expect(objective).not.toContain('{{token}}');
     const token = typeof vars.token === 'string' ? vars.token : vars.token!.value;
     const n = app.addNote(identity.email!, `Note ${token}`, `Secret body ${token}`);
     stored.item_url = `${app.url}/notes/${n.id}`;

@@ -71,7 +71,11 @@ export async function logIn(identity: Identity, handle: ChromeHandle, opts: Sess
 
   if (recorded) {
     const kane = opts.kane ?? new KaneCli();
-    const out = await kane.replay({ testPath: recorded, identity: identity.id, cdpEndpoint: handle.endpoint, cwd: opts.cwd });
+    // kane-cli 0.10.0 only types the recorded password correctly when the secret is supplied again.
+    const out = await kane.replay({
+      testPath: recorded, identity: identity.id, cdpEndpoint: handle.endpoint, cwd: opts.cwd,
+      variables: { email: { value: identity.email }, password: { value: identity.password, secret: true } },
+    });
     logCredits(opts.stateDir, { kind: 'replay', identity: identity.id, status: out.run.status, credits: out.run.creditsConsumed, durationS: out.run.durationS, objective: `login replay ${name}` });
     if (out.run.status === 'passed') return;
     log(`notyours: login replay for ${identity.id} ${out.run.status}${out.run.reason ? ` (${out.run.reason})` : ''}; recording a new login (1 authoring run)`);

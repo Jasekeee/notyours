@@ -1,5 +1,8 @@
 // Thin kane-cli wrapper for the ratchet: one authoring run (`run --name`) and one replay (`testmd run`).
 // Parsing is pure so tests can feed recorded NDJSON. Never retries: each call is exactly one kane-cli invocation.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { execa } from 'execa';
 import type { KaneRun, KaneRunStatus } from '../types.js';
 
@@ -21,6 +24,11 @@ export interface ReplayRequest {
   /** Retarget the recorded start URL (`--override-start-url`). Replays ignore changed variables. */
   overrideStartUrl?: string;
   timeoutS?: number;
+  /**
+   * Variables for the replay, written to a 0600 temp file that is deleted afterwards. A recorded login only
+   * types the right password on kane-cli 0.10.0 when the secret is supplied again at replay time.
+   */
+  variables?: Record<string, { value: string; secret?: boolean }>;
 }
 
 export interface ReplayOutcome {
@@ -149,8 +157,18 @@ export class KaneCli implements KaneClient {
     // --no-adaptive-heal: a replay miss must stay a miss. Healing re-authors steps and spends credits.
     const args = ['testmd', 'run', req.testPath, '--cdp-endpoint', req.cdpEndpoint, '--agent', '--no-adaptive-heal', '--timeout', String(timeoutS)];
     if (req.overrideStartUrl) args.push('--override-start-url', req.overrideStartUrl);
-    const r = await execa(this.bin, args, { cwd: req.cwd, reject: false, env: KANE_ENV, timeout: (timeoutS + 60) * 1000 });
-    return parseReplay(String(r.stdout ?? ''), r.exitCode ?? 2, req.testPath, req.identity);
+    const dir = req.variables ? mkdtempSync(join(tmpdir(), 'ny-replay-')) : undefined;
+    try {
+      if (dir) {
+        const file = join(dir, 'vars.json');
+        writeFileSync(file, JSON.stringify(req.variables), { mode: 0o600 });
+        args.push('--variables-file', file);
+      }
+      const r = await execa(this.bin, args, { cwd: req.cwd, reject: false, env: KANE_ENV, timeout: (timeoutS + 60) * 1000 });
+      return parseReplay(String(r.stdout ?? ''), r.exitCode ?? 2, req.testPath, req.identity);
+    } finally {
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   async balance(cwd: string): Promise<number | undefined> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { safeObjectiveUrl, visitObjective } from '../probes.js';
+import { inlineObjective, safeObjectiveUrl, visitObjective } from '../probes.js';
 import { isUrlEcho, judge, parseTarget, scanText, type NetRecord, type Visit } from '../oracle.js';
 
 const T = 'NY-ALICE-AAAAAAAAAAAA';
@@ -12,6 +12,13 @@ describe('oracle', () => {
     expect(() => safeObjectiveUrl("http://127.0.0.1:3077/x'")).toThrow(/single http/);
     expect(() => safeObjectiveUrl('javascript:alert(1)')).toThrow(/single http/);
     expect(visitObjective(['http://127.0.0.1:3077/a'])).toBe('Go to http://127.0.0.1:3077/a and wait for the page to finish loading. Do not sign in, sign out or submit any form.');
+  });
+
+  it('inlines non-secret values into objectives, never secrets; refuses malformed tokens and quotes', () => {
+    expect(inlineObjective("verify the note contains '{{token}}' at {{base_url}}/x", { token: T, base_url: 'http://h' })).toBe(`verify the note contains '${T}' at http://h/x`);
+    expect(inlineObjective('type {{password}}', { password: { value: 'pw', secret: true } })).toBe('type {{password}}');
+    expect(() => inlineObjective('{{token}}', { token: 'NY-ALICE-nope' })).toThrow(/malformed token/);
+    expect(() => inlineObjective('{{email}}', { email: "a'b@x.test" })).toThrow(/quotes/);
   });
 
   it('parseTarget: optional HTTP method prefix, default GET', () => {

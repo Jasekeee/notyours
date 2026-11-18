@@ -31,8 +31,9 @@ describe('session pool', () => {
       return { run: { objective, identity: identity.id, status: 'passed', exitCode: 0, finalState: {}, creditsConsumed: 30, durationS: 1 }, stored: {}, text: '' };
     };
     const kane = {
-      replay: async (req: { testPath: string; identity: string }) => {
+      replay: async (req: { testPath: string; identity: string; variables?: Record<string, { value: string; secret?: boolean }> }) => {
         replayed.push(req.identity);
+        expect(req.variables?.password).toEqual({ value: 'pw-test', secret: true }); // re-supplied at replay time
         return { run: { objective: 'replay', identity: req.identity, status: 'passed' as const, exitCode: 0, finalState: {}, creditsConsumed: 0, durationS: 0.4 }, authorDecisions: 0 };
       },
     };

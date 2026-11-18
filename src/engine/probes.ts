@@ -1,7 +1,7 @@
 // The four probe kinds. Kane drives the personas; the oracle (oracle.ts) decides.
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { ProbeResultSchema } from '../schemas.js';
+import { ProbeResultSchema, TOKEN_RE } from '../schemas.js';
 import type { Boundary, Config, Identity, KaneRun, ProbeResult } from '../types.js';
 import type { ChromePool } from './chrome.js';
 import { byId } from './identities.js';
@@ -20,6 +20,17 @@ export interface ProbeDeps {
    * only the oracle (targets + positive controls). Stored values come from the replays' finalState.
    */
   replays?: KaneRun[];
+}
+
+/** Replace {{name}} with non-secret string values; tokens must be canary-shaped, nothing may contain quotes. */
+export function inlineObjective(objective: string, vars: KaneVars): string {
+  return objective.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (m, k: string) => {
+    const v = vars[k];
+    if (typeof v !== 'string') return m; // secrets (objects) and unknown names stay as variables
+    if (k === 'token' && !TOKEN_RE.test(v)) throw new Error(`Refusing to inline a malformed token into a Kane objective: ${v}`);
+    if (/["'`\\\n]/.test(v)) throw new Error(`Refusing to inline {{${k}}} into a Kane objective: it contains quotes or newlines.`);
+    return v;
+  });
 }
 
 /** Recording name the ratchet adopts on lock: `<boundary>_<identity>` (see src/ratchet/paths.ts testName). */
@@ -91,8 +102,12 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
   const baseUrl = cfg.baseUrl.replace(/\/+$/, '');
   const ctxOf = (i: Identity, stored: Ctx = {}): Ctx => ({ base_url: baseUrl, token: i.token, ...(i.email ? { email: i.email } : {}), ...stored });
   const judgeOnly = deps.replays !== undefined;
-  const kane = async (objective: string, who: Identity, vars: KaneVars, name?: string): Promise<KaneOutcome> => {
+  const kane = async (rawObjective: string, who: Identity, vars: KaneVars, name?: string): Promise<KaneOutcome> => {
     if (judgeOnly) throw new Error('internal: no Kane runs in judge mode');
+    // Non-secret values (canary token, base URL, email, stored values) are written into the objective:
+    // kane-cli resolves {{vars}} inside assertions non-deterministically (run 2 compared the literal text
+    // '{{global.token}}'). Passwords are never inlined; they stay secret variables.
+    const objective = inlineObjective(rawObjective, vars);
     const out = await deps.runner(objective, who, vars, name ? { ...kopts, name: recordingName(b.id, who.id) } : kopts);
     runs.push(out.run);
     return out;
