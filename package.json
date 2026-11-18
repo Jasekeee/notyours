@@ -30,7 +30,8 @@
     "demo",
     "!demo/test",
     "!demo/vitest.config.js",
-    "!demo/data"
+    "!demo/data",
+    "!demo/KANE_RUNS.md"
   ],
   "dependencies": {
     "commander": "^15.1.0",

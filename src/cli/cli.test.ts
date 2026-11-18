@@ -399,7 +399,7 @@ describe('doctor', () => {
 
   it('all green', async () => {
     const checks = await runDoctor(300, {
-      exec: fakeExec({ '--version': { stdout: '\nUpdate available: 0.10.0 → 0.10.6\n0.10.0' }, whoami: { stdout: '│  ✓ Authenticated  │' }, balance: { stdout: 'Available credits: 11121.8322' } }),
+      exec: fakeExec({ '--version': { stdout: '\nUpdate available: 0.10.0 → 0.10.6\n0.10.0' }, whoami: { stdout: '│  ✓ Authenticated  │' }, balance: { stdout: 'Available credits: 1234.5622' } }),
       findChrome: () => '/chrome',
       isPortFree: async () => true,
       nodeVersion: '22.3.0',
@@ -715,7 +715,7 @@ describe('demo helpers', () => {
 
   it('the demo copy leaves out Jotter\'s own bug-asserting tests, its vitest config and local data', () => {
     const f = demoCopyFilter('/pkg/demo');
-    for (const p of ['/pkg/demo/test', '/pkg/demo/test/jotter.test.js', '/pkg/demo/vitest.config.js', '/pkg/demo/data/jotter.sqlite']) expect([p, f(p)]).toEqual([p, false]);
+    for (const p of ['/pkg/demo/test', '/pkg/demo/test/jotter.test.js', '/pkg/demo/vitest.config.js', '/pkg/demo/data/jotter.sqlite', '/pkg/demo/KANE_RUNS.md']) expect([p, f(p)]).toEqual([p, false]);
     for (const p of ['/pkg/demo', '/pkg/demo/routes/notes.js', '/pkg/demo/server.js', '/pkg/demo/.notyours/boundaries/b1-cross-user.yaml', '/pkg/demo/routes/test.js']) expect([p, f(p)]).toEqual([p, true]);
     expect(f('/pkg/demo/node_modules')).toBe(false);
   });

@@ -1,13 +1,15 @@
 # Kane runs against Jotter (feat/demo)
 
+_Redacted dev log (no emails or account data). Not shipped in the npm package or copied into demos._
+
 Budget: at most 4 happy-path authoring runs (6 total for agent B). **Used: 2 runs, 59.60 credits.**
 kane-cli 0.10.0, headless, one-off (no `--name`), launched from a scratch folder outside the repo so
-evidence packs never land here. Each run ran once, with no retries. Balance before: 11121.83.
+evidence packs never land here. Each run ran once, with no retries.
 
 | # | Date | Objective (abridged) | Result | credits_consumed | Duration |
 |---|---|---|---|---|---|
 | 1 | 2026-11-18 | Sign up as Dana (random email), verify "My notes", create note "Happy path" / "Buy oat milk", verify the note page, store its URL | passed (`note_url` = `/notes/1003`) | 33.59 | 113.8 s |
-| 2 | 2026-11-18 | Log in as `bob@jotter.test` (password passed as a secret variable), verify "My notes" lists "Reminder", log out, verify "Log in to Jotter" | passed | 26.01 | 70.4 s |
+| 2 | 2026-11-18 | Log in as Bob, the seeded free user (password passed as a secret variable), verify "My notes" lists "Reminder", log out, verify "Log in to Jotter" | passed | 26.01 | 70.4 s |
 
 Notes:
 - Both runs cost more than the ~16 credits per authoring run estimated in CLAUDE.md (they have 13–19 steps).

@@ -321,7 +321,7 @@ describe('kane-cli NDJSON parsing', () => {
   });
 
   it('parses the balance line', () => {
-    expect(parseBalance('Available credits: 11121.8322\n')).toBeCloseTo(11121.8322);
+    expect(parseBalance('Available credits: 1234.5622\n')).toBeCloseTo(1234.5622);
     expect(parseBalance('nothing')).toBeUndefined();
   });
 

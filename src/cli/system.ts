@@ -52,7 +52,7 @@ export async function kaneWhoami(run: Exec = exec): Promise<KaneAuth> {
   return { state: 'unauthenticated', detail: 'run `kane-cli login`' };
 }
 
-/** Parses "Available credits: 11121.83". undefined if kane-cli is missing or the output is unrecognised. */
+/** Parses "Available credits: 1234.56". undefined if kane-cli is missing or the output is unrecognised. */
 export async function kaneBalance(run: Exec = exec): Promise<number | undefined> {
   const r = await run('kane-cli', ['balance']);
   if (r.notFound || r.exitCode !== 0) return undefined;

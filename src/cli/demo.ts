@@ -44,9 +44,9 @@ const USERS_FILES = ['users.yaml', 'users.yml', 'users.json'];
 /**
  * Repo-only parts of demo/ that a demo copy (`notyours demo`, and loop dirs made with `demo --dir`) must not get:
  * Jotter's own tests assert the seeded bugs on purpose, so in a copy they would fight an agent that fixes them;
- * data/ is a locally built database that would make the copy skip its fresh seed.
+ * data/ is a locally built database that would make the copy skip its fresh seed; KANE_RUNS.md is agent B's dev log.
  */
-export const DEMO_REPO_ONLY = ['test', 'vitest.config.js', 'data'];
+export const DEMO_REPO_ONLY = ['test', 'vitest.config.js', 'data', 'KANE_RUNS.md'];
 
 /** copyFilter plus the repo-only top-level entries of the demo folder `src`. */
 export function demoCopyFilter(src: string): (p: string) => boolean {
