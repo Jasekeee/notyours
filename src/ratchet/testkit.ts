@@ -45,6 +45,9 @@ export class FakeKane implements KaneClient {
     mkdirSync(path.join(tests, `output-${req.name}`, '.internal'), { recursive: true });
     writeFileSync(path.join(tests, `${req.name}_test.md`), `---\nmode: testing\n---\n\n## Step 1\n${req.objective}\n`);
     writeFileSync(path.join(tests, `output-${req.name}`, '.internal', 'meta.json'), '{}');
+    mkdirSync(path.join(tests, `output-${req.name}`, 'playwright-python-code'), { recursive: true });
+    writeFileSync(path.join(tests, `output-${req.name}`, 'playwright-python-code', '.env.example'), 'LT_USERNAME=\nLT_ACCESS_KEY=\n');
+    writeFileSync(path.join(tests, `output-${req.name}`, 'playwright-python-code', 'test.py'), 'pass\n');
     return { ...passedRun(req.identity, req.objective), status: this.authorStatus, creditsConsumed: 12.5 };
   }
 

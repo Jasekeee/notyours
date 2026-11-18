@@ -1,5 +1,5 @@
 // lock(): turn a HELD probe into two recorded, replayable (0-credit) Kane tests, one per identity.
-import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Boundary, Config, Identity, KaneRun, ProbeResult } from '../types.js';
 import { cdpEndpoint, type KaneClient } from './kane.js';
@@ -95,8 +95,24 @@ export function adoptTest(paths: NotyoursPaths, name: string): string {
   moveInto(srcMd, destMd);
   // Without the recordings a replay would re-author from scratch, which costs credits.
   const srcOut = testOutputDir(paths.kaneTests, name);
-  if (existsSync(srcOut)) moveInto(srcOut, testOutputDir(paths.tests, name));
+  if (existsSync(srcOut)) {
+    const destOut = testOutputDir(paths.tests, name);
+    moveInto(srcOut, destOut);
+    removeEnvFiles(destOut);
+  }
   return destMd;
+}
+
+/**
+ * kane-cli's code export ships a `.env.example` with LT_USERNAME/LT_ACCESS_KEY slots (empty in 0.10.0).
+ * The pre-push secret scan exempts `.env.example`, so never let one ride along into .notyours/tests.
+ */
+function removeEnvFiles(dir: string): void {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) removeEnvFiles(full);
+    else if (/^\.env(\..*)?$/.test(e.name)) rmSync(full, { force: true });
+  }
 }
 
 export function hasLockedTests(paths: NotyoursPaths, b: Boundary): boolean {

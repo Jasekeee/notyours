@@ -43,6 +43,8 @@ describe('lock', () => {
     for (const id of ['alice', 'bob']) {
       expect(existsSync(testFile(p, 'notes-cross-user', id))).toBe(true);
       expect(existsSync(path.join(p.tests, `output-notes-cross-user_${id}`, '.internal', 'meta.json'))).toBe(true);
+      expect(existsSync(path.join(p.tests, `output-notes-cross-user_${id}`, 'playwright-python-code', 'test.py'))).toBe(true);
+      expect(existsSync(path.join(p.tests, `output-notes-cross-user_${id}`, 'playwright-python-code', '.env.example'))).toBe(false);
       expect(existsSync(path.join(p.kaneTests, `notes-cross-user_${id}_test.md`))).toBe(false);
     }
     const yaml = readFileSync(p.boundariesFile, 'utf8');
