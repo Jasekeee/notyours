@@ -1,0 +1,74 @@
+#!/bin/sh
+# notyours pre-push hook: block pushes that add secrets or rewrite remote history.
+# Enable with: git config core.hooksPath .githooks
+# Scans lines ADDED by every commit being pushed. .env.example is exempt.
+# A line containing "notyours:allow-secret" is exempt (use for fake test fixtures only).
+# Matched values are never printed, only the file and commit.
+
+ZERO=0000000000000000000000000000000000000000
+SEP='|NY|'
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
+
+# Extended regexes, one per line, matched case-insensitively against "path|NY|added line".
+cat > "$tmp/patterns" <<'EOF'
+-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----
+(AKIA|ASIA)[0-9A-Z]{16}
+ghp_[A-Za-z0-9]{30,}
+gh[ousr]_[A-Za-z0-9]{30,}
+github_pat_[A-Za-z0-9_]{30,}
+sk-[A-Za-z0-9_-]{20,}
+LT_[A-Za-z0-9]{20,}
+(api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|auth[_-]?token|access[_-]?token|passw(or)?d|secret)["']?[[:space:]]*[:=][[:space:]]*["'][^"'[:space:]]{8,}["']
+\|NY\|[[:space:]]*(export[[:space:]]+)?[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*[[:space:]]*=[[:space:]]*["']?[^[:space:]"'#$]{6,}
+EOF
+
+fail=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$ZERO" ] && continue   # branch deletion
+
+  if [ "$remote_sha" != "$ZERO" ] && git cat-file -e "$remote_sha" 2>/dev/null; then
+    if ! git merge-base --is-ancestor "$remote_sha" "$local_sha"; then
+      echo "pre-push: BLOCKED non-fast-forward push to $remote_ref (force-push is not allowed)." >&2
+      fail=1
+      continue
+    fi
+    range="$remote_sha..$local_sha"
+  else
+    range="$local_sha --not --remotes"
+  fi
+
+  # shellcheck disable=SC2086
+  for c in $(git rev-list $range); do
+    short=$(git rev-parse --short "$c")
+
+    # Forbidden files added/modified.
+    git diff-tree -r --root --no-commit-id --name-only --diff-filter=AMR "$c" |
+      grep -E '(^|/)\.env(\..*)?$|(^|/)\.notyours/(secrets\.json|profiles/)' |
+      grep -v -E '(^|/)\.env\.example$' > "$tmp/files"
+    if [ -s "$tmp/files" ]; then
+      while read -r f; do echo "pre-push: BLOCKED $short adds forbidden file: $f" >&2; done < "$tmp/files"
+      fail=1
+    fi
+
+    # Secret patterns in added lines.
+    git diff-tree -r --root --no-commit-id -p --no-color --no-ext-diff "$c" |
+      awk -v sep="$SEP" '
+        /^\+\+\+ / { f = substr($0, 7); next }
+        /^\+/      { print f sep substr($0, 2) }' |
+      grep -v -E '^(.*/)?\.env\.example\|NY\|' |
+      grep -v 'notyours:allow-secret' |
+      grep -i -E -f "$tmp/patterns" |
+      sed 's/|NY|.*//' | sort -u > "$tmp/hits"
+    if [ -s "$tmp/hits" ]; then
+      while read -r f; do echo "pre-push: BLOCKED $short: possible secret in $f" >&2; done < "$tmp/hits"
+      fail=1
+    fi
+  done
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo "pre-push: push aborted. Move secrets to .env (gitignored) and rewrite the local commit." >&2
+  exit 1
+fi
+exit 0
