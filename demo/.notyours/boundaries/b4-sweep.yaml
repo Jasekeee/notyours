@@ -1,0 +1,15 @@
+# B4: sweep Bob's own pages for any of Alice's data.
+# Expected verdict on the seeded app: HELD (the notes list and account page are scoped correctly).
+# Positive control: Bob's own token is on both pages (note 1002 preview, account bio).
+id: b4-bob-sweep
+kind: sweep
+owner: alice
+viewer: bob
+create:
+  objective: "Go to http://127.0.0.1:3077/notes/1001, verify the note text contains '{{token}}', and store the current page URL as 'note_url'"
+  store: [note_url]
+targets:
+  ui: ["http://127.0.0.1:3077/notes", "http://127.0.0.1:3077/account"]
+  api: []
+expect: denied
+surface: ["routes/notes.js", "routes/account.js"]

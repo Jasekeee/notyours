@@ -1,0 +1,17 @@
+# B1: Bob (free, logged in) must not see Alice's note 1001.
+# Expected verdict on the seeded app: LEAK (SEEDED BUG #1 page, #2 API).
+# Note 1001 is created by the fixed seed (node demo/server.js --seed), so the "create" run
+# only confirms it as Alice; the URLs never change, which keeps cached replays valid.
+id: b1-notes-cross-user
+kind: cross-user
+owner: alice
+viewer: bob
+create:
+  objective: "Go to http://127.0.0.1:3077/notes/1001, verify the note text contains '{{token}}', and store the current page URL as 'note_url'"
+  store: [note_url]
+targets:
+  ui: ["http://127.0.0.1:3077/notes/1001"]
+  api: ["http://127.0.0.1:3077/api/notes/1001"]
+expect: denied
+# Relative to the project dir that holds .notyours/ (demo/).
+surface: ["routes/notes.js"]
