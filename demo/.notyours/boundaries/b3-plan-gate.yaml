@@ -1,0 +1,23 @@
+# B3: free Bob must not be able to export (a Jotter Pro feature).
+# Expected verdict on the seeded app: LEAK via the API (SEEDED BUG #3). The UI hides the button
+# from free users, so the UI path holds; POST /api/export as Bob returns his notes anyway.
+# Success signal: the export body contains the viewer's own token (Bob's note 1002).
+# targets.api uses "METHOD URL" because this endpoint is POST-only (any other method gets 405, Allow: POST).
+id: b3-export-plan-gate
+kind: plan-gate
+owner: alice
+viewer: bob
+create:
+  objective: "Go to http://127.0.0.1:3077/pro/export and verify an 'Export my notes' button is visible"
+  store: []
+targets:
+  ui: ["http://127.0.0.1:3077/pro/export"]
+  api: ["POST http://127.0.0.1:3077/api/export"]
+proAction:
+  objective: "Go to http://127.0.0.1:3077/pro/export and export my notes"
+# CC-1: positive control. Bob must see his OWN token on his own seeded note 1002.
+viewerOwn:
+  ui: ["http://127.0.0.1:3077/notes/1002"]
+  api: []
+expect: denied
+surface: ["routes/pro.js"]

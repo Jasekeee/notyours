@@ -1,0 +1,15 @@
+# B2: a logged-out visitor must not see Alice's note 1001.
+# Expected verdict on the seeded app: HELD (the page redirects to /login, the API returns 401).
+# This is the control that shows notyours does not cry wolf.
+id: b2-notes-guest
+kind: guest
+owner: alice
+viewer: guest
+create:
+  objective: "Go to http://127.0.0.1:3077/notes/1001, verify the note text contains '{{token}}', and store the current page URL as 'note_url'"
+  store: [note_url]
+targets:
+  ui: ["http://127.0.0.1:3077/notes/1001"]
+  api: ["http://127.0.0.1:3077/api/notes/1001"]
+expect: denied
+surface: ["routes/notes.js"]
