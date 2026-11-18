@@ -62,7 +62,7 @@ Claude Code usage for the four headless sessions.
 - **The guard is a guardrail, not a sandbox.** Automated security review found successive parser differentials in the
   Bash checks. The current version is deny-by-default for any notyours invocation (exact plain-word allowlist, with no
   quotes, expansions, subshells or command runners) plus a fail-closed regex backstop. A determined agent with shell
-  access can still find unanticipated forms (known: an `npm run <script>` whose body calls the CLI is not resolved). The backstops are Claude Code's `permissions.deny` rules and reviewing
+  access can still find unanticipated forms (known and accepted: an `npm`/`pnpm`/`yarn run <script>` whose body calls the CLI, and `npx ./`-style path spellings, are not resolved). The backstops are Claude Code's `permissions.deny` rules and reviewing
   `.notyours/` in `git diff`.
 - **Demo friction:** Jotter's own tests assert the seeded bugs, so a correct fix turns 2–4 of them red, which agents
   notice and trade off (run 3 briefly re-added bug #3). Running them while the app holds :3077 is slow.

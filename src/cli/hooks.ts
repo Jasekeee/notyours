@@ -127,8 +127,8 @@ export function hasDangerousGlob(raw: string): boolean {
 const AGENT_NOTYOURS = new Set(['replay', 'report', 'map', 'doctor']);
 /** A token that starts notyours: npx notyours, notyours@1.2, ./node_modules/.bin/notyours(.cmd), node .../cli/index.js */
 const NOTYOURS_ENTRY_RE = /(?:^|\/)notyours(?:@[\w.^~<>=-]*)?(?:\.(?:c?js|mjs|cmd|ps1|exe))?$|(?:^|\/)(?:dist|src)\/cli(?:\/index(?:\.(?:c?js|mjs|ts))?)?\/?$|(?:^|\/)cli\/index(?:\.(?:c?js|mjs|ts))?$/i;
-/** Commands whose arguments are themselves a command: notyours after one of these is an invocation. */
-const COMMAND_RUNNERS = new Set(['xargs', 'env', 'nohup', 'time', 'watch', 'nice', 'timeout', 'sudo', 'doas', 'command', 'builtin', 'parallel', 'npm', 'pnpm', 'yarn', 'bunx', 'bun']);
+/** The only commands that may carry the word notyours as an argument (they read text, they don't run it). */
+const TEXT_READERS = new Set(['git', 'grep', 'rg', 'cat', 'head', 'tail', 'ls', 'wc', 'jq']);
 /** Plain argv words only: no quoting, expansion or redirection can hide inside an allowed invocation. */
 const PLAIN_ARG_RE = /^[A-Za-z0-9._\/:=@+-]+$/;
 
@@ -146,23 +146,37 @@ export function agentNotyoursDenied(raw: string): string | undefined {
   if (/['"\\$`(){}]/.test(raw) || /\b(?:xargs|eval|exec)\b|\b(?:ba|z|da)?sh\s+-c\b/.test(raw)) {
     return 'notyours commands from the agent must be plain words (no quotes, backslashes, $, backticks, ( ) { }, xargs, sh -c, eval or exec).';
   }
-  // Fail-closed backstop next to the parser: an authoring subcommand anywhere after notyours is denied.
-  const flat = raw.replace(/\s+/g, ' ');
-  if (/\bnotyours\b.*\b(?:lock|demo|init|install-hooks)\b/i.test(flat) || (/\bnotyours\b.*\brun\b/i.test(flat) && !/\brun\b[^;&|]*\s--dry-run(?:\s|$)/i.test(flat))) return human;
+  // Fail-closed backstop next to the parser (comments stripped, every entry form): an authoring subcommand
+  // anywhere after a notyours entry is denied; `run` only with --dry-run before any `--`.
+  const flat = raw.split('\n').map((l) => l.replace(/(^|\s)#.*$/, '')).join(' ').replace(/\s+/g, ' ');
+  const words0 = flat.split(' ');
+  const entryAt = words0.findIndex((w) => NOTYOURS_ENTRY_RE.test(w)) >= 0 ? words0.findIndex((w) => NOTYOURS_ENTRY_RE.test(w)) : words0.findIndex((w, k) => w === '.' && words0[k - 1] === 'npx');
+  if (entryAt >= 0) {
+    const after = words0.slice(entryAt + 1);
+    if (after.some((w) => /^(?:lock|demo|init|install-hooks|hook)$/i.test(w))) return human;
+    const r = after.findIndex((w) => /^run$/i.test(w));
+    if (r >= 0) {
+      const rest = after.slice(r + 1);
+      const dd = rest.indexOf('--');
+      if (!(dd < 0 ? rest : rest.slice(0, dd)).includes('--dry-run')) return human;
+    }
+  }
+  if (/\|\s*(?:ba|z|da|k)?sh\b/.test(raw)) return 'piping into a shell next to a notyours command is not allowed for the agent.';
   for (const segRaw of raw.split(/[\n;&|]+/)) {
     const seg = segRaw.replace(/(^|\s)#.*$/, '').trim();
     if (!seg || !invokes(seg)) continue;
     const words = seg.split(/\s+/);
     let i = 0;
+    while (i < words.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]!) || ['!', 'then', 'do', 'else', 'elif', 'time', 'coproc', 'if', 'while', 'until'].includes(words[i]!))) i++;
     if (words[i] === 'npx' || words[i] === 'node' || words[i] === 'tsx') {
       // `npx .` / `npx -y …` / `node --flag …`: anything but a plain entry right after the runner is denied.
       if (words[i] === 'npx' && (words[i + 1] === '.' || words[i + 1]?.startsWith('-'))) return human;
       i++;
     }
     if (!NOTYOURS_ENTRY_RE.test(words[i] ?? '')) {
-      // notyours as an argument: fine for ordinary commands (git log --grep notyours), not for command runners.
-      if (COMMAND_RUNNERS.has((words[0] ?? '').replace(/^.*\//, '')) || words.includes('-exec') || words.includes('-execdir')) return human;
-      continue;
+      // notyours outside command position: fine only as data for a small set of text readers.
+      if (TEXT_READERS.has((words[i] ?? '').replace(/^.*\//, '')) && !words.includes('-exec') && !words.includes('-execdir')) continue;
+      return human;
     }
     i++;
     if (words[i] === '-C' || words[i] === '--cwd') i += 2;
