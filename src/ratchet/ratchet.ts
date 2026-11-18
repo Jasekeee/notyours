@@ -1,3 +1,4 @@
+import { assertHostsAllowed } from '../cli/host-gate.js';
 import { createEngine, sessionPool, wipeProfile, type ChromePool } from '../engine/index.js';
 import type { Boundary, Config, Identity, ProbeResult, Ratchet } from '../types.js';
 import { KaneCli, type KaneClient } from './kane.js';
@@ -88,6 +89,9 @@ export class RealRatchet implements Ratchet {
       .map((s) => s.boundary)
       .filter((b) => b.locked && (!want || want.has(b.id)));
     if (!bs.length) return [];
+    // Host gate on every replay path (CLI replay, demo, the Stop hook in any app folder): allowHosts plus
+    // the human's out-of-repo ownership record. Throws (fails closed) before any Chrome or Kane work.
+    assertHostsAllowed(this.config(), bs, this.paths.root);
     return this.withChromes(async (pool, oracle) => {
       const out: ProbeResult[] = [];
       for (const b of bs) {

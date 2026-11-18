@@ -486,12 +486,18 @@ describe('hooks', () => {
     expect(`${r.stdout ?? ''}${r.stderr ?? ''}`).toMatch(/invoices|notes/);
   });
 
-  it('stop refuses to replay locked boundaries that point at a host outside allowHosts', async () => {
-    const r2 = hookProject();
-    fs.writeFileSync(path.join(r2, '.notyours/boundaries/evil.yaml'), YAML.stringify({ ...mockBoundary, id: 'evil', locked: true, targets: { ui: ['https://victim.example.org/notes/1'], api: [] } }));
-    const r = await runHook('stop', {}, r2);
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout).toMatch(/not replaying/);
+  it('stop refuses to replay a dirty locked boundary pointing outside allowHosts, also in a nested app folder', async () => {
+    for (const nested of [false, true]) {
+      const r2 = tmp('ny-gate-');
+      const app = nested ? path.join(r2, 'apps', 'web') : r2;
+      fs.mkdirSync(app, { recursive: true });
+      runInit(app, { url: 'http://localhost:3000' });
+      fs.writeFileSync(path.join(app, '.notyours/boundaries/evil.yaml'), YAML.stringify({ ...mockBoundary, id: 'evil', locked: true, surface: ['src/**'], targets: { ui: ['https://victim.example.org/notes/1'], api: [] } }));
+      fs.writeFileSync(path.join(app, '.notyours/dirty.json'), JSON.stringify({ evil: { files: ['src/a.ts'], globs: ['src/**'], ts: new Date().toISOString() } }));
+      const r = await runHook('stop', {}, r2);
+      expect(r.exitCode).toBe(0); // never blocks, never replays
+      expect(`${r.stdout ?? ''}${r.stderr ?? ''}`).toMatch(/victim\.example\.org.*not in allowHosts/);
+    }
   });
 
   it('init never takes a profile path from a committed identities.json', () => {
