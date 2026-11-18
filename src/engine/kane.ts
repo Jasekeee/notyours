@@ -18,6 +18,8 @@ export interface KaneRunOptions {
   cwd?: string;
   /** kane-cli --timeout in seconds. Default 240. */
   timeoutS?: number;
+  /** kane-cli --name: persist the run as .testmuai/tests/<name>_test.md for 0-credit replays (ratchet). */
+  name?: string;
 }
 
 export interface KaneOutcome {
@@ -101,6 +103,7 @@ export function logCredits(stateDir: string, entry: Record<string, unknown>): vo
  * Variables go through a 0600 temp file that is deleted afterwards.
  */
 export const runKane: KaneRunner = async (objective, identity, vars, opts) => {
+  if (opts.name !== undefined && !/^[a-zA-Z0-9_-]+$/.test(opts.name)) throw new Error(`Invalid Kane test name "${opts.name}" (allowed: [a-zA-Z0-9_-]+).`);
   await assertCreditFloor(opts.cfg.creditFloor);
 
   const dir = mkdtempSync(join(tmpdir(), 'ny-vars-'));
@@ -114,7 +117,7 @@ export const runKane: KaneRunner = async (objective, identity, vars, opts) => {
     writeFileSync(varsFile, JSON.stringify(fileVars), { mode: 0o600 });
     result = await execa(
       kaneBin(),
-      ['run', objective, '--agent', '--cdp-endpoint', cdpEndpoint(identity.cdpPort), '--variables-file', varsFile, '--timeout', String(opts.timeoutS ?? 240)],
+      ['run', objective, '--agent', '--cdp-endpoint', cdpEndpoint(identity.cdpPort), '--variables-file', varsFile, '--timeout', String(opts.timeoutS ?? 240), ...(opts.name ? ['--name', opts.name] : [])],
       { reject: false, timeout: CHILD_TIMEOUT_MS, cwd: opts.cwd ?? process.cwd(), stdin: 'ignore' },
     );
   } finally {

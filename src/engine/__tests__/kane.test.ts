@@ -48,6 +48,15 @@ describe('kane', () => {
     expect(existsSync(d.varsFile)).toBe(false);
   });
 
+  it('passes --name for replayable tests and validates it', async () => {
+    process.env.NOTYOURS_KANE_BIN = fake;
+    const debugFile = join(stateDir, 'debug-name.json');
+    process.env.FAKE_KANE_DEBUG = debugFile;
+    await runKane('x', alice, {}, { cfg, stateDir, cwd: stateDir, name: 'b1-notes_owner' });
+    expect(JSON.parse(readFileSync(debugFile, 'utf8')).name).toBe('b1-notes_owner');
+    await expect(runKane('x', alice, {}, { cfg, stateDir, name: 'bad name!' })).rejects.toThrow(/Invalid Kane test name/);
+  });
+
   it('refuses to start below the credit floor', async () => {
     process.env.NOTYOURS_KANE_BIN = fake;
     process.env.FAKE_KANE_BALANCE = '120.5';

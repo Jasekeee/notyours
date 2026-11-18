@@ -11,7 +11,7 @@ const varsFile = args[args.indexOf('--variables-file') + 1];
 const vars = JSON.parse(readFileSync(varsFile, 'utf8'));
 const mode = (statSync(varsFile).mode & 0o777).toString(8);
 console.log(JSON.stringify({ type: 'stream_start', v: 1 }));
-const debug = { varsFile, mode, varNames: Object.keys(vars), passwordSecret: vars.password?.secret ?? null, cdp: args[args.indexOf('--cdp-endpoint') + 1], timeout: args[args.indexOf('--timeout') + 1], agent: args.includes('--agent') };
+const debug = { varsFile, mode, varNames: Object.keys(vars), passwordSecret: vars.password?.secret ?? null, cdp: args[args.indexOf('--cdp-endpoint') + 1], timeout: args[args.indexOf('--timeout') + 1], agent: args.includes('--agent'), name: args.includes('--name') ? args[args.indexOf('--name') + 1] : null };
 if (process.env.FAKE_KANE_DEBUG) writeFileSync(process.env.FAKE_KANE_DEBUG, JSON.stringify(debug));
 const exit = Number(process.env.FAKE_KANE_EXIT ?? '0');
 if (process.env.FAKE_KANE_NO_RUN_END !== '1') {
