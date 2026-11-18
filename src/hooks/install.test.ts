@@ -12,9 +12,9 @@ describe('installHooks', () => {
     const dir = tmp();
     installHooks(dir);
     const s = read(dir);
-    expect(s.hooks.PostToolUse).toEqual([{ matcher: 'Edit|Write|MultiEdit', hooks: [{ type: 'command', command: 'npx notyours hook post-tool', timeout: 10 }] }]);
-    expect(s.hooks.PreToolUse).toEqual([{ matcher: 'Edit|Write|MultiEdit|Bash', hooks: [{ type: 'command', command: 'npx notyours hook guard', timeout: 10 }] }]);
-    expect(s.hooks.Stop).toEqual([{ hooks: [{ type: 'command', command: 'npx notyours hook stop', timeout: 900 }] }]);
+    expect(s.hooks.PostToolUse).toEqual([{ matcher: 'Edit|Write|MultiEdit', hooks: [{ type: 'command', command: 'npx --yes github:Jasekeee/notyours hook post-tool', timeout: 10 }] }]);
+    expect(s.hooks.PreToolUse).toEqual([{ matcher: 'Edit|Write|MultiEdit|Bash', hooks: [{ type: 'command', command: 'npx --yes github:Jasekeee/notyours hook guard', timeout: 10 }] }]);
+    expect(s.hooks.Stop).toEqual([{ hooks: [{ type: 'command', command: 'npx --yes github:Jasekeee/notyours hook stop', timeout: 900 }] }]);
   });
 
   it('keeps existing settings and hooks, and re-running with another cliCommand replaces only ours', () => {

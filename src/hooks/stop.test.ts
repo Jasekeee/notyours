@@ -91,7 +91,7 @@ describe('stop hook', () => {
     expect(red.stderr).toContain('NY-ALICE-AAAAAAAAAAAA');
     expect(red.stderr).toContain('Screenshot: .notyours/runs/r1/bob-notes.png');
     expect(red.stderr).toContain('src/app/api/notes/route.ts (matched src/app/api/notes/**)');
-    expect(red.stderr).toContain('npx notyours replay notes-cross-user');
+    expect(red.stderr).toContain('npx github:Jasekeee/notyours replay notes-cross-user');
     expect(readAttempts(notyoursPaths(project))).toEqual({ 'notes-cross-user': 1 });
     expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
     // owner and viewer replayed in their own Chromes

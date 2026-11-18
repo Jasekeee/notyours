@@ -75,7 +75,7 @@ export function leakBlock(b: Boundary, r: ProbeResult, d: DirtyEntry | undefined
   if (r.hits.length > 1) lines.push(`  (+${r.hits.length - 1} more hit(s): ${[...new Set(r.hits.slice(1).map((h) => h.url))].slice(0, 3).join(', ')})`);
   lines.push(`  Screenshot: ${r.screenshots[0] ?? '(none)'}`);
   lines.push(`  Suspected files: ${suspected(d, b)}`);
-  lines.push(`  Repro: npx notyours replay ${b.id}`);
+  lines.push(`  Repro: npx github:Jasekeee/notyours replay ${b.id}`);
   return lines;
 }
 
@@ -106,7 +106,7 @@ export function formatEscalation(
     out.push(`- **What leaked:** ${b.kind === 'plan-gate' ? `${b.viewer} (free plan) got the Pro-only result` : `${b.viewer} saw ${b.owner}'s data`} (${leakKind(r)})`);
     out.push(`- **Attempts:** ${attempts}`);
     out.push(`- **Suspected files:** ${suspected(d, b)}`);
-    out.push(`- **Repro:** \`npx notyours replay ${b.id}\``);
+    out.push(`- **Repro:** \`npx github:Jasekeee/notyours replay ${b.id}\``);
     out.push('- **Hits:**');
     for (const h of r.hits) out.push(`  - ${h.where} at ${h.url}: \`${oneLine(scrubSecrets(h.snippet, ids), 200).replace(/`/g, "'")}\``);
     if (!r.hits.length) out.push('  - (none recorded)');

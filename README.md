@@ -26,17 +26,16 @@ notyours does exactly that, in real browsers:
 
 ## Install
 
-Requires Node 22+.
+Requires Node 22+. notyours isn't on npm; run it straight from GitHub (npx builds it on first use, ~30 s):
 
 ```sh
-npx notyours demo
+npx github:Jasekeee/notyours demo
 ```
 
 That single command runs the whole thing against a bundled demo app. In your own project:
 
 ```sh
-npm i -D notyours
-npx notyours doctor        # Node 22+, Chrome, kane-cli login + credits, port 3077
+npx github:Jasekeee/notyours doctor   # Node 22+, Chrome, kane-cli login + credits, port 3077
 ```
 
 You also need Google Chrome and an authenticated [kane-cli](https://www.testmuai.com/kane-cli/)
@@ -45,18 +44,17 @@ You also need Google Chrome and an authenticated [kane-cli](https://www.testmuai
 ## Judges' quick start
 
 You need Node 22+, Google Chrome, and an authenticated [kane-cli](https://www.testmuai.com/kane-cli/)
-(`kane-cli login`). `npx notyours doctor` checks all of it, including the kane-cli version, and tells you how
-to fix anything that isn't ready. Until notyours is on npm, use `npx github:Jasekeee/notyours` wherever
-`npx notyours` is written below.
+(`kane-cli login`). `npx github:Jasekeee/notyours doctor` checks all of it, including the kane-cli version, and tells you how
+to fix anything that isn't ready.
 
 **(a) No credits: the sample report.** Open [`docs/sample-report/report.html`](docs/sample-report/report.html),
 a redacted result of the full demo: 2 leaks, 2 held. It has no screenshots, emails, account ids or links.
 
-**(b) One real leak: `npx notyours demo --quick`.** B1 only: Bob opens Alice's note.
+**(b) One real leak: `npx github:Jasekeee/notyours demo --quick`.** B1 only: Bob opens Alice's note.
 ~4 min, ~45 Kane credits (4 authoring runs: both personas' first login, then B1). Expect `LEAK_VISIBLE` with both
 positive controls passing.
 
-**(c) The full demo: `npx notyours demo`.** B1–B4. ~10 min, ~120 Kane credits. Expect B1 LEAK, B2 HELD, B3 LEAK (a
+**(c) The full demo: `npx github:Jasekeee/notyours demo`.** B1–B4. ~10 min, ~120 Kane credits. Expect B1 LEAK, B2 HELD, B3 LEAK (a
 free user gets the Pro export through the API), B4 HELD.
 
 Both modes print the expected time and credits before they start. Times are measured on kane-cli 0.10.0. On
@@ -65,11 +63,11 @@ Both modes print the expected time and credits before they start. Times are meas
 **(d) The loop with Claude Code.** Make a demo copy, install the hooks, and let Claude Code drive notyours:
 
 ```sh
-npx notyours demo --dir ~/jotter-loop --no-open   # a copy of the demo app, proved once
-cd ~/jotter-loop && npx notyours install-hooks     # guard + post-tool + Stop replay hooks
+npx github:Jasekeee/notyours demo --dir ~/jotter-loop --no-open   # a copy of the demo app, proved once
+cd ~/jotter-loop && npx github:Jasekeee/notyours install-hooks     # guard + post-tool + Stop replay hooks
 node server.js &                                  # keep the app running on :3077
-claude "Run npx notyours run, fix every leak it reports in the server code (not the tests), \
-        rerun until all boundaries hold, then npx notyours lock. Then add a 'duplicate note' button."
+claude "Run npx github:Jasekeee/notyours run, fix every leak it reports in the server code (not the tests), \
+        rerun until all boundaries hold, then npx github:Jasekeee/notyours lock. Then add a 'duplicate note' button."
 ```
 
 Once the boundaries are locked, every edit Claude makes to their code is replayed when it stops. A leak blocks the
@@ -106,14 +104,14 @@ default); see below.
 ```
 
 ```sh
-npx notyours init --url http://localhost:3000 --users users.yaml
-npx notyours map                  # writes .notyours/boundaries/_draft_*.yaml and .notyours/map.json
+npx github:Jasekeee/notyours init --url http://localhost:3000 --users users.yaml
+npx github:Jasekeee/notyours map                  # writes .notyours/boundaries/_draft_*.yaml and .notyours/map.json
 # in Claude Code: /notyours-map   # the agent turns drafts into real boundaries
-npx notyours run --dry-run        # validate + credit estimate, starts nothing
-npx notyours run                  # prove them with Kane (authoring)
-npx notyours lock                 # record them
-npx notyours replay               # no authoring; ~40–50 s per boundary
-npx notyours report --open
+npx github:Jasekeee/notyours run --dry-run        # validate + credit estimate, starts nothing
+npx github:Jasekeee/notyours run                  # prove them with Kane (authoring)
+npx github:Jasekeee/notyours lock                 # record them
+npx github:Jasekeee/notyours replay               # no authoring; ~40–50 s per boundary
+npx github:Jasekeee/notyours report --open
 ```
 
 `users.yaml` lists your test accounts. Passwords can come from the environment and are stored only
@@ -179,7 +177,7 @@ Use `lock --reauthor` to re-record when the UI changes enough that a replay no l
 ## Claude Code hooks and the read-only guard
 
 ```sh
-npx notyours install-hooks          # or --cli "node ./node_modules/notyours/dist/cli/index.js"
+npx github:Jasekeee/notyours install-hooks   # hooks call this CLI by absolute path (fast); override with --cli "<command>"
 ```
 
 This merges three hooks and a few `permissions.deny` rules (for the secrets and the oracle) into
@@ -225,8 +223,8 @@ don't count. When the cap is reached, the command prints what happened and how t
 non-zero.
 
 ```sh
-npx notyours budget          # today's authoring runs vs the cap
-npx notyours budget --set 40 # raise it (a person only)
+npx github:Jasekeee/notyours budget          # today's authoring runs vs the cap
+npx github:Jasekeee/notyours budget --set 40 # raise it (a person only)
 ```
 
 `budget --set` refuses to run from a coding agent's shell (Claude Code sets `CLAUDECODE=1` and gives the

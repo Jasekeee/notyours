@@ -1,4 +1,5 @@
 // Command-line surface. Handlers are injected so argument parsing is testable without side effects.
+import { realpathSync } from 'node:fs';
 import { Argument, Command, Option } from 'commander';
 import pkg from '../../package.json' with { type: 'json' };
 
@@ -55,7 +56,22 @@ export interface BudgetOpts extends GlobalOpts {
   set?: number;
 }
 
-export const DEFAULT_HOOK_CLI = 'npx notyours';
+/** Run notyours straight from GitHub (not on npm yet). For people and agents; too slow for hooks (5–9 s per start). */
+export const NPX_CLI = 'npx github:Jasekeee/notyours';
+
+/**
+ * The command install-hooks writes: this very CLI by absolute path (~0.2 s per start; the guard runs before every tool
+ * call with a 10 s timeout). Falls back to the npx form when not running from a built .js file (e.g. tsx in dev).
+ */
+export function defaultHookCli(argv1: string | undefined = process.argv[1]): string {
+  try {
+    const self = argv1 ? realpathSync(argv1) : '';
+    if (/\.[cm]?js$/.test(self)) return `node '${self.replace(/'/g, `'\\''`)}'`;
+  } catch { /* fall through */ }
+  return `npx --yes ${NPX_CLI.slice('npx '.length)}`;
+}
+
+export const DEFAULT_HOOK_CLI = defaultHookCli();
 
 const collect = (v: string, prev: string[]) => [...prev, v];
 

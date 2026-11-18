@@ -49,7 +49,7 @@ export function mergeHooks(settings: Settings, cliCommand: string): Settings {
 }
 
 /** Writes the merged settings and returns the settings file path. */
-export function installHooks(projectDir: string, cliCommand = 'npx notyours'): string {
+export function installHooks(projectDir: string, cliCommand = 'npx --yes github:Jasekeee/notyours'): string {
   if (!cliCommand.trim()) throw new Error('notyours: cliCommand must not be empty');
   const file = path.join(projectDir, '.claude', 'settings.json');
   let settings: Settings = {};

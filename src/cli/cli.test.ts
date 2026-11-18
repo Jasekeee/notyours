@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { CommanderError } from 'commander';
 import { ConfigSchema, IdentitySchema } from '../schemas.js';
 import { mockBoundary, mockConfig } from '../mocks/fixtures.js';
-import { buildProgram, type Actions } from './program.js';
+import { buildProgram, DEFAULT_HOOK_CLI, type Actions } from './program.js';
 import { checkHost } from './hosts.js';
 import { runInit, parseUsersFile, readPublicIdentities } from './init.js';
 import { assertHostsAllowed, assertHuman, boundaryUrls, ensureCredits, exitCodeFor, logHook, runHook } from './commands.js';
@@ -112,6 +112,16 @@ describe('argument parsing', () => {
     ]);
   });
 
+  it('the default hook command is this CLI by absolute path (npx github: takes 5-9 s per start)', async () => {
+    const { defaultHookCli } = await import('./program.js');
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ny-cli-')), "it's", 'index.js');
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, '');
+    expect(defaultHookCli(f)).toBe(`node '${fs.realpathSync(f).replace(/'/g, `'\\''`)}'`);
+    expect(defaultHookCli('/src/cli/index.ts')).toBe('npx --yes github:Jasekeee/notyours');
+    expect(defaultHookCli('')).toBe('npx --yes github:Jasekeee/notyours');
+  });
+
   it('install-hooks --cli and hook <event> with fixed choices', async () => {
     const h = harness();
     await h.parse('install-hooks');
@@ -120,7 +130,7 @@ describe('argument parsing', () => {
     await h.parse('hook', 'post-tool');
     await h.parse('hook', 'stop');
     expect(h.calls).toEqual([
-      ['installHooks', { cwd, cli: 'npx notyours' }],
+      ['installHooks', { cwd, cli: DEFAULT_HOOK_CLI }],
       ['installHooks', { cwd, cli: 'node ./node_modules/notyours/dist/cli/index.js' }],
       ['hook', 'guard', { cwd }],
       ['hook', 'post-tool', { cwd }],

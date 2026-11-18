@@ -1,6 +1,6 @@
 // `notyours demo`: copy the packaged demo app to a work dir, start it on :3077, probe every demo boundary
 // (replay if locked, else author), write and open the report, print the elapsed time.
-// Works from `npx notyours demo`: no repo checkout, no Claude key. Needs Chrome + an authenticated kane-cli.
+// Works from `npx github:Jasekeee/notyours demo`: no repo checkout, no Claude key. Needs Chrome + an authenticated kane-cli.
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';

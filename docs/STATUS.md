@@ -2,7 +2,7 @@
 
 ## What works (verified with real Kane and real Claude Code)
 - **Integration:** A–D merged in order, CC-1 applied, `NOTYOURS_REAL` removed (the CLI always uses the real engine and
-  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 304
+  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 305
   tests, including the 25 demo tests.
 - **Oracle on Jotter (authoring):** B1 LEAK_VISIBLE, B2 HELD, B3 LEAK_PAYLOAD (free Bob got the Pro export), B4 HELD,
   all with both positive controls. HARNESS_BROKEN correctly refused to call a broken harness HELD 3 times while bugs
@@ -133,6 +133,9 @@ From the automated security review. By decision, only real secret or credential 
 - `planLock` writes plan-gate `viewerOwn` URLs into the recorded objective after filling in stored values; a
   templated host in `viewerOwn` isn't re-checked against `allowHosts` at that point (literal URLs are checked by the
   CLI host gate).
+- `install-hooks` writes this CLI's absolute path into `.claude/settings.json` (an `npx github:` start takes 5–9 s, too
+  slow for the per-tool-call guard). After the npx cache is cleared or the clone moves, rerun `install-hooks`. Don't
+  commit that file as is: it names a local path. `--cli "<command>"` overrides it.
 - The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and
   overshoot the cap by the number of parallel runs (the engine runs at most 2 at once).
 
