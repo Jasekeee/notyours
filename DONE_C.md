@@ -1,107 +1,87 @@
 # DONE_C: feat/ratchet (ratchet + Claude Code hooks)
 
-## Delivered (all under `src/ratchet/` and `src/hooks/`)
-- **`lock(b, result)`** (`src/ratchet/lock.ts`) works only on HELD results with both positive controls true. It records two
-  tests with `kane-cli run "<objective>" --name <boundary>_<identity> --cdp-endpoint http://127.0.0.1:<cdpPort> --agent`:
-  - owner: the boundary's own `create.objective`, with `{{token}}` and the stored values resolved
-  - viewer: the targets (`"POST <url>"` targets become "call POST …"); for plan-gate, the `proAction` objective
+**Status: the core is complete.** lock, replay, the post-tool / guard / stop hooks, and `installHooks` with an
+overridable `cliCommand` are all built and tested on mocks. `npm run typecheck && npm test` passes (136 tests).
+Kane: **0 authoring runs, 0 credits**. Agent B's demo is still not on `main` (only `demo/.gitkeep`), so per the brief
+nothing ran against real Kane. Security hardening has stopped at this point, as asked (see Known gaps).
 
-  It then moves `<name>_test.md` **and its `output-<name>/` recordings** from `.testmuai/tests/` into `.notyours/tests/`.
-  Without the recordings, a replay re-authors from scratch and spends credits. Finally it sets `locked: true` in the
-  boundary's YAML/JSON file, keeping comments. Every `{{name}}` is resolved before recording, so replays go to fixed
-  URLs (replay ignores changed variables).
-  - Guards: refuses below `creditFloor` and refuses when the balance can't be read (`kane-cli balance`). Caps authoring at
-    **8 runs** per project (agent B measured ~30 credits per run), counted from `.notyours/runs/credits.jsonl`, where every run's `credits_consumed` is logged.
-  - Runs are sequential, so a failed owner recording does not spend the viewer's credits. Locking again is a no-op
-    unless `reauthor: true`. `.env*` files are stripped from adopted recordings (kane's code export writes an
-    `.env.example` with `LT_USERNAME`/`LT_ACCESS_KEY` slots, and the pre-push scan exempts `.env.example`).
-- **`replay(ids)`** / `replayIds(ids, boundaryIds)` (`src/ratchet/replay.ts`): for each locked boundary, replays owner and
-  viewer in parallel, each on its own Chrome, with
-  `testmd run <file> --cdp-endpoint … --agent --no-adaptive-heal`. Without `--no-adaptive-heal`, kane-cli **re-authors
-  failing steps by default** (3 heal attempts, then a full re-author), which would silently spend credits. Then the
-  engine oracle judges. A failed Kane step returns `HARNESS_BROKEN` without calling the oracle.
-  `classify()`: RED = `LEAK_*`, YELLOW = `HARNESS_BROKEN`, GREEN = `HELD`.
-- **`createRatchet(opts?)`:** returns the real ratchet with `{ projectDir }` and the mock without arguments. That keeps the
-  mock-wired CLI stub (`replay` calls `lock(mockBoundary…)`) from ever starting a paid authoring run.
-- **Hooks** (`src/hooks/`), each a pure `(input) → { exitCode, stdout, stderr }`:
-  - `post-tool` finds every **app folder** enclosing the edited file (a folder whose `.notyours/` has `config.yaml` or
-    boundaries, e.g. `demo/`), no higher than the project dir. It checks both the path as written and its
-    symlink-resolved location. It matches the app-relative path against each boundary's `surface` plus that
-    folder's `.notyours/map.json`, records `{ files, globs, ts }` per id in that folder's `dirty.json`, and always exits 0. It has its own glob matcher (`**`, `*`, `?`, `{a,b}`,
-    `[…]`), so no new dependency.
-  - `guard` blocks Edit/Write/MultiEdit on `.notyours/` and Bash commands that could write there, with exit 2 and the
-    exact message. Paths are resolved the way the kernel does (`physicalPath`: `..` after a symlink, dangling links,
-    loops fail closed), case-insensitively. Bash checks handle shell quoting, dot-globs and `xargs` chains. It also blocks `notyours lock`. Read-only Bash (`cat/ls/head/tail/grep/jq/find` without `-delete`/`-exec`, no
-    redirects) stays allowed, so the agent can still read evidence under `.notyours/runs`.
-  - `stop` looks for app folders under the project: a scan 6 levels deep that skips only `node_modules`/`.git`, plus
-    an index of the folders post-tool marked (`~/.cache/notyours/apps-<hash>.json`, 0700; entries outside the project are ignored). If none has
-    anything in `dirty.json`, it exits 0 right away. Otherwise it replays each folder's dirty locked boundaries with that
-    folder as the ratchet's project dir:
-    - GREEN clears dirty and attempts.
-    - YELLOW keeps the boundary dirty and sends the human a `systemMessage` with "harness needs re-recording: notyours lock --reauthor <id>".
-    - RED increments `attempts.json`. Below `maxAttempts` it exits 2 with a report of at most 40 lines: id + kind,
-      "bob saw alice's data", URL, VISIBLE/PAYLOAD, token + quoted snippet, screenshot, suspected files with the globs
-      they matched (shown relative to the project, e.g. `demo/routes/notes.js`), `npx notyours replay <id>`, and last line "Fix server-side; do not edit tests.". At `maxAttempts`
-      it writes `ESCALATION.md` (project root), exits 0 and tells the human.
-    - Identity passwords are scrubbed from snippets.
-  - `installHooks(projectDir, cliCommand = 'npx notyours')` merges into `.claude/settings.json`. It keeps every other key
-    and hook, replaces only handlers ending in ` hook <name>` (so re-running with a new `cliCommand` doesn't duplicate),
-    and refuses to touch invalid JSON.
-- **Tests:** 136 passing (`npm run typecheck && npm test`).
-  - JSON stdin fixtures for every hook in `src/hooks/fixtures/`, plus real-process runs of `src/hooks/bin.ts`.
-  - Glob table, guard bypass table, and lock/replay with a fake `KaneClient`.
-  - A fake `kane-cli` binary asserts `--no-adaptive-heal`/`--cdp-endpoint`.
-  - Stop hook through the real ratchet with an engine returning **RED then GREEN**, the 3-attempt escalation, YELLOW,
-    and the B1/B3 boundary shapes from the demo.
+## What works
 
-## Claude Code hook docs (https://code.claude.com/docs/en/hooks, read 2026-11-18)
-- The field is **`timeout`, in seconds**: "Seconds before canceling … Defaults: 600 for `command`". The docs state **no
-  general maximum**; only SessionEnd is capped (60 s). I set Stop to **900 s**, and post-tool/guard to 10 s.
-- Stop input has `stop_hook_active` ("true when Claude Code is already continuing as a result of a stop hook"). Claude Code
-  caps stop-hook continuations at 8 in a row (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`). Stop has no matcher support.
-- Exit 2 on Stop: "Claude receives the stderr message as the explanation for why it should continue". `systemMessage` in
-  JSON on exit 0 is "shown to the user". `file_path` for Edit/Write is always absolute. `CLAUDE_PROJECT_DIR` is set.
-  MultiEdit no longer appears in the docs; keeping it in the matcher is harmless.
-- **How the hook uses `stop_hook_active`:** every block increments `attempts`. A RED boundary therefore blocks at most
-  `maxAttempts-1` (2) times in a row, then escalates and lets Claude stop, which stays under the 8-continuation cap. An
-  early exit on `stop_hook_active` alone would let the agent skip the check by trying to stop twice.
+| Piece | Where | What it does |
+|---|---|---|
+| `lock(b, result)` | `src/ratchet/lock.ts` | Only accepts a HELD result with both controls true. Records one Kane test per identity, each on its own Chrome (`kane-cli run … --name <boundary>_<identity> --cdp-endpoint …`): the owner runs the resolved `create.objective`, the viewer runs the targets (or `proAction` for plan-gate). Moves `<name>_test.md` and its `output-<name>/` recordings into `.notyours/tests/`, then sets `locked: true` in the boundary file. |
+| Lock budget guards | same | Refuses below `creditFloor` or when the balance can't be read. Caps authoring at **8 runs** per project and logs every run's `credits_consumed` to `.notyours/runs/credits.jsonl`. Runs are sequential, so a failed owner recording saves the viewer's credits. Locking again is a no-op unless `reauthor: true`. |
+| `replay(ids)` / `replayIds(ids, boundaryIds)` | `src/ratchet/replay.ts` | Replays owner and viewer in parallel with `testmd run … --cdp-endpoint … --agent --no-adaptive-heal`. That last flag matters: by default kane-cli re-authors failing steps, which costs credits. Then the engine oracle judges. RED = `LEAK_*`, YELLOW = `HARNESS_BROKEN` (including a failed Kane step), GREEN = `HELD`. |
+| `createRatchet(opts?)` | `src/ratchet/index.ts` | Real ratchet with `{ projectDir }`, mock without arguments. This keeps the mock CLI stub from starting a paid run. |
+| post-tool hook | `src/hooks/post-tool.ts` | PostToolUse `Edit\|Write\|MultiEdit`. Matches the edited file against `surface` globs and `map.json` in every app folder that contains it (the folder holding `.notyours/`, e.g. `demo/`; globs are relative to it). Writes `{files, globs, ts}` to `dirty.json`. Always exits 0, takes about 140 ms, and never calls Kane. |
+| guard hook | `src/hooks/guard.ts` | PreToolUse `Edit\|Write\|MultiEdit\|Bash`. Exits 2 with *"notyours: tests and boundaries are read-only for the agent. Fix the app's server-side authorization instead."* on any write to `.notyours/` or on `notyours lock`. Read-only Bash (`cat`, `ls`, `grep` …) is still allowed. |
+| stop hook | `src/hooks/stop.ts` | Empty `dirty.json` → exit 0. Otherwise replays the dirty locked boundaries. RED → `attempts++`, then exit 2 with a report of at most 40 lines ending in "Fix server-side; do not edit tests.". After 3 REDs it writes `ESCALATION.md` in the app folder and exits 0 with a message for the human. GREEN clears dirty and attempts. YELLOW → exit 0 and a human message ("harness needs re-recording: notyours lock --reauthor <id>"). |
+| `installHooks(projectDir, cliCommand = 'npx notyours')` | `src/hooks/install.ts` | Merges into `.claude/settings.json` and keeps every other hook. Re-running replaces only our handlers. `cliCommand` can be overridden, e.g. `node /abs/path/dist/cli/index.js`. Timeouts are in **seconds** (Claude Code docs: default 600, no stated maximum): Stop = 900, the other two = 10. |
 
-## Kane usage
-**0 authoring runs, 0 credits.** Agent B's demo is not on `main` yet (`git fetch` at the end: `main` has only
-`demo/.gitkeep`; it's finished on `feat/demo`), so per the brief everything runs on mocks. One free `kane-cli balance`
-call was made to learn its output format.
+**`stop_hook_active`:** every block increments `attempts`, so a RED boundary blocks at most 2 times in a row before it
+escalates. That's under Claude Code's limit of 8 continuations. An early exit on `stop_hook_active` alone would let
+the agent skip the check by trying to stop twice.
 
-## Needs a decision from others
-1. **CLI (feat/cli):**
-   - Call `registerHookCommands(program)` from `src/hooks/index.ts` so `notyours hook <post-tool|guard|stop>` exists.
-     Until then, `tsx src/hooks/bin.ts <name>` works for local testing.
-   - Build the ratchet with `createRatchet({ projectDir })`.
-   - Add `replay <id>` (it's the repro command in the report) and `lock --reauthor <id>` (`reauthor: true`).
-2. **Engine (feat/engine): CC-1 in CONTRACT_CHANGE.md.** The frozen Engine only has `runBoundary()`, which re-runs the
-   create objective and costs credits on every Stop. The ratchet uses `engine.judge(b, ids, cfg, replays)` if the engine
-   has it. Otherwise it calls `runBoundary({ ...b, locked: true })`, and **the real engine must treat `locked: true` as
-   judge-only**. Without one of the two, the Stop hook spends credits.
-3. **Latency:** a built hook process takes about 120 ms, but `npx` adds 200–400 ms, so `npx notyours hook post-tool` can
-   exceed 300 ms. For speed, pass `cliCommand` as `node <project>/node_modules/notyours/dist/cli/index.js`.
-4. **Project layout assumptions (please confirm):**
-   - Per agent B, the app folder is the one holding `.notyours/`, and surface globs are relative to it. The hooks find
-     it from `CLAUDE_PROJECT_DIR` (else the stdin `cwd`), so Claude Code can run at the repo root or inside `demo/`.
-     The CLI should construct the ratchet and run `replay <id>` with that app folder as `projectDir`.
-   - Boundaries are read from `.notyours/boundaries.yaml` and/or `.notyours/boundaries/*.{yaml,yml,json}`.
-   - Identities come from `.notyours/identities.json` merged with `.notyours/secrets.json`.
-   - `map.json` may be `{id: string[]}` or `{id: {files|surface|globs}}`, optionally under `boundaries` (src/map
-     hasn't defined it yet).
-5. **`.gitignore` (shared file):** consider ignoring `**/.notyours/dirty.json` and `**/.notyours/attempts.json` (runtime
-   state). `.notyours/tests/output-*/` must be **committed** for replays to work on another machine. It holds Kane
-   org/user/test ids (not secrets). Decide whether that's acceptable for this repo.
+## How to test
+
+```sh
+npm run typecheck && npm test        # 136 tests
+```
+
+Tests cover stdin fixtures for every hook (`src/hooks/fixtures/`), glob matching, lock/replay with a fake Kane client, a
+fake `kane-cli` binary (checks `--no-adaptive-heal` and `--cdp-endpoint`), and the stop hook through the real ratchet
+with an engine returning **RED then GREEN**. They also cover 3 REDs → `ESCALATION.md`, YELLOW, the guard blocking
+Edit/Write/Bash on `.notyours/`, `installHooks` merging, and B's demo boundary shapes.
+
+Manual run of the hooks (until the CLI wires `notyours hook <name>`, `src/hooks/bin.ts` is the entry point):
+
+```sh
+D=$(mktemp -d); mkdir -p $D/.notyours/boundaries
+printf 'baseUrl: http://127.0.0.1:3077\n' > $D/.notyours/config.yaml
+git show feat/demo:demo/.notyours/boundaries/b1-cross-user.yaml > $D/.notyours/boundaries/b1.yaml
+
+# post-tool: exit 0, dirty.json gets b1-notes-cross-user / routes/notes.js
+echo "{\"cwd\":\"$D\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$D/routes/notes.js\"}}" | npx tsx src/hooks/bin.ts post-tool
+cat $D/.notyours/dirty.json
+
+# guard: exit 2 with the read-only message
+echo "{\"cwd\":\"$D\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm .notyours/dirty.json\"}}" | npx tsx src/hooks/bin.ts guard; echo $?
+
+# stop: b1 isn't locked, so exit 0 with a systemMessage for the human
+echo "{\"cwd\":\"$D\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}" | npx tsx src/hooks/bin.ts stop
+
+# installHooks with an overridden cliCommand
+npx tsx -e "import('./src/hooks/index.ts').then((m) => console.log(m.installHooks(process.argv.at(-1), 'node /abs/path/dist/cli/index.js')))" "$D"
+cat $D/.claude/settings.json
+```
 
 ## Known gaps
-- **Bash edits don't mark boundaries dirty.** PostToolUse with `Edit|Write|MultiEdit` doesn't fire for `sed -i` and
-  similar commands. A fix would be a Bash PostToolUse that diffs `git status` against a snapshot. I didn't do it because
-  it changes the hook design in the brief.
-- The guard is a speed bump, not a sandbox: shell variables or an interpreter can still reach `.notyours/`. The backstop is
-  that changes to `.notyours/` show up in git diffs.
-- `dirty.json` is written read-modify-write with an atomic rename. Two edits finishing at the same moment could drop one
-  id; the next edit or Stop recovers it.
-- `ESCALATION.md` goes to the app folder (e.g. `demo/ESCALATION.md`). Once escalated, a boundary stays escalated until `attempts.json` is reset or a
-  replay goes GREEN.
+
+**Needs other agents**
+1. **CLI (agent D):** wire `registerHookCommands(program)` (from `src/hooks/index.ts`) so `notyours hook <name>` exists.
+   Build the ratchet with `createRatchet({ projectDir: <app folder, e.g. demo/> })`. Add `replay <id>` (the repro command
+   in the report) and `lock --reauthor <id>`.
+2. **Engine (agent A), CC-1 in CONTRACT_CHANGE.md:** the frozen `Engine` has no judge-only method. The ratchet uses
+   `engine.judge()` if it exists, otherwise `runBoundary({...b, locked: true})`. **The real engine must treat
+   `locked: true` as "judge, don't author"**, or every Stop hook spends credits.
+
+**Not done**
+3. **No real Kane run yet:** waiting for the demo to reach `main`. The NDJSON parsing follows the kane-cli 0.10.0 skill
+   docs and the spike output, not a real `testmd run` of a locked notyours test.
+4. **Bash edits don't mark boundaries dirty** (e.g. `sed -i`). PostToolUse with `Edit|Write|MultiEdit` doesn't fire for Bash.
+
+**Limits**
+5. **Guard:** a speed bump, not a sandbox. Shell variables or an interpreter can still reach `.notyours/`. Hardening
+   stopped here by request; the backstop is that `.notyours/` changes show up in git.
+6. **Latency:** `npx` adds 200–400 ms per hook. For speed, use `cliCommand: 'node <path>/dist/cli/index.js'`.
+7. **`dirty.json`:** read-modify-write, so two edits finishing at the same moment could drop an id. The next edit recovers it.
+8. **Escalation:** once escalated, a boundary stays that way until `attempts.json` is reset or a replay goes GREEN.
+
+**Assumptions**
+9. File layout:
+   - boundaries in `.notyours/boundaries.yaml` and/or `.notyours/boundaries/*.yaml` (B's layout)
+   - identities in `.notyours/identities.json` merged with `secrets.json`
+   - `map.json` as `{id: string[]}` or `{id: {files}}` (src/map hasn't defined it)
+10. **`.gitignore`:** a shared file, so I didn't edit it. Suggest ignoring `.notyours/dirty.json` and
+    `.notyours/attempts.json`. `.notyours/tests/output-*/` must be committed for replays to work elsewhere; it holds
+    Kane org/user/test ids, which are not secrets.
