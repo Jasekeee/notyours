@@ -146,6 +146,16 @@ describe('argument parsing', () => {
 // ---------- allowHosts ----------
 
 describe('allowHosts', () => {
+  it('accepts METHOD-prefixed api targets (CC-2) and still checks their host', () => {
+    const local = ConfigSchema.parse({ baseUrl: 'http://127.0.0.1:3077' });
+    const b3 = { ...mockBoundary, id: 'b3', targets: { ui: ['http://127.0.0.1:3077/pro/export'], api: ['POST http://127.0.0.1:3077/api/export'] } };
+    expect(() => assertHostsAllowed(local, [b3], tmp('ny-m-'))).not.toThrow();
+    const evil = { ...b3, targets: { ui: [], api: ['POST https://victim.example.org/api/export'] } };
+    expect(() => assertHostsAllowed(local, [evil], tmp('ny-m-'))).toThrow(/victim\.example\.org/);
+    const uiMethod = { ...b3, targets: { ui: ['POST http://127.0.0.1:3077/x'], api: [] } };
+    expect(() => assertHostsAllowed(local, [uiMethod], tmp('ny-m-'))).toThrow(/must be an absolute http/);
+  });
+
   const local = ['localhost', '127.0.0.1'];
 
   it('allows localhost and 127.0.0.1 by default', () => {

@@ -1,5 +1,6 @@
 // The host gate: notyours only drives personas against hosts the user owns. Shared by the CLI and the
 // ratchet (every replay path, including the Stop hook), so no caller can skip it.
+import { parseTarget } from '../engine/oracle.js';
 import type { Boundary, Config } from '../types.js';
 import { hostOf, isLocalHost } from './hosts.js';
 import { isOwnedHost } from './owned.js';
@@ -63,7 +64,9 @@ export function assertHostsAllowed(cfg: Config, boundaries: Boundary[], root: st
   };
   check(cfg.baseUrl, 'config.yaml baseUrl');
   for (const b of boundaries) {
-    for (const t of [...b.targets.ui, ...b.targets.api].map(nfkc)) {
+    // api targets may carry an HTTP method (CC-2: "POST http://host/api/export"); the gate checks the URL.
+    const apiUrls = b.targets.api.map((a) => parseTarget(nfkc(a)).url);
+    for (const t of [...b.targets.ui.map(nfkc), ...apiUrls]) {
       if (!TARGET_RE.test(t) || /[\s'"`<>()\\]/.test(t)) {
         throw new UserError(`boundary ${b.id}: target "${t}" must be an absolute http(s) URL, or a {{stored}} value optionally followed by /path`);
       }
