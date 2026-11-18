@@ -26,8 +26,11 @@ export interface LockDeps {
  * attempt in a plan-gate, which is expected to be refused (and is not a recording).
  */
 export function probeRunsPassed(b: Boundary, result: ProbeResult): boolean {
-  const relevant = result.kaneRuns.filter((r) => (r.identity === b.owner || r.identity === b.viewer)
-    && !(b.kind === 'plan-gate' && r.identity === b.viewer && b.proAction && r.objective === b.proAction.objective));
+  // A plan-gate's free user being stopped by the app (kane-cli reason `blocker.*`, e.g. blocker.paywall on
+  // an "Upgrade to Pro" page) is the gate holding, not a broken recording: its steps up to there replay.
+  const refusedByGate = (r: ProbeResult['kaneRuns'][number]) =>
+    b.kind === 'plan-gate' && r.identity === b.viewer && (r.reason?.startsWith('blocker.') || (b.proAction && r.objective === b.proAction.objective));
+  const relevant = result.kaneRuns.filter((r) => (r.identity === b.owner || r.identity === b.viewer) && !refusedByGate(r));
   return relevant.length > 0 && relevant.every((r) => r.status === 'passed');
 }
 

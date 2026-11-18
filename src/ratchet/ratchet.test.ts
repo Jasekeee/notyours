@@ -143,6 +143,9 @@ describe('lock', () => {
     const pg = { ...unlocked, kind: 'plan-gate' as const, proAction: { objective: 'Export my notes' } };
     const refused = { ...ok, kaneRuns: [...ok.kaneRuns, { ...mockKaneRun, identity: 'bob', objective: 'Export my notes', status: 'failed' as const }] };
     expect(probeRunsPassed(pg, refused)).toBe(true);
+    const paywalledVisit = { ...ok, kaneRuns: [ok.kaneRuns[0]!, { ...mockKaneRun, identity: 'bob', objective: 'Go to x', status: 'failed' as const, reason: 'blocker.paywall' }] };
+    expect(probeRunsPassed(pg, paywalledVisit)).toBe(true);
+    expect(probeRunsPassed(unlocked, paywalledVisit)).toBe(false); // only a plan-gate may be refused
   });
 
   // Shapes from the Jotter demo (feat/demo: demo/.notyours/boundaries/b1-cross-user.yaml, b3-plan-gate.yaml).
