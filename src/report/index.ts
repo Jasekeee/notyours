@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Boundary, Identity, ProbeResult, Report } from '../types.js';
-import { renderHtml, scrub } from './html.js';
+import { renderHtml, scrub, scrubDeep } from './html.js';
 import { MockReport } from './mock.js';
 import { headline, parties, tally, verdictGroup, whoAndWhat } from './summary.js';
 
@@ -25,9 +25,11 @@ export interface ReportContext {
 export class HtmlReport implements Report {
   constructor(private readonly ctx: ReportContext = {}) {}
 
-  write(results: ProbeResult[], outDir: string): string {
-    const boundaries = new Map((this.ctx.boundaries ?? []).map((b) => [b.id, b]));
+  write(rawResults: ProbeResult[], outDir: string): string {
     const secrets = (this.ctx.identities ?? []).map((i) => i.password).filter((p): p is string => !!p);
+    // Scrub raw strings before escaping/serialising: an escaped secret (&lt; \") would not match afterwards.
+    const results = scrubDeep(rawResults, secrets);
+    const boundaries = new Map((this.ctx.boundaries ?? []).map((b) => [b.id, b]));
     const generatedAt = (this.ctx.now?.() ?? new Date()).toISOString();
     const { startedAt, finishedAt } = this.ctx;
     const runTimeS = startedAt && finishedAt ? Math.max(0, (Date.parse(finishedAt) - Date.parse(startedAt)) / 1000) : undefined;

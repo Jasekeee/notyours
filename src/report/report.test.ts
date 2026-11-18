@@ -126,4 +126,18 @@ describe('createReport().write', () => {
       expect(body).toContain('[REDACTED]');
     }
   });
+
+  it('scrubs passwords that contain HTML/JSON special characters', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ny-report-'));
+    const pw = 'p<w>"&\\x';
+    const ids = [{ ...fixtureIdentities[0]!, password: pw }];
+    const r = { ...fixtureResults[0]!, hits: [{ ...fixtureResults[0]!.hits[0]!, snippet: `NY-ALICE-AAAAAAAAAAAA ${pw}` }] };
+    createReport({ identities: ids, baseDir: FIXTURE_DIR }).write([r], dir);
+    for (const f of ['report.html', 'report.json']) {
+      const body = fs.readFileSync(path.join(dir, f), 'utf8');
+      expect(body).not.toContain('p&lt;w&gt;');
+      expect(body).not.toContain('p<w>');
+      expect(body).toContain('[REDACTED]');
+    }
+  });
 });

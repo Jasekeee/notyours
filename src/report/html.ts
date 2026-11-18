@@ -28,6 +28,17 @@ export function scrub(s: string, secrets: string[]): string {
   return out;
 }
 
+/** Recursively replace secrets in every string of a JSON-like value. */
+export function scrubDeep<T>(value: T, secrets: string[]): T {
+  if (!secrets.length) return value;
+  if (typeof value === 'string') return scrub(value, secrets) as T;
+  if (Array.isArray(value)) return value.map((v) => scrubDeep(v, secrets)) as T;
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubDeep(v, secrets)])) as T;
+  }
+  return value;
+}
+
 /** Escape, then wrap every canary token in a <mark>. */
 export function highlightTokens(text: string): string {
   return esc(text).replace(new RegExp(TOKEN_SCAN_RE.source, 'g'), (t) => `<mark class="tok">${t}</mark>`);
