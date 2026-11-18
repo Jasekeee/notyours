@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   BoundarySchema,
@@ -63,6 +66,7 @@ describe('contracts', () => {
     const replayed = await ratchet.replay(mockIdentities);
     expect(replayed).toHaveLength(1);
     for (const r of replayed) ProbeResultSchema.parse(r);
-    expect(createReport().write(replayed, 'out')).toBe('out/report.md');
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ny-contracts-'));
+    expect(createReport().write(replayed, outDir)).toBe(path.join(outDir, 'report.html'));
   });
 });
