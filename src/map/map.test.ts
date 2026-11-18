@@ -161,6 +161,25 @@ describe('runMap', () => {
   });
 });
 
+describe('runMap symlink safety', () => {
+  it('refuses to write through a symlinked .notyours or map.json', () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ny-outside-'));
+    const a = fs.mkdtempSync(path.join(os.tmpdir(), 'ny-link-'));
+    fs.writeFileSync(path.join(a, 'server.ts'), EXPRESS_APP);
+    fs.symlinkSync(outside, path.join(a, '.notyours'));
+    expect(() => runMap({ root: a })).toThrow(/symlink/);
+    expect(fs.readdirSync(outside)).toEqual([]);
+
+    const b = fs.mkdtempSync(path.join(os.tmpdir(), 'ny-link-'));
+    fs.mkdirSync(path.join(b, '.notyours'));
+    const victim = path.join(outside, 'victim.txt');
+    fs.writeFileSync(victim, 'keep me');
+    fs.symlinkSync(victim, path.join(b, '.notyours', 'map.json'));
+    expect(() => runMap({ root: b })).toThrow(/symlink/);
+    expect(fs.readFileSync(victim, 'utf8')).toBe('keep me');
+  });
+});
+
 describe('/notyours-map slash command', () => {
   it('the bundled copy matches .claude/commands/notyours-map.md', () => {
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');

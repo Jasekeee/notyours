@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import type { Boundary, Identity } from '../types.js';
+import { safeMkdir, safeWriteFile } from '../cli/safe-fs.js';
 import { scanProject, type Route } from './scan.js';
 
 export { scanProject, scanExpressSource, scanNextFile, nextAppRoute, nextPagesRoute, type Route } from './scan.js';
@@ -161,12 +162,12 @@ export function runMap(opts: MapOptions): MapResult {
   const { root } = opts;
   const routes = scanProject(root);
   const bdir = path.join(root, '.notyours', 'boundaries');
-  fs.mkdirSync(bdir, { recursive: true });
+  safeMkdir(root, bdir);
 
   const drafts: Draft[] = buildDrafts(routes, opts).map(({ boundary, routes: rs }) => {
     const file = path.join(bdir, `_draft_${boundary.id}.yaml`);
     const skipped = fs.existsSync(path.join(bdir, `${boundary.id}.yaml`));
-    if (!skipped) fs.writeFileSync(file, draftYaml(boundary, rs));
+    if (!skipped) safeWriteFile(root, file, draftYaml(boundary, rs));
     return { boundary, file, routes: rs, skipped };
   });
 
@@ -192,6 +193,6 @@ export function runMap(opts: MapOptions): MapResult {
     identities: (opts.identities ?? []).map((i) => ({ id: i.id, role: i.role, plan: i.plan })),
     routes: map,
   };
-  fs.writeFileSync(mapFile, `${JSON.stringify(doc, null, 2)}\n`);
+  safeWriteFile(root, mapFile, `${JSON.stringify(doc, null, 2)}\n`);
   return { routes, drafts, mapFile };
 }
