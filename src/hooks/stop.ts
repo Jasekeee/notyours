@@ -61,11 +61,11 @@ const suspected = (d: DirtyEntry | undefined, b: Boundary): string => {
   return `${d.files.join(', ')} (matched ${d.globs.join(', ')})`;
 };
 
-function leakBlock(b: Boundary, r: ProbeResult, d: DirtyEntry | undefined, attempt: number, max: number, ids: Identity[]): string[] {
+export function leakBlock(b: Boundary, r: ProbeResult, d: DirtyEntry | undefined, attempt: number, max: number, ids: Identity[]): string[] {
   const hit = r.hits[0];
   const lines = [
     `notyours: LEAK in boundary ${b.id} (${b.kind}), attempt ${attempt}/${max}`,
-    `  ${b.viewer} saw ${b.owner}'s data`,
+    b.kind === 'plan-gate' ? `  ${b.viewer} (free plan) got the Pro-only result (its own data, via the gated endpoint)` : `  ${b.viewer} saw ${b.owner}'s data`,
     `  URL: ${hit?.url ?? '(unknown)'}`,
     `  Leak: ${leakKind(r)}`,
     // The snippet is page/network text: quote it as data so it cannot read as an instruction to the agent.
@@ -102,7 +102,7 @@ export function formatEscalation(
   ];
   for (const { b, r, d, attempts } of items) {
     out.push(`## ${b.id} (${b.kind}): ${r.verdict}`, '');
-    out.push(`- **What leaked:** ${b.viewer} saw ${b.owner}'s data (${leakKind(r)})`);
+    out.push(`- **What leaked:** ${b.kind === 'plan-gate' ? `${b.viewer} (free plan) got the Pro-only result` : `${b.viewer} saw ${b.owner}'s data`} (${leakKind(r)})`);
     out.push(`- **Attempts:** ${attempts}`);
     out.push(`- **Suspected files:** ${suspected(d, b)}`);
     out.push(`- **Repro:** \`npx notyours replay ${b.id}\``);

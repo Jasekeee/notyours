@@ -13,8 +13,7 @@ import type { Boundary, Config, Engine, Identity, ProbeResult } from '../types.j
 import { appIndexFile, findAppDirs, scanAppDirs } from './appdir.js';
 import { postToolHook } from './post-tool.js';
 import { parseHookInput } from './types.js';
-import { LAST_LINE, MAX_REPORT_LINES, stopHook, type StopDeps } from './stop.js';
-import { formatLeakReport } from './stop.js';
+import { LAST_LINE, MAX_REPORT_LINES, stopHook, type StopDeps, leakBlock, formatLeakReport } from './stop.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const input = (name: string, project: string) =>
@@ -115,6 +114,13 @@ describe('stop hook', () => {
     const r = await stopHook(input('stop-continuation', project), deps(engine));
     expect(r.exitCode).toBe(0);
     expect(existsSync(notyoursPaths(project).escalation)).toBe(true);
+  });
+
+  it('plan-gate leak report says the free user got the Pro-only result (not someone else\'s data)', () => {
+    const b = { ...lockedBoundary, kind: 'plan-gate' as const, proAction: { objective: 'Export' } };
+    const text = formatLeakReport([leakBlock(b, leak, undefined, 1, 3, mockIdentities)], []);
+    expect(text).toContain('(free plan) got the Pro-only result');
+    expect(text).not.toContain("saw alice's data");
   });
 
   it('a failed Kane replay step does not hide a leak: the oracle still judges (RED blocks)', async () => {
