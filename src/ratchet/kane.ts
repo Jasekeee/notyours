@@ -142,6 +142,15 @@ export function parseBalance(stdout: string): number | undefined {
 const KANE_ENV = { KANE_CLI_USER_AGENT: 'notyours' };
 
 /** The real client. Output is parsed, never echoed: stderr can carry account details. */
+/** kane-cli free text without URLs, absolute paths, emails or canary tokens (safe for reports and logs). */
+export function redactKaneText(t: string): string {
+  return t
+    .replace(/https?:\/\/\S+/g, '[url]')
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]')
+    .replace(/(?:~|\/)(?:[^\s/]+\/)+[^\s/]*/g, '[path]')
+    .replace(/NY-[A-Z][A-Z0-9_]*-[A-Z2-7]{12}/g, '[token]');
+}
+
 export class KaneCli implements KaneClient {
   constructor(private readonly bin = 'kane-cli') {}
 
@@ -171,8 +180,10 @@ export class KaneCli implements KaneClient {
       // Keep kane-cli's own words when it stopped before finishing (an error event, else the last stderr line).
       if (out.run.status !== 'passed' && out.run.reason === 'no test_md_done event') {
         const err = parseNdjson(String(r.stdout ?? '')).findLast((e) => e.type === 'error');
-        const detail = str(err?.message) ?? str(err?.code) ?? String(r.stderr ?? '').split('\n').map((l) => l.trim()).filter((l) => l && !/update available/i.test(l)).at(-1);
-        if (detail) out.run.reason = `no test_md_done event: ${detail.slice(0, 200)}`;
+        // Structured code first; free text only redacted (it can carry paths, share links, emails).
+        const lastLine = String(r.stderr ?? '').split('\n').map((l) => l.trim()).filter((l) => l && !/update available/i.test(l)).at(-1);
+        const detail = str(err?.code) ?? (lastLine ? redactKaneText(lastLine) : undefined);
+        if (detail) out.run.reason = `no test_md_done event: ${detail.slice(0, 160)}`;
       }
       return out;
     } finally {

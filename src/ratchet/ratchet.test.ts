@@ -6,7 +6,7 @@ import YAML from 'yaml';
 import { MOCK_TS, mockHeldResult, mockIdentities, mockLeakResult, mockKaneRun } from '../mocks/fixtures.js';
 import type { Engine, ProbeResult } from '../types.js';
 import { createRatchet, MockRatchet, RealRatchet } from './index.js';
-import { KaneCli, parseAuthorRun, parseBalance, parseReplay } from './kane.js';
+import { KaneCli, redactKaneText, parseAuthorRun, parseBalance, parseReplay } from './kane.js';
 import { planLock, probeRunsPassed, resolveTemplate } from './lock.js';
 import { notyoursPaths, testFile } from './paths.js';
 import { classify, engineOracle } from './replay.js';
@@ -190,6 +190,13 @@ describe('lock', () => {
   it('resolveTemplate fills values and rejects missing ones', () => {
     expect(resolveTemplate('{{ a }}/{{b}}', { a: 'x', b: 1 })).toBe('x/1');
     expect(() => resolveTemplate('{{a}}', {})).toThrow(/a/);
+  });
+});
+
+describe('kane-cli text redaction', () => {
+  it('drops URLs, paths, emails and tokens from kane-cli free text', () => {
+    const t = redactKaneText('evidence: view locally /Users/x/.testmuai/kaneai/sessions/abc at https://test-manager.lambdatest.com/share/US_1 for a@b.io NY-ALICE-JOTTERSEED2A');
+    expect(t).toBe('evidence: view locally [path] at [url] for [email] [token]');
   });
 });
 
