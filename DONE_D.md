@@ -1,20 +1,20 @@
 # DONE_D: feat/cli (agent D)
 
 Kane credits spent: **0** (no Kane runs; only free `kane-cli whoami` / `balance` calls from `doctor`).
-`npm run typecheck && npm test`: green (63 tests in 4 files).
+`npm run typecheck && npm test`: green (65 tests in 4 files).
 
 ## What landed
 
 | Area | Files | Notes |
 |---|---|---|
 | CLI | `src/cli/` | `doctor`, `init`, `map`, `run [ids] [--dry-run]`, `lock [ids] [--reauthor]`, `replay [ids]`, `report [--open]`, `demo [--dir] [--no-open]`, `install-hooks [--cli]`, `hook <post-tool\|guard\|stop>`, global `-C/--cwd`. Handlers are injected into `buildProgram()` (`program.ts`); real ones are in `commands.ts`. |
-| Host guard | `src/cli/hosts.ts`, `init.ts`, `commands.ts` | `init` refuses hosts outside allowHosts. A non-local host needs `--allow-host <h>` **and** `--i-own-this`. `run`/`lock --reauthor`/`demo` also refuse boundaries whose absolute URLs leave allowHosts. |
+| Host guard | `src/cli/hosts.ts`, `init.ts`, `owned.ts`, `commands.ts` | `init` refuses hosts outside allowHosts. A non-local host needs `--allow-host <h>` **and** `--i-own-this`; that confirmation is stored outside the repo (`~/.config/notyours/owned-hosts.json`, keyed by project realpath; `NOTYOURS_HOME` overrides), so a cloned `config.yaml` can't grant it. `run`, `lock --reauthor`, `replay`, the stop hook and `demo` check the base URL and every URL in the boundaries (including bare `domain/` mentions in objectives), and fail closed on unparseable URLs and templated hosts. |
 | doctor | `src/cli/doctor.ts`, `system.ts` | Node ≥ 22 (upgrade hint), Chrome, `kane-cli whoami`, `kane-cli balance` vs creditFloor (warn), port 3077 free. The bin entry also refuses Node < 22 with the same hint before loading anything. |
 | Credits | `commands.ts` | Authoring refuses below `creditFloor`. Estimates use ~30 per first Kane run (per agent B). Every Kane run's `credits_consumed` goes to `.notyours/runs/credits.jsonl`. |
 | map | `src/map/` | Static scan of Express (incl. named handlers, `router.route().get()`) and Next.js `app/` (and `pages/`). Writes `_draft_*.yaml` (schema-valid, never over a real boundary) and `map.json` (route → files, drafts, identity ids/roles without secrets). |
 | /notyours-map | `.claude/commands/notyours-map.md`, `src/map/command.ts` | The slash command for the user's agent. `install-hooks` installs it into user projects. A test keeps the TS copy equal to the .md file. |
 | report | `src/report/` | `createReport(ctx?)` → `HtmlReport`: one self-contained `report.html` (inline CSS, base64 screenshots, no external resources) + `report.json`. Passwords are scrubbed from raw results before escaping. Preview: `npx tsx src/report/__fixtures__/preview.ts <outDir>`. |
-| Hooks | `src/cli/hooks.ts` | guard / post-tool / stop, described in README. Fail open on internal errors (never break the agent's session). Stop never loops (`stop_hook_active`) and never authors (credits). |
+| Hooks | `src/cli/hooks.ts` | guard / post-tool / stop, described in README. Guard paths are canonicalised (symlinks, `..`, case) and it blocks Grep/Glob/Bash globs or recursive reads of `.notyours/`. `install-hooks` also adds Claude Code `permissions.deny` rules as a second layer. Hooks fail open on internal errors (never break the agent's session). Stop never loops (`stop_hook_active`) and never authors (credits). |
 | demo | `src/cli/demo.ts` | Copies `demo/` (incl. `demo/.notyours/`) to a temp dir (or `--dir`), which becomes the project root, and symlinks notyours' own `node_modules` into it. Starts the app with `PORT=3077`, waits for HTTP, replays locked boundaries, authors the rest (then locks them), writes and opens the report, and prints the elapsed time. `NOTYOURS_DEMO_DIR` overrides the demo location. |
 | Safety | `src/cli/safe-fs.ts` | Every write under the project refuses symlinked path components. `secrets.json` is forced to 0600 even if it already existed. |
 | README | `README.md` | Pitch, install, Node 22+, diagram, verdicts, controls, ratchet, hooks/guard, credits (~30 first run per Kane run / 0 replay), limits, the "Not a pentest tool" line, judges' quick start. |
@@ -31,7 +31,7 @@ Kane credits spent: **0** (no Kane runs; only free `kane-cli whoami` / `balance`
 
 ## Integration contract for the other branches
 
-**Engine (A):** the CLI calls `createEngine().runBoundary(b, identities, cfg)` **one boundary at a time**
+**Engine (A):** please validate `{{stored}}` target values at navigation time (the stored URL's host must be in `cfg.allowHosts`); the CLI can only check literal URLs before the run. The CLI calls `createEngine().runBoundary(b, identities, cfg)` **one boundary at a time**
 (each boundary uses all persona Chromes), with `process.cwd()` = project root. Screenshots may be
 paths relative to the project root, absolute paths, or `data:image/...` URIs; the report embeds them
 (png/jpg/webp/gif, ≤ 8 MB). `KaneRun.testUrl` (http/https) becomes a link in the report.

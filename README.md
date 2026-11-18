@@ -147,8 +147,8 @@ Use `lock --reauthor` to re-record when the UI changes enough that a replay no l
 npx notyours install-hooks          # or --cli "node ./node_modules/notyours/dist/cli/index.js"
 ```
 
-This merges three hooks into `.claude/settings.json` (your own hooks are kept) and installs the
-`/notyours-map` command:
+This merges three hooks and a few `permissions.deny` rules (for the secrets and the oracle) into
+`.claude/settings.json`, keeping your own settings, and installs the `/notyours-map` command:
 
 - **guard** (PreToolUse) makes the oracle read-only for the agent. It can't edit locked boundaries,
   Kane recordings (`.testmuai/`), run results or `config.yaml`. It can't read
@@ -160,6 +160,9 @@ This merges three hooks into `.claude/settings.json` (your own hooks are kept) a
 - **stop** (Stop): before the agent finishes, changed locked boundaries are replayed for 0 credits.
   A leak blocks the stop and hands the agent the evidence and the code to fix. Unlocked
   boundaries are never re-authored automatically; the agent is told to ask you first.
+
+The guard is a guardrail for a cooperating agent, not a sandbox. Use test accounts, never real
+users' passwords, for your identities.
 
 ## Credit costs
 
@@ -180,8 +183,9 @@ in `.notyours/config.yaml`), and logs every Kane run's `credits_consumed` to
 - **Text only:** the oracle reads DOM text and network bodies. Tokens inside images and PDFs are
   out of scope.
 - **Localhost first:** `localhost` and `127.0.0.1` are allowed by default. Any other host must be
-  added with `--allow-host <host>` *and* confirmed with `--i-own-this`. Boundaries that point
-  anywhere else are refused.
+  added with `--allow-host <host>` *and* confirmed with `--i-own-this`. That confirmation is stored
+  on your machine (`~/.config/notyours/`), not in the repo, so a cloned `config.yaml` can't grant
+  it. Boundaries that point anywhere else are refused.
 - `map` is a static heuristic. It drafts, your coding agent decides, and Kane proves. Express
   router mount prefixes aren't resolved.
 

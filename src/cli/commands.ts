@@ -10,7 +10,8 @@ import { fmtCredits } from '../report/html.js';
 import { runMap } from '../map/index.js';
 import type { Boundary, Config, Identity, ProbeResult } from '../types.js';
 import { runDoctor } from './doctor.js';
-import { hostOf } from './hosts.js';
+import { hostOf, isLocalHost } from './hosts.js';
+import { isOwnedHost } from './owned.js';
 import { guard, guardOutput, installHooks, postTool, type HookInput } from './hooks.js';
 import { runInit } from './init.js';
 import type { Actions, GlobalOpts, HookEvent } from './program.js';
@@ -57,26 +58,42 @@ export function exitCodeFor(results: ProbeResult[]): number {
   return results.some((r) => verdictGroup(r.verdict) !== 'HELD') ? 1 : 0;
 }
 
-/** Absolute URLs a boundary will make Kane visit (ignores templated hosts like {{note_url}}). */
+/** Hosts a boundary will make Kane visit: absolute URLs anywhere, plus bare "domain.tld/" mentions in objectives. */
 export function boundaryUrls(b: Boundary): string[] {
-  const text = [b.create.objective, b.proAction?.objective ?? '', ...b.targets.ui, ...b.targets.api].join('\n');
-  return [...text.matchAll(/https?:\/\/[^\s'"`<>)]+/g)].map((m) => m[0]).filter((u) => !/^https?:\/\/\{\{/.test(u));
+  const objectives = [b.create.objective, b.proAction?.objective ?? ''].join('\n');
+  const text = [objectives, ...b.targets.ui, ...b.targets.api].join('\n');
+  const urls = [...text.matchAll(/https?:\/\/[^\s'"`<>)]+/gi)].map((m) => m[0].replace(/[.,;]+$/, ''));
+  const bare = [...objectives.matchAll(/(?<![\w./:@-])((?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?\//gi)].map((m) => `http://${m[1]}/`);
+  return [...new Set([...urls, ...bare])];
 }
 
-/** Refuse to probe hosts outside allowHosts: the base URL and every absolute URL in the boundaries. */
-export function assertHostsAllowed(cfg: Config, boundaries: Boundary[]): void {
+/**
+ * Refuse to probe hosts we may not touch: the base URL and every URL in the boundaries must be in
+ * allowHosts, and a non-local host must also be confirmed on this machine (`init --i-own-this`, stored
+ * outside the repo). Fails closed on unparseable URLs and templated hosts.
+ */
+export function assertHostsAllowed(cfg: Config, boundaries: Boundary[], root: string): void {
   const allowed = new Set(cfg.allowHosts.map((h) => h.toLowerCase()));
   const check = (url: string, where: string) => {
+    if (/^https?:\/\/[^/]*\{\{/i.test(url)) throw new UserError(`${where}: the host in ${url} is a template; only paths may use {{variables}}.`);
     let host: string;
     try {
       host = hostOf(url);
     } catch {
-      return;
+      throw new UserError(`${where}: can't parse URL ${url}`);
     }
     if (!allowed.has(host)) throw new UserError(`${where} points at ${host}, which is not in allowHosts (${cfg.allowHosts.join(', ')}). notyours only tests apps you own.`);
+    if (!isLocalHost(host) && !isOwnedHost(root, host)) {
+      throw new UserError(`${where} points at ${host}, which hasn't been confirmed on this machine. If you own it: notyours init --url ${cfg.baseUrl} --allow-host ${host} --i-own-this`);
+    }
   };
   check(cfg.baseUrl, 'config.yaml baseUrl');
-  for (const b of boundaries) for (const u of boundaryUrls(b)) check(u, `boundary ${b.id}`);
+  for (const b of boundaries) {
+    for (const t of [...b.targets.ui, ...b.targets.api]) {
+      if (!/^https?:\/\//i.test(t) && !t.startsWith('{{')) throw new UserError(`boundary ${b.id}: target "${t}" must be an absolute http(s) URL or start with a {{stored}} value`);
+    }
+    for (const u of boundaryUrls(b)) check(u, `boundary ${b.id}`);
+  }
 }
 
 function assertIdentities(boundaries: Boundary[], identities: Identity[]): void {
@@ -235,7 +252,7 @@ export const actions: Actions = {
     const p = loadProject(root);
     const chosen = selectBoundaries(p.all, ids).map((b) => b.boundary);
     if (!chosen.length) throw new UserError('No boundaries in .notyours/boundaries/. Run `notyours map`, then /notyours-map in Claude Code.');
-    assertHostsAllowed(p.cfg, chosen);
+    assertHostsAllowed(p.cfg, chosen, root);
     assertIdentities(chosen, p.identities);
     const estimate = chosen.length * CREDITS_PER_AUTHORING;
     log(`${chosen.length} boundar${chosen.length === 1 ? 'y' : 'ies'} against ${p.cfg.baseUrl}: ~${estimate} Kane credits (authoring). Replays after \`notyours lock\` are free.`);
@@ -259,7 +276,7 @@ export const actions: Actions = {
     const started = new Date();
     let fresh: ProbeResult[] = [];
     if (o.reauthor) {
-      assertHostsAllowed(p.cfg, chosen);
+      assertHostsAllowed(p.cfg, chosen, root);
       assertIdentities(chosen, p.identities);
       await ensureCredits(p.cfg, chosen.length);
       fresh = await author(p, chosen);
@@ -289,7 +306,8 @@ export const actions: Actions = {
   async replay(ids, o) {
     const root = enter(o);
     const p = loadProject(root);
-    selectBoundaries(p.all, ids); // validates ids
+    const chosen = selectBoundaries(p.all, ids).map((b) => b.boundary); // also validates ids
+    assertHostsAllowed(p.cfg, chosen, root);
     const started = new Date();
     const results = await replayLocked(p, ids);
     if (!results.length) {
@@ -361,6 +379,7 @@ export async function runHook(event: HookEvent, input: HookInput, root: string):
   if (!locked.length) return notes.length ? JSON.stringify({ systemMessage: notes.join('\n') }) : undefined;
 
   const p: Project = { root, cfg: readConfig(root), identities: readIdentities(root), all };
+  assertHostsAllowed(p.cfg, locked.map((id) => byId.get(id)!), root);
   const started = new Date();
   const origLog = console.log;
   console.log = (...a: unknown[]) => console.error(...a); // stdout is reserved for the hook JSON

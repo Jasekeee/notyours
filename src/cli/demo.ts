@@ -108,7 +108,7 @@ export async function runDemo(o: DemoOpts): Promise<number> {
   const all = readBoundaries(work);
   if (!all.length) throw new UserError(`The demo has no boundaries in ${path.join(work, '.notyours/boundaries')}`);
   const boundaries = all.map((b) => b.boundary);
-  assertHostsAllowed(cfg, boundaries);
+  assertHostsAllowed(cfg, boundaries, work);
 
   const logFile = path.join(work, 'demo-server.log');
   const out = fs.openSync(logFile, 'a');

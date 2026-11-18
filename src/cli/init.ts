@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { IdentityIdSchema, PlanSchema, RoleSchema } from '../schemas.js';
 import { makeToken } from '../shared/token.js';
 import type { Identity } from '../types.js';
-import { LOCAL_HOSTS, checkHost } from './hosts.js';
+import { LOCAL_HOSTS, checkHost, isLocalHost } from './hosts.js';
+import { recordOwnedHosts } from './owned.js';
 import { safeMkdir } from './safe-fs.js';
 import { UserError, nyPaths, readConfigIfExists, writeConfig, writeIdentities } from './workspace.js';
 
@@ -101,6 +102,8 @@ export function runInit(root: string, opts: InitOptions, existingIdentities: Ide
   const users = opts.users ? parseUsersFile(opts.users) : DEFAULT_USERS;
   const identities = buildIdentities(root, users, existingIdentities);
   writeConfig(root, { ...(prev ?? {}), baseUrl: opts.url, allowHosts });
+  // The human's confirmation lives outside the repo, so a cloned config.yaml can't grant it.
+  if (opts.iOwnThis) recordOwnedHosts(root, [check.host, ...(opts.allowHost ?? [])].filter((h) => !isLocalHost(h.toLowerCase())));
   writeIdentities(root, identities);
   safeMkdir(root, nyPaths(root).boundaries);
   return { baseUrl: opts.url, identities, allowHosts };

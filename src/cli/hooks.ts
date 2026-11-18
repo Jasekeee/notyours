@@ -9,6 +9,7 @@ import YAML from 'yaml';
 import type { Boundary } from '../types.js';
 import { MAP_COMMAND_MD } from '../map/command.js';
 import { matchesGlob } from './glob.js';
+import { ownedStorePath } from './owned.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
 import { NY_DIR, readDirty, writeDirty } from './workspace.js';
 
@@ -25,12 +26,37 @@ export type GuardResult = { allow: true } | { allow: false; reason: string };
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'NotebookRead']);
 
+/** realpath of the longest existing prefix, plus the rest: resolves symlinks even for files not yet created. */
+function realish(abs: string): string {
+  let cur = abs;
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(cur), ...rest.reverse());
+    } catch {
+      const parent = path.dirname(cur);
+      if (parent === cur) return abs;
+      rest.push(path.basename(cur));
+      cur = parent;
+    }
+  }
+}
+
 /** Project-relative path with forward slashes; undefined if outside the project. */
 export function relPath(root: string, p: string, cwd = root): string | undefined {
-  const abs = path.resolve(cwd, p);
-  const rel = path.relative(root, abs);
+  const rel = path.relative(path.resolve(root), path.resolve(cwd, p));
   if (rel.startsWith('..') || path.isAbsolute(rel)) return undefined;
   return rel.split(path.sep).join('/');
+}
+
+/**
+ * Canonical project-relative path for policy checks: symlinks resolved, lowercased (macOS/Windows
+ * filesystems are case-insensitive, so .NOTYOURS/Secrets.json is the same file).
+ */
+export function canonRel(root: string, p: string, cwd = root): string | undefined {
+  const rel = path.relative(realish(path.resolve(root)), realish(path.resolve(cwd, p)));
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return undefined;
+  return rel.split(path.sep).join('/').toLowerCase();
 }
 
 function toolPath(input: HookInput): string | undefined {
@@ -43,6 +69,8 @@ const SECRET_PATHS = [`${NY_DIR}/secrets.json`, `${NY_DIR}/profiles`];
 const READONLY_PATHS = [`${NY_DIR}/runs`, `${NY_DIR}/config.yaml`, '.testmuai'];
 
 const under = (rel: string, p: string) => rel === p || rel.startsWith(`${p}/`);
+/** rel is a directory that contains p (e.g. Grep over .notyours/ would read secrets.json). Project root excluded. */
+const contains = (rel: string, p: string) => rel !== '' && p.startsWith(`${rel}/`);
 
 /** Boundary files (project-relative) whose YAML has locked: true. */
 export function lockedBoundaryFiles(root: string): string[] {
@@ -58,7 +86,7 @@ export function lockedBoundaryFiles(root: string): string[] {
         return false;
       }
     })
-    .map((f) => `${NY_DIR}/boundaries/${f}`);
+    .map((f) => `${NY_DIR}/boundaries/${f}`.toLowerCase());
 }
 
 const WRITE_SHELL_RE = /(?:^|[^<0-9&])>{1,2}|\b(?:rm|mv|cp|tee|truncate|chmod|chown|unlink|ln|dd|install|rsync)\b|\bsed\s+(?:-[a-zA-Z]*\s+)*-[a-zA-Z]*i|\bperl\s+-[a-zA-Z]*i|\bgit\s+(?:checkout|restore|rm|reset|clean|stash)\b|writeFile|\bnpx?\s+notyours\s+lock\b/;
@@ -69,8 +97,13 @@ export function guard(input: HookInput, root: string): GuardResult {
   const deny = (reason: string): GuardResult => ({ allow: false, reason: `notyours guard: ${reason}` });
 
   if (tool === 'Bash') {
-    const cmd = typeof input.tool_input?.command === 'string' ? (input.tool_input.command as string) : '';
-    if (/secrets\.json|\.notyours\/profiles/.test(cmd)) return deny('.notyours/secrets.json and browser profiles hold identity passwords and sessions; they are off limits.');
+    const raw = typeof input.tool_input?.command === 'string' ? (input.tool_input.command as string) : '';
+    const cmd = raw.toLowerCase();
+    const secretMsg = '.notyours/secrets.json and browser profiles hold identity passwords and sessions; they are off limits.';
+    if (/secrets\.json|\.notyours\/profiles|owned-hosts|\.config\/notyours/.test(cmd)) return deny(secretMsg);
+    // Globs at the top of .notyours/ (cat .notyours/s*) or recursive reads of the whole folder (grep -r x .notyours).
+    if (/\.notyours\/[^\s/'"]*[*?[{]/.test(cmd)) return deny(secretMsg);
+    if (/\.notyours\/?(?=$|[\s'";|&)])/.test(cmd) && /\b(?:grep|rg|ag|find|tar|zip|cp|rsync|cat|less|head|tail|xxd|strings|base64|scp|curl)\b/.test(cmd)) return deny(secretMsg);
     if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
     }
@@ -84,11 +117,15 @@ export function guard(input: HookInput, root: string): GuardResult {
 
   const p = toolPath(input);
   if (!p) return { allow: true };
-  const rel = relPath(root, p, cwd);
+  if (WRITE_TOOLS.has(tool) && realish(path.resolve(cwd, p)).toLowerCase().startsWith(realish(path.dirname(ownedStorePath())).toLowerCase())) {
+    return deny('the owned-hosts store records the human\'s --i-own-this confirmations and is off limits.');
+  }
+  const rel = canonRel(root, p, cwd);
   if (rel === undefined) return { allow: true };
 
-  if ((READ_TOOLS.has(tool) || WRITE_TOOLS.has(tool)) && SECRET_PATHS.some((s) => under(rel, s))) {
-    return deny(`${rel} holds identity passwords/sessions and is off limits. Use identity ids from .notyours/map.json.`);
+  const secret = SECRET_PATHS.some((s) => under(rel, s) || (READ_TOOLS.has(tool) && contains(rel, s)));
+  if ((READ_TOOLS.has(tool) || WRITE_TOOLS.has(tool)) && secret) {
+    return deny(`${rel} holds (or contains) identity passwords/sessions and is off limits. Use identity ids from .notyours/map.json.`);
   }
   if (WRITE_TOOLS.has(tool)) {
     if (READONLY_PATHS.some((s) => under(rel, s))) {
@@ -142,6 +179,15 @@ type Settings = { hooks?: Record<string, HookGroup[]> } & Record<string, unknown
 
 const OURS_RE = /\bhook (?:guard|post-tool|stop)\s*$/;
 
+export const PERMISSION_DENY = [
+  'Read(./.notyours/secrets.json)',
+  'Read(./.notyours/profiles/**)',
+  'Edit(./.notyours/secrets.json)',
+  'Edit(./.notyours/config.yaml)',
+  'Edit(./.notyours/runs/**)',
+  'Edit(./.testmuai/**)',
+];
+
 /** Merge notyours hooks into Claude Code settings, replacing earlier notyours entries. */
 export function mergeHookSettings(settings: Settings, cli: string): Settings {
   const hooks: Record<string, HookGroup[]> = { ...(settings.hooks ?? {}) };
@@ -154,7 +200,10 @@ export function mergeHookSettings(settings: Settings, cli: string): Settings {
   add('PreToolUse', { matcher: 'Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: `${cli} hook guard` }] });
   add('PostToolUse', { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: `${cli} hook post-tool` }] });
   add('Stop', { hooks: [{ type: 'command', command: `${cli} hook stop`, timeout: 600 }] });
-  return { ...settings, hooks };
+  // Second layer, enforced by Claude Code itself: deny rules for the secrets and the oracle.
+  const perms = (settings.permissions ?? {}) as { deny?: string[] } & Record<string, unknown>;
+  const deny = [...new Set([...(perms.deny ?? []), ...PERMISSION_DENY])];
+  return { ...settings, permissions: { ...perms, deny }, hooks };
 }
 
 export function installHooks(root: string, cli: string): { settingsFile: string; commandFile: string } {
