@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ import { appIndexFile, findAppDirs, scanAppDirs } from './appdir.js';
 import { postToolHook } from './post-tool.js';
 import { parseHookInput } from './types.js';
 import { LAST_LINE, MAX_REPORT_LINES, stopHook, type StopDeps, leakBlock, formatLeakReport } from './stop.js';
+import { writeSurfaceBaseline } from './surface-scan.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const input = (name: string, project: string) =>
@@ -52,6 +53,22 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('stop hook', () => {
+  it('a Bash edit (no PostToolUse) under a locked surface is still replayed on Stop', async () => {
+    const p = notyoursPaths(project);
+    mkdirSync(path.join(project, 'src/app/api/notes'), { recursive: true });
+    writeFileSync(path.join(project, 'src/app/api/notes/route.ts'), 'v1\n');
+    writeSurfaceBaseline(project, [lockedBoundary]);
+    writeFileSync(path.join(project, 'src/app/api/notes/route.ts'), 'v2, edited with sed -i\n');
+    const t = new Date(Date.now() + 5000);
+    utimesSync(path.join(project, 'src/app/api/notes/route.ts'), t, t);
+    const engine = new SequenceEngine([leak]);
+    const r = await stopHook(input('stop-first', project), deps(engine));
+    expect(engine.calls).toHaveLength(1);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('src/app/api/notes/route.ts');
+    void p;
+  });
+
   it('exits 0 immediately when dirty.json is empty or missing (no replay)', async () => {
     const engine = new SequenceEngine([]);
     expect(await stopHook(input('stop-first', project), deps(engine))).toEqual({ exitCode: 0 });

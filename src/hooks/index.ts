@@ -11,6 +11,7 @@ export { guardHook, GUARD_MESSAGE, bashTouchesNotyours } from './guard.js';
 export { postToolHook, matchBoundaries } from './post-tool.js';
 export { stopHook, formatLeakReport, LAST_LINE, MAX_REPORT_LINES, type StopDeps } from './stop.js';
 export { matchesGlob, globToRegExp } from './glob.js';
+export { markSurfaceChanges, writeSurfaceBaseline, changedSurfaceFiles } from './surface-scan.js';
 export type { HookInput, HookResult } from './types.js';
 
 export const HOOK_NAMES: HookName[] = ['post-tool', 'guard', 'stop'];

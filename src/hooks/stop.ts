@@ -15,6 +15,7 @@ import {
   type DirtyEntry,
 } from '../ratchet/store.js';
 import { findAppDirs } from './appdir.js';
+import { markSurfaceChanges } from './surface-scan.js';
 import { ok, projectDirOf, tellHuman, type HookInput, type HookResult } from './types.js';
 
 export const MAX_REPORT_LINES = 40;
@@ -209,19 +210,27 @@ async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, no
 
 const shown = (projectDir: string, p: string): string => path.relative(projectDir, p) || '.';
 
-/** App folders under the project that have something in dirty.json. */
-function dirtyApps(projectDir: string): string[] {
-  return findAppDirs(projectDir).filter((d) => Object.keys(readDirty(notyoursPaths(d))).length > 0);
+/**
+ * App folders under the project that have something in dirty.json. Each one's surfaces are scanned first:
+ * Bash edits (sed -i, python) never fire PostToolUse, so changes since the last pass mark boundaries dirty here.
+ */
+function dirtyApps(projectDir: string, now: Date): string[] {
+  return findAppDirs(projectDir).filter((d) => {
+    try {
+      markSurfaceChanges(d, loadBoundaries(notyoursPaths(d)).map((s) => s.boundary), now);
+    } catch { /* a scan problem must not block the stop; PostToolUse marks still apply */ }
+    return Object.keys(readDirty(notyoursPaths(d))).length > 0;
+  });
 }
 
 export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<HookResult> {
   const env = deps.env ?? process.env;
   const projectDir = projectDirOf(input, env);
   // .notyours/ may live in a subfolder (demo/), so look for every app folder with dirty boundaries.
-  const apps = dirtyApps(projectDir);
+  const now = (deps.now ?? (() => new Date()))();
+  const apps = dirtyApps(projectDir, now);
   if (!apps.length) return ok();
 
-  const now = (deps.now ?? (() => new Date()))();
   const outcomes: AppOutcome[] = [];
   for (const appDir of apps) outcomes.push(await stopForApp(appDir, projectDir, deps, now));
   const blocks = outcomes.flatMap((o) => o.blocks);

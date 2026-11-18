@@ -15,7 +15,7 @@ export { TARGET_RE, assertHostsAllowed, boundaryUrls } from './host-gate.js';
 import { assertHostsAllowed } from './host-gate.js';
 import { hostOf, isLocalHost } from './hosts.js';
 import { guard, guardOutput, installHooks, type HookInput } from './hooks.js';
-import { postToolHook, stopHook, type HookResult } from '../hooks/index.js';
+import { postToolHook, stopHook, writeSurfaceBaseline, type HookResult } from '../hooks/index.js';
 import { readPublicIdentities, runInit } from './init.js';
 import type { Actions, GlobalOpts, HookEvent } from './program.js';
 import { safeAppendFile } from './safe-fs.js';
@@ -359,6 +359,10 @@ export const actions: Actions = {
   async installHooks(o) {
     const root = enter(o);
     const r = installHooks(root, o.cli);
+    // Baseline for the Stop pass's surface scan, so edits made through Bash before the first stop are caught too.
+    if (fs.existsSync(nyPaths(root).config)) {
+      try { writeSurfaceBaseline(root, readBoundaries(root).map((b) => b.boundary)); } catch { /* optional */ }
+    }
     log(`${pc.green('✓')} ${path.relative(root, r.settingsFile)}  PreToolUse guard, PostToolUse post-tool, Stop replay  ${pc.dim(`(${o.cli} hook …)`)}`);
     log(`${pc.green('✓')} ${path.relative(root, r.commandFile)}  /notyours-map`);
     log(pc.dim('The guard keeps locked boundaries, Kane recordings, results and secrets read-only for the agent.'));
