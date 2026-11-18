@@ -17,6 +17,7 @@ const fixture = (name: string, project: string) =>
 
 let project: string;
 beforeEach(() => {
+  vi.stubEnv('XDG_CACHE_HOME', mkdtempSync(path.join(os.tmpdir(), 'ny-cache-'))); // keep the app index out of ~/.cache
   project = tempProject();
   vi.stubEnv('CLAUDE_PROJECT_DIR', ''); // the hooks must fall back to the fixture's cwd
 });

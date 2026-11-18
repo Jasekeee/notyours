@@ -1,7 +1,7 @@
 // Locating app folders: a folder whose .notyours/ holds a config or boundaries (e.g. demo/ in this repo, or the temp
 // copy that `notyours demo` makes). Boundary surface globs are relative to it, not to the Claude Code project root.
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { writeJsonAtomic } from '../ratchet/store.js';
@@ -98,18 +98,41 @@ export function scanAppDirs(projectDir: string, maxDepth = 6): string[] {
 
 /**
  * Index of app folders post-tool has marked dirty, so Stop can reach ones its scan would miss (deeper than the scan,
- * or reached through a symlink). Kept outside the project, keyed by its physical path. If it's lost, Stop still scans.
+ * or reached through a symlink). It lives in the user's private cache dir ($XDG_CACHE_HOME or ~/.cache, mode 0700),
+ * never in a shared temp dir another user could write, and is keyed by the project's physical path. On read, any
+ * entry outside the project is dropped. If the index is lost, Stop still scans.
  */
+function cacheDir(): string {
+  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'notyours');
+}
+
+const ownedByMe = (p: string): boolean => {
+  try {
+    return typeof process.getuid !== 'function' || statSync(p).uid === process.getuid();
+  } catch {
+    return false;
+  }
+};
+
 export function appIndexFile(projectDir: string): string {
   const key = physicalOrUndefined(path.resolve(projectDir)) ?? path.resolve(projectDir);
   const hash = createHash('sha256').update(key).digest('hex').slice(0, 16);
-  return path.join(os.tmpdir(), 'notyours', `apps-${hash}.json`);
+  return path.join(cacheDir(), `apps-${hash}.json`);
 }
 
 function readIndex(projectDir: string): string[] {
+  const file = appIndexFile(projectDir);
+  if (!ownedByMe(path.dirname(file)) || !ownedByMe(file)) return [];
+  const root = physicalOrUndefined(path.resolve(projectDir));
+  if (!root) return [];
   try {
-    const v: unknown = JSON.parse(readFileSync(appIndexFile(projectDir), 'utf8'));
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    const v: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    if (!Array.isArray(v)) return [];
+    return v.filter((x): x is string => {
+      if (typeof x !== 'string' || !path.isAbsolute(x)) return false;
+      const phys = physicalOrUndefined(x);
+      return phys !== undefined && inside(root, phys);
+    });
   } catch {
     return [];
   }
@@ -117,7 +140,11 @@ function readIndex(projectDir: string): string[] {
 
 export function rememberApp(projectDir: string, appDir: string): void {
   const known = readIndex(projectDir);
-  if (!known.includes(appDir)) writeJsonAtomic(appIndexFile(projectDir), [...known, appDir]);
+  if (known.includes(appDir)) return;
+  const file = appIndexFile(projectDir);
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  if (!ownedByMe(path.dirname(file))) return;
+  writeJsonAtomic(file, [...known, appDir]);
 }
 
 /** Every app folder Stop should look at: the scan plus the index, de-duplicated by physical path. */

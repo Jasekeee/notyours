@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,7 @@ import { engineOracle } from '../ratchet/replay.js';
 import { readAttempts, readDirty, writeAttempts, writeDirty } from '../ratchet/store.js';
 import { FakeKane, lockedBoundary, tempProject } from '../ratchet/testkit.js';
 import type { Boundary, Config, Engine, Identity, ProbeResult } from '../types.js';
-import { scanAppDirs } from './appdir.js';
+import { appIndexFile, findAppDirs, scanAppDirs } from './appdir.js';
 import { postToolHook } from './post-tool.js';
 import { parseHookInput } from './types.js';
 import { LAST_LINE, MAX_REPORT_LINES, stopHook, type StopDeps } from './stop.js';
@@ -46,6 +46,7 @@ const dirtyNotes = () =>
   });
 
 beforeEach(() => {
+  vi.stubEnv('XDG_CACHE_HOME', mkdtempSync(path.join(os.tmpdir(), 'ny-cache-'))); // keep the app index out of ~/.cache
   project = tempProject();
   kane = new FakeKane();
 });
@@ -207,6 +208,16 @@ describe('stop hook with the app in a subfolder (demo/)', () => {
     expect(r.exitCode).toBe(0);
     expect(seen).toEqual([deep]);
     expect(readDirty(notyoursPaths(deep))).toEqual({});
+  });
+
+  it('ignores index entries outside the project (planted or stale)', async () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'ny-repo-'));
+    const outside = tempProject(); // a real app folder, but not under repo
+    dirtyNotes(); // `project` is outside repo too
+    mkdirSync(path.dirname(appIndexFile(repo)), { recursive: true });
+    writeFileSync(appIndexFile(repo), JSON.stringify([outside, project, '/etc', 'relative/dir']));
+    expect(findAppDirs(repo)).toEqual([]);
+    expect(await stopHook(input('stop-first', repo), { env: { CLAUDE_PROJECT_DIR: repo }, replay: async () => { throw new Error('must not replay'); } })).toEqual({ exitCode: 0 });
   });
 
   it('exits 0 fast when no app folder has dirty boundaries', async () => {
