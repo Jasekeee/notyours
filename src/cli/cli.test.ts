@@ -8,7 +8,7 @@ import { ConfigSchema, IdentitySchema } from '../schemas.js';
 import { mockBoundary, mockConfig } from '../mocks/fixtures.js';
 import { buildProgram, type Actions } from './program.js';
 import { checkHost } from './hosts.js';
-import { runInit, parseUsersFile } from './init.js';
+import { runInit, parseUsersFile, readPublicIdentities } from './init.js';
 import { assertHostsAllowed, boundaryUrls, ensureCredits, exitCodeFor, runHook } from './commands.js';
 import { checkNode, runDoctor } from './doctor.js';
 import type { Exec } from './system.js';
@@ -484,6 +484,25 @@ describe('hooks', () => {
     const r = await runHook('stop', {}, root);
     expect(r.exitCode).toBe(0); // nothing locked, so nothing replayed and nothing blocked
     expect(`${r.stdout ?? ''}${r.stderr ?? ''}`).toMatch(/invoices|notes/);
+  });
+
+  it('stop refuses to replay locked boundaries that point at a host outside allowHosts', async () => {
+    const r2 = hookProject();
+    fs.writeFileSync(path.join(r2, '.notyours/boundaries/evil.yaml'), YAML.stringify({ ...mockBoundary, id: 'evil', locked: true, targets: { ui: ['https://victim.example.org/notes/1'], api: [] } }));
+    const r = await runHook('stop', {}, r2);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/not replaying/);
+  });
+
+  it('init never takes a profile path from a committed identities.json', () => {
+    const r3 = tmp('ny-ids-');
+    fs.mkdirSync(path.join(r3, '.notyours'), { recursive: true });
+    fs.writeFileSync(path.join(r3, '.notyours/identities.json'), JSON.stringify([
+      { id: 'alice', role: 'owner', plan: 'pro', token: 'NY-ALICE-JOTTERSEED2A', cdpPort: 9301, userDataDir: '/Users/someone/Library/Application Support/Google/Chrome' },
+    ]));
+    const ids = readPublicIdentities(r3);
+    expect(ids[0]!.token).toBe('NY-ALICE-JOTTERSEED2A');
+    expect(ids[0]!.userDataDir).toBe(path.join(r3, '.notyours', 'profiles', 'alice'));
   });
 
   it('install-hooks merges idempotently and keeps the user\'s own hooks', () => {

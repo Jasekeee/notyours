@@ -457,5 +457,15 @@ export async function runHook(event: HookEvent, input: HookInput, root: string):
   const withCwd = { ...input, cwd: typeof input.cwd === 'string' ? input.cwd : root };
   const env = { ...process.env, CLAUDE_PROJECT_DIR: root };
   if (event === 'post-tool') return postToolHook(withCwd, env);
+  // Same host gate as `run`/`replay` (allowHosts + the human's out-of-repo ownership record) before the
+  // Stop hook drives any persona: a cloned config or boundary file must not point Kane at someone else's host.
+  if (fs.existsSync(nyPaths(root).config)) {
+    try {
+      const locked = readBoundaries(root).map((b) => b.boundary).filter((b) => b.locked);
+      if (locked.length) assertHostsAllowed(readConfig(root), locked, root);
+    } catch (e) {
+      return { exitCode: 0, stdout: `${JSON.stringify({ systemMessage: `notyours stop: not replaying: ${(e as Error).message}` })}\n` };
+    }
+  }
   return stopHook(withCwd, { env });
 }

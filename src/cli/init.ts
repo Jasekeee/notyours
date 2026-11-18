@@ -100,8 +100,10 @@ export function readPublicIdentities(root: string): Identity[] {
   return list.map((i, n) => {
     const r = IdentitySchema.safeParse(i);
     if (!r.success) throw new UserError(`.notyours/identities.json identity #${n + 1} is invalid: ${r.error.issues.map((x) => x.path.join('.') || x.message).join(', ')}`);
-    const { password: _never, ...pub } = r.data;
-    return { ...pub, userDataDir: path.resolve(root, pub.userDataDir) };
+    // Keep only token/port/role data. Never trust a path from a committed file: the profile is always
+    // <root>/.notyours/profiles/<id>, whatever identities.json says (and passwords never come from it).
+    const { password: _never, userDataDir: _ignored, ...pub } = r.data;
+    return { ...pub, userDataDir: path.join(nyPaths(root).dir, 'profiles', pub.id) };
   });
 }
 
