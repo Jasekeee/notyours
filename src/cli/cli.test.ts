@@ -470,6 +470,17 @@ describe('hooks', () => {
     expect(g('Bash', { command: 'npx notyours init --url https://x.dev --allow-host x.dev --i-own-this' }).allow).toBe(false);
   });
 
+  it('guard: hook state and recordings are read-only (clearing dirty.json would skip the Stop replay)', () => {
+    for (const f of ['.notyours/dirty.json', '.notyours/attempts.json', '.notyours/tests/b1_bob_test.md']) {
+      expect(g('Write', { file_path: f }).allow).toBe(false);
+      expect(g('Edit', { file_path: f }).allow).toBe(false);
+    }
+    expect(g('Bash', { command: 'rm .notyours/dirty.json' }).allow).toBe(false);
+    expect(g('Read', { file_path: '.notyours/dirty.json' }).allow).toBe(true);
+    const deny = (mergeHookSettings({}, 'notyours').permissions as { deny: string[] }).deny;
+    expect(deny).toEqual(expect.arrayContaining(['Edit(./.claude/**)', 'Edit(./.notyours/dirty.json)', 'Edit(./.notyours/attempts.json)', 'Edit(./.notyours/tests/**)']));
+  });
+
   it('guard: recorded logins (they hold the typed password) are off limits like secrets.json', () => {
     expect(g('Read', { file_path: '.notyours/tests/login_alice_test.md' }).allow).toBe(false);
     expect(g('Read', { file_path: '.notyours/tests/output-login_alice/.internal/meta.json' }).allow).toBe(false);

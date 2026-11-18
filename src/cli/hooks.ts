@@ -73,6 +73,10 @@ const LOGIN_PREFIXES = [`${NY_DIR}/tests/login_`, '.testmuai/tests/login_'];
 const READONLY_PATHS = [
   `${NY_DIR}/runs`,
   `${NY_DIR}/config.yaml`,
+  // Hook state and recordings: clearing dirty.json or attempts.json would let the agent skip the Stop replay.
+  `${NY_DIR}/dirty.json`,
+  `${NY_DIR}/attempts.json`,
+  `${NY_DIR}/tests`,
   '.testmuai',
   // The hooks themselves: an agent that could edit these could switch the guard off.
   '.claude/settings.json',
@@ -218,6 +222,10 @@ export const PERMISSION_DENY = [
   'Edit(./.notyours/config.yaml)',
   'Edit(./.notyours/runs/**)',
   'Edit(./.testmuai/**)',
+  'Edit(./.notyours/dirty.json)',
+  'Edit(./.notyours/attempts.json)',
+  'Edit(./.notyours/tests/**)',
+  'Edit(./.claude/**)',
 ];
 
 /** Merge notyours hooks into Claude Code settings, replacing earlier notyours entries. */

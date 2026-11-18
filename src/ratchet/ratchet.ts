@@ -44,7 +44,7 @@ export class RealRatchet implements Ratchet {
     const launch = this.opts.chromes ?? (this.opts.kane === undefined && this.opts.oracle === undefined);
     if (!launch) return fn(undefined, this.opts.oracle ?? engineOracle(createEngine({ stateDir: this.paths.dir, cwd: this.paths.root })));
     const cfg = this.config();
-    const pool = sessionPool({ cfg, stateDir: this.paths.dir, cwd: this.paths.root, kane: this.kane });
+    const pool = sessionPool({ cfg, stateDir: this.paths.dir, cwd: this.paths.root, kane: this.kane, rerecordOnFailure: false });
     const oracle = engineOracle(createEngine({ pool, stateDir: this.paths.dir, cwd: this.paths.root }));
     try {
       return await fn(pool, oracle);

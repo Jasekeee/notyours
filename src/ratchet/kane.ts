@@ -167,7 +167,14 @@ export class KaneCli implements KaneClient {
       const r = await execa(this.bin, args, { cwd: req.cwd, reject: false, env: KANE_ENV, timeout: (timeoutS + 60) * 1000 });
       // Reports and run logs show the project-relative path, never an absolute local one.
       const shown = relative(req.cwd, req.testPath);
-      return parseReplay(String(r.stdout ?? ''), r.exitCode ?? 2, shown && !shown.startsWith('..') ? shown : basename(req.testPath), req.identity);
+      const out = parseReplay(String(r.stdout ?? ''), r.exitCode ?? 2, shown && !shown.startsWith('..') ? shown : basename(req.testPath), req.identity);
+      // Keep kane-cli's own words when it stopped before finishing (an error event, else the last stderr line).
+      if (out.run.status !== 'passed' && out.run.reason === 'no test_md_done event') {
+        const err = parseNdjson(String(r.stdout ?? '')).findLast((e) => e.type === 'error');
+        const detail = str(err?.message) ?? str(err?.code) ?? String(r.stderr ?? '').split('\n').map((l) => l.trim()).filter((l) => l && !/update available/i.test(l)).at(-1);
+        if (detail) out.run.reason = `no test_md_done event: ${detail.slice(0, 200)}`;
+      }
+      return out;
     } finally {
       if (dir) rmSync(dir, { recursive: true, force: true });
     }

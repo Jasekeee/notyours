@@ -364,6 +364,12 @@ export const actions: Actions = {
       return r.exitCode;
     } catch (e) {
       console.error(`notyours hook ${event}: ${(e as Error).message}`);
+      // The guard fails closed: if it cannot decide, the tool call is blocked. post-tool and stop fail open
+      // (they must never trap the agent's session).
+      if (event === 'guard') {
+        console.error('notyours guard: blocking this tool call because the guard itself failed (fails closed).');
+        return 2;
+      }
     }
     return 0;
   },

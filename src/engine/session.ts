@@ -18,6 +18,12 @@ export interface SessionOptions {
   runner?: KaneRunner;
   kane?: Pick<KaneClient, 'replay'>;
   log?: (line: string) => void;
+  /**
+   * When a recorded login fails to replay, record a new one (1 authoring run)? Default true for authoring
+   * commands. Replays and the Stop hook pass false: each Stop is a new process, so a flaky login replay must
+   * not cost a recording every time; the oracle's positive controls report the lost session instead.
+   */
+  rerecordOnFailure?: boolean;
 }
 
 export const loginTestName = (identityId: string) => `login_${identityId}`;
@@ -78,6 +84,10 @@ export async function logIn(identity: Identity, handle: ChromeHandle, opts: Sess
     });
     logCredits(opts.stateDir, { kind: 'replay', identity: identity.id, status: out.run.status, credits: out.run.creditsConsumed, durationS: out.run.durationS, objective: `login replay ${name}` });
     if (out.run.status === 'passed') return;
+    if (opts.rerecordOnFailure === false) {
+      log(`notyours: login replay for ${identity.id} ${out.run.status}${out.run.reason ? ` (${out.run.reason})` : ''}; not re-recording during a replay (the positive controls will show it). Re-record with: notyours run`);
+      return;
+    }
     log(`notyours: login replay for ${identity.id} ${out.run.status}${out.run.reason ? ` (${out.run.reason})` : ''}; recording a new login (1 authoring run)`);
   }
 

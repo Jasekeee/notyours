@@ -57,5 +57,12 @@ describe('session pool', () => {
     await second.closeAll();
     expect(replayed).toEqual(['alice']);
     expect(authored).toHaveLength(1); // no new authoring run
+
+    // During a replay (Stop hook), a failing login replay is never re-recorded: no credits.
+    const failing = { replay: async (req: { identity: string }) => ({ run: { objective: 'replay', identity: req.identity, status: 'failed' as const, exitCode: 1, finalState: {}, creditsConsumed: 0, durationS: 1 }, authorDecisions: 0 }) };
+    const third = sessionPool({ ...opts, kane: failing, rerecordOnFailure: false }, { headful: false });
+    await third.get(alice);
+    await third.closeAll();
+    expect(authored).toHaveLength(1);
   }, 60_000);
 });
