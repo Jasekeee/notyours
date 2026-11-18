@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -92,6 +92,28 @@ describe('guard hook', () => {
     symlinkSync(path.join(project, '.notyours', 'not-yet'), path.join(project, 'sneaky'));
     const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Write', tool_input: { file_path: `${project}/sneaky/x.json` } }));
     expect(r.exitCode).toBe(2);
+  });
+
+  it('fails closed on a symlink loop', async () => {
+    symlinkSync(path.join(project, 'loop-b'), path.join(project, 'loop-a'));
+    symlinkSync(path.join(project, 'loop-a'), path.join(project, 'loop-b'));
+    const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Write', tool_input: { file_path: `${project}/loop-a/x.ts` } }));
+    expect(r.exitCode).toBe(2);
+  });
+
+  it('follows a relative dangling link from its physical parent (symlinked parent dir)', async () => {
+    // project/src/real/  holds  link -> ../../.notyours/new  (relative to the PHYSICAL dir project/src/real)
+    // project/alias -> project/src/real, so lexically alias/../../ would be outside the project.
+    mkdirSync(path.join(project, 'src', 'real'), { recursive: true });
+    symlinkSync('../../.notyours/new', path.join(project, 'src', 'real', 'link'));
+    symlinkSync(path.join(project, 'src', 'real'), path.join(project, 'alias'));
+    const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Write', tool_input: { file_path: `${project}/alias/link/x.json` } }));
+    expect(r.exitCode).toBe(2);
+  });
+
+  it('still allows a normal new file under a real directory', async () => {
+    const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Write', tool_input: { file_path: `${project}/src/new/dir/file.ts` } }));
+    expect(r.exitCode).toBe(0);
   });
 
   for (const name of ['guard-edit-app', 'guard-bash-npm-test']) {

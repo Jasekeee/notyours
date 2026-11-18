@@ -75,7 +75,11 @@ const lexists = (p: string): boolean => {
  * realpath of the nearest existing ancestor, plus the not-yet-existing rest (Write creates new files).
  * Uses lstat, so a dangling symlink (`x -> .notyours/new`) is followed to its target instead of skipped.
  */
+class Unresolvable extends Error {}
+const MAX_LINK_DEPTH = 40; // macOS/Linux give up at 32/40 links
+
 function realish(p: string, depth = 0): string {
+  if (depth > MAX_LINK_DEPTH) throw new Unresolvable(p); // symlink loop or absurd chain: caller fails closed
   let head = path.resolve(p);
   const rest: string[] = [];
   while (!lexists(head)) {
@@ -85,19 +89,23 @@ function realish(p: string, depth = 0): string {
     head = parent;
   }
   try {
-    head = realpathSync(head);
+    return path.join(realpathSync(head), ...rest);
   } catch {
-    // A dangling symlink: resolve its target lexically and keep walking.
+    // realpath fails on an existing path only for a dangling symlink (or a loop). Follow the link from its
+    // physical parent directory, so a symlinked parent cannot hide where the target really is.
+    let target: string;
     try {
-      if (depth < 16 && lstatSync(head).isSymbolicLink()) {
-        return path.join(realish(path.resolve(path.dirname(head), readlinkSync(head)), depth + 1), ...rest);
-      }
+      if (!lstatSync(head).isSymbolicLink()) throw new Unresolvable(head);
+      target = readlinkSync(head);
     } catch {
-      // keep the lexical path
+      throw new Unresolvable(head);
     }
+    const dir = realish(path.dirname(head), depth + 1);
+    return path.join(realish(path.resolve(dir, target), depth + 1), ...rest);
   }
-  return path.join(head, ...rest);
 }
+
+const hasNotyoursComponent = (p: string): boolean => p.split(/[\\/]/).some((c) => c.toLowerCase() === '.notyours');
 
 const isNotyoursRel = (rel: string | undefined): boolean => {
   if (rel === undefined) return false;
@@ -108,10 +116,16 @@ const isNotyoursRel = (rel: string | undefined): boolean => {
 export function fileTouchesNotyours(projectDir: string, filePath: string): boolean {
   const abs = path.isAbsolute(filePath) ? filePath : path.join(projectDir, filePath);
   // Lexical check, then the symlink-resolved one (a symlink elsewhere in the tree may point into .notyours).
-  if (isNotyoursRel(toProjectPath(projectDir, abs))) return true;
-  if (isNotyoursRel(toProjectPath(realish(projectDir), realish(abs)))) return true;
-  // Outside the project: fall back to a path-component check.
-  return abs.split(/[\\/]/).some((c) => c.toLowerCase() === '.notyours');
+  if (isNotyoursRel(toProjectPath(projectDir, abs)) || hasNotyoursComponent(abs)) return true;
+  let real: string;
+  let realProject: string;
+  try {
+    real = realish(abs);
+    realProject = realish(projectDir);
+  } catch {
+    return true; // can't tell where the write lands: fail closed
+  }
+  return isNotyoursRel(toProjectPath(realProject, real)) || hasNotyoursComponent(real);
 }
 
 export function guardHook(input: HookInput, env: NodeJS.ProcessEnv = process.env): HookResult {
