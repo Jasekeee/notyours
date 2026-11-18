@@ -85,6 +85,9 @@ From the automated security review. By decision, only real secret or credential 
 - Hooks are installed with a machine-specific absolute path in `.claude/settings.json` when `--cli` is used. A missing
   binary makes a hook fail (exit 127), which Claude Code treats as non-blocking.
 - Raw kane-cli stderr can contain local paths and share links; replay reasons use only `err.code` or redacted text.
+- Agents may run `notyours install-hooks` (by decision), so an agent could re-install the hooks with a different
+  `--cli` command, swapping in its own guard. Direct edits to `.claude/settings.json` stay blocked; the change would
+  show in `git diff`.
 
 ## Top 3 fixes
 1. **Make replays fast and free.**
