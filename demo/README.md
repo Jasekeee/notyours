@@ -49,7 +49,7 @@ passwords.
 | `/account` | Plan and profile bio, with bio editing (correctly scoped) |
 | `/pro/export` | Export page: Pro users see an "Export my notes" button, free users see an upsell |
 | `GET /api/notes/:id` | Note as JSON (**SEEDED BUG #2**) |
-| `POST /api/export` | Your notes as `jotter-export.txt` (**SEEDED BUG #3**) |
+| `POST /api/export` | Your notes as `jotter-export.txt` (**SEEDED BUG #3**). Other methods get `405` with `Allow: POST` |
 
 ## The seeded bugs
 
@@ -74,7 +74,7 @@ holds, which shows that notyours doesn't cry wolf.
 | `b3-plan-gate.yaml` | plan-gate | free Bob → `/pro/export`; `POST /api/export` | **LEAK** via the API (bug #3); the UI path holds |
 | `b4-sweep.yaml` | sweep | Bob → his own `/notes`, `/account` | **HELD** (Bob's token present, Alice's absent) |
 
-In B3, `targets.api` is written as `"POST <url>"` because the export endpoint only accepts POST.
+In B3, `targets.api` is written as `"POST <url>"` because the export endpoint only accepts POST. A GET returns `405` (with `Allow: POST`), never a 404, so a wrong-method probe is visibly wrong and not a "denied".
 
 ## Tests
 

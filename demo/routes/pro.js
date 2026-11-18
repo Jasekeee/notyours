@@ -36,5 +36,12 @@ ${action}
     res.send(text);
   });
 
+  // Export is POST-only. Any other method gets an explicit 405 (not a 404), so a wrong-method probe
+  // can't be mistaken for "denied". Checked before login, as HTTP method errors usually are.
+  r.all('/api/export', (_req, res) => {
+    res.set('Allow', 'POST');
+    res.status(405).json({ error: 'method not allowed', allow: ['POST'] });
+  });
+
   return r;
 }

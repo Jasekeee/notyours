@@ -143,6 +143,16 @@ describe('seeded bugs are present', () => {
     expect(res.text).not.toContain(ALICE.token);
   });
 
+  it('GET /api/export is 405 with Allow: POST (never a 404), for Bob and for guests', async () => {
+    const bob = await loginAs(BOB);
+    for (const req of [bob, client()]) {
+      const res = await req('GET', '/api/export');
+      expect(res.status).toBe(405);
+      expect(res.headers.get('allow')).toBe('POST');
+      expect(res.text).not.toContain(BOB.token);
+    }
+  });
+
   it('Pro Alice sees the export button and exports only her notes', async () => {
     const alice = await loginAs(ALICE);
     const ui = await alice('GET', '/pro/export');

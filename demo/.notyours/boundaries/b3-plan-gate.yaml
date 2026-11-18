@@ -2,7 +2,7 @@
 # Expected verdict on the seeded app: LEAK via the API (SEEDED BUG #3). The UI hides the button
 # from free users, so the UI path holds; POST /api/export as Bob returns his notes anyway.
 # Success signal: the export body contains the viewer's own token (Bob's note 1002).
-# targets.api uses "METHOD URL" because this endpoint is POST-only (a GET is a 404).
+# targets.api uses "METHOD URL" because this endpoint is POST-only (any other method gets 405, Allow: POST).
 id: b3-export-plan-gate
 kind: plan-gate
 owner: alice

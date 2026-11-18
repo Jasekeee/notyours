@@ -31,7 +31,8 @@ login + logout). No retries and no replays. Each run cost about 2× the CLAUDE.m
    then, run `npx vitest run --root demo`.
 2. **Engine (feat/engine), B3 plan-gate:**
    - `targets.api` holds `"POST http://127.0.0.1:3077/api/export"`. The schema has no HTTP method field, so I used a
-     `METHOD URL` convention. A plain GET to that URL returns 404 and would read as HELD by mistake.
+     `METHOD URL` convention. A plain GET to that URL returns `405` with `Allow: POST` (it used to be 404); a 405 must
+     never be read as HELD.
    - Proof of the leak is that the response body contains the **viewer's own** token (Bob's note 1002), not the owner's.
      The engine's plan-gate verdict needs to treat that as a leak.
 3. **`create.objective` with fixed seed data:** the schema requires one. Mine only confirms the seeded note 1001 as Alice
