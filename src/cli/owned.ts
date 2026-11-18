@@ -6,11 +6,16 @@ import path from 'node:path';
 
 type Store = Record<string, string[]>; // realpath(project root) -> hosts
 
-/** Fixed location. NOTYOURS_HOME is honoured only under the test runner, so an agent can't point
- *  notyours at a store it wrote itself (NOTYOURS_HOME=/tmp/fake notyours run). */
-export function ownedStorePath(env = process.env): string {
-  const base = env.VITEST && env.NOTYOURS_HOME ? env.NOTYOURS_HOME : path.join(os.homedir(), '.config', 'notyours');
-  return path.join(base, 'owned-hosts.json');
+let testOverride: string | undefined;
+
+/** Tests only: in-process, so nothing on the command line or in the environment can move the store. */
+export function setOwnedStorePathForTests(file: string | undefined): void {
+  testOverride = file;
+}
+
+/** Fixed location: no environment variable can point notyours at a store someone else wrote. */
+export function ownedStorePath(): string {
+  return testOverride ?? path.join(os.homedir(), '.config', 'notyours', 'owned-hosts.json');
 }
 
 function key(root: string): string {
@@ -33,9 +38,9 @@ function read(file: string): Store {
   }
 }
 
-export function recordOwnedHosts(root: string, hosts: string[], env = process.env): void {
+export function recordOwnedHosts(root: string, hosts: string[]): void {
   if (!hosts.length) return;
-  const file = ownedStorePath(env);
+  const file = ownedStorePath();
   const store = read(file);
   const k = key(root);
   store[k] = [...new Set([...(store[k] ?? []), ...hosts.map((h) => h.toLowerCase())])].sort();
@@ -45,6 +50,6 @@ export function recordOwnedHosts(root: string, hosts: string[], env = process.en
   fs.chmodSync(file, 0o600);
 }
 
-export function isOwnedHost(root: string, host: string, env = process.env): boolean {
-  return (read(ownedStorePath(env))[key(root)] ?? []).includes(host.toLowerCase());
+export function isOwnedHost(root: string, host: string): boolean {
+  return (read(ownedStorePath())[key(root)] ?? []).includes(host.toLowerCase());
 }

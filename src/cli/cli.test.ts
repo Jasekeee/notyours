@@ -17,11 +17,13 @@ import { matchesGlob } from './glob.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
 import { copyFilter, demoStartCommand, packagedDemoDir } from './demo.js';
 import { readDirty, UserError } from './workspace.js';
+import { isOwnedHost, ownedStorePath, recordOwnedHosts, setOwnedStorePathForTests } from './owned.js';
 import { mockHeldResult, mockLeakResult } from '../mocks/fixtures.js';
 
 const tmp = (p = 'ny-cli-') => fs.mkdtempSync(path.join(os.tmpdir(), p));
 // Never touch the real ~/.config/notyours from tests.
-process.env.NOTYOURS_HOME = tmp('ny-home-');
+const TEST_STORE = path.join(tmp('ny-home-'), 'owned-hosts.json');
+setOwnedStorePathForTests(TEST_STORE);
 
 // ---------- argument parsing ----------
 
@@ -250,17 +252,21 @@ describe('allowHosts', () => {
     expect(o('Sign in as alice@demo.test, open http://localhost:3000/index.html, add {{token}}')).not.toThrow();
   });
 
-  it('the owned-hosts store has a fixed location outside tests and ignores writable-by-others files', async () => {
-    const { ownedStorePath, isOwnedHost, recordOwnedHosts } = await import('./owned.js');
-    expect(ownedStorePath({ NOTYOURS_HOME: '/tmp/fake' })).toBe(path.join(os.homedir(), '.config/notyours/owned-hosts.json'));
-    expect(ownedStorePath({ NOTYOURS_HOME: '/tmp/fake', VITEST: 'true' })).toBe('/tmp/fake/owned-hosts.json');
-    const home = tmp('ny-home2-');
-    const env = { VITEST: 'true', NOTYOURS_HOME: home };
+  it('the owned-hosts store has a fixed location and ignores files writable by others', () => {
+    setOwnedStorePathForTests(undefined);
+    process.env.NOTYOURS_HOME = '/tmp/fake';
+    try {
+      expect(ownedStorePath()).toBe(path.join(os.homedir(), '.config/notyours/owned-hosts.json'));
+    } finally {
+      delete process.env.NOTYOURS_HOME;
+      setOwnedStorePathForTests(TEST_STORE);
+    }
     const root = tmp();
-    recordOwnedHosts(root, ['acme.dev'], env);
-    expect(isOwnedHost(root, 'acme.dev', env)).toBe(true);
-    fs.chmodSync(path.join(home, 'owned-hosts.json'), 0o666);
-    expect(isOwnedHost(root, 'acme.dev', env)).toBe(false);
+    recordOwnedHosts(root, ['acme.dev']);
+    expect(isOwnedHost(root, 'acme.dev')).toBe(true);
+    fs.chmodSync(TEST_STORE, 0o666);
+    expect(isOwnedHost(root, 'acme.dev')).toBe(false);
+    fs.chmodSync(TEST_STORE, 0o600);
   });
 
   it('a non-local host in a (possibly cloned) config.yaml is refused until confirmed on this machine', () => {
@@ -384,7 +390,7 @@ describe('hooks', () => {
     expect(g('Bash', { command: 'grep -r pass .notyours' }).allow).toBe(false);
     expect(g('Bash', { command: 'cat .NOTYOURS/SECRETS.JSON' }).allow).toBe(false);
     expect(g('Bash', { command: 'ls .notyours/boundaries/*.yaml' }).allow).toBe(true);
-    expect(g('Write', { file_path: path.join(process.env.NOTYOURS_HOME!, 'owned-hosts.json') }).allow).toBe(false);
+    expect(g('Write', { file_path: TEST_STORE }).allow).toBe(false);
     expect(g('Bash', { command: 'echo {} > ~/.config/notyours/owned-hosts.json' }).allow).toBe(false);
   });
 
@@ -396,7 +402,10 @@ describe('hooks', () => {
     expect(g('Bash', { command: 'cd .notyours && rm -rf runs' }).allow).toBe(false);
     expect(g('Bash', { command: 'cat .notyours/runs/latest.json > /tmp/x' }).allow).toBe(false);
     expect(g('Bash', { command: 'find .testmuai -exec rm {} +' }).allow).toBe(false);
-    expect(g('Bash', { command: 'NOTYOURS_HOME=/tmp/fake npx notyours run' }).allow).toBe(false);
+    expect(g('Bash', { command: 'cat .notyours/$(echo c2VjcmV0cy5qc29u | base64 -d)' }).allow).toBe(false);
+    expect(g('Bash', { command: 'cat .notyours/`printf s`ecrets.json' }).allow).toBe(false);
+    expect(g('Bash', { command: 'cat .notyours/boundaries/../profiles/x' }).allow).toBe(false);
+    expect(g('Bash', { command: 'cat ~/proj/.notyours/runs/latest.json' }).allow).toBe(false);
     expect(g('Bash', { command: 'jq . .notyours/runs/latest.json | head' }).allow).toBe(true);
     expect(g('Bash', { command: 'npm test && npx notyours replay notes' }).allow).toBe(true);
     expect(g('Bash', { command: 'npx notyours run --dry-run' }).allow).toBe(true);

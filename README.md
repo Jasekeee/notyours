@@ -163,7 +163,7 @@ This merges three hooks and a few `permissions.deny` rules (for the secrets and 
 
 The guard is a guardrail for a cooperating agent, not a sandbox. It also keeps the hook config
 (`.claude/settings*.json`) read-only, and in Bash it only allows read-only commands (ls, cat, grep,
-jq, git diff, notyours replay/report) on those folders. Use test accounts, never real users'
+jq, git diff, notyours replay/report) on those folders, without `$`, backticks, `~` or `../`. Use test accounts, never real users'
 passwords, for your identities.
 
 ## Credit costs
@@ -185,9 +185,9 @@ in `.notyours/config.yaml`), and logs every Kane run's `credits_consumed` to
 - **Text only:** the oracle reads DOM text and network bodies. Tokens inside images and PDFs are
   out of scope.
 - **Localhost first:** `localhost` and `127.0.0.1` are allowed by default. Any other host must be
-  added with `--allow-host <host>` *and* confirmed with `--i-own-this`. That confirmation is stored
-  on your machine (`~/.config/notyours/`), not in the repo, so a cloned `config.yaml` can't grant
-  it. Boundaries that point anywhere else are refused.
+  added with `--allow-host <host>` *and* confirmed with `--i-own-this`, which asks you to type the
+  host name in a terminal. That confirmation is stored on your machine (`~/.config/notyours/`), not
+  in the repo, so neither a cloned `config.yaml` nor a coding agent can grant it. Boundaries that point anywhere else are refused.
 - `map` is a static heuristic. It drafts, your coding agent decides, and Kane proves. Express
   router mount prefixes aren't resolved.
 

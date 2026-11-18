@@ -201,6 +201,28 @@ function ensureGitignore(root: string): void {
   if (missing.length) safeAppendFile(root, file, `${current && !current.endsWith('\n') ? '\n' : ''}# notyours (secrets, browser profiles, runs, Kane evidence)\n${missing.join('\n')}\n`);
 }
 
+/**
+ * --i-own-this for a non-local host must be typed by a human at a terminal: a coding agent's Bash has no
+ * TTY, so it can't produce this confirmation even if a hook misses the command.
+ */
+async function confirmOwnership(urls: string[]): Promise<void> {
+  const hosts = [...new Set(urls.map((u) => hostOf(u)).filter((h) => !isLocalHost(h)))];
+  if (!hosts.length) return;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new UserError(`--i-own-this for ${hosts.join(', ')} must be confirmed interactively in a terminal.`);
+  }
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    for (const h of hosts) {
+      const answer = (await rl.question(`Type ${pc.bold(h)} to confirm you own it and may test it: `)).trim().toLowerCase();
+      if (answer !== h) throw new UserError(`Not confirmed: ${h}`);
+    }
+  } finally {
+    rl.close();
+  }
+}
+
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return '';
   const chunks: Buffer[] = [];
@@ -232,6 +254,7 @@ export const actions: Actions = {
 
   async init(o) {
     const root = enter(o);
+    if (o.iOwnThis) await confirmOwnership([o.url, ...o.allowHost.map((h) => `http://${h}`)]);
     let existing: Identity[] = [];
     if (fs.existsSync(nyPaths(root).secrets)) existing = readIdentities(root);
     const r = runInit(root, { url: o.url, users: o.users, allowHost: o.allowHost, iOwnThis: o.iOwnThis }, existing);

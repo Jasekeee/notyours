@@ -115,7 +115,10 @@ export function guard(input: HookInput, root: string): GuardResult {
     // Best-effort normalisation of shell quoting (se'cr'ets.json, se\crets.json, $'...'). This is a
     // guardrail for a cooperating agent, not a sandbox: see README.
     const cmd = raw.toLowerCase().replace(/\$'/g, "'").replace(/['"\\]/g, '');
-    if (/notyours_home/.test(cmd)) return deny('NOTYOURS_HOME is for the test suite only.');
+    // Shell expansion next to a protected folder can produce any path (cat .notyours/$(...)): refuse it.
+    if (PROTECTED_IN_SHELL_RE.test(cmd) && /[$`~]|\.\.\//.test(raw)) {
+      return deny('commands that touch .notyours/, .testmuai/ or .claude/settings may not use $, backticks, ~ or ../');
+    }
     const secretMsg = '.notyours/secrets.json and browser profiles hold identity passwords and sessions; they are off limits.';
     if (/secrets\.json|\.notyours\/profiles|owned-hosts|\.config\/notyours/.test(cmd)) return deny(secretMsg);
     // Globs at the top of .notyours/ (cat .notyours/s*) or recursive reads of the whole folder (grep -r x .notyours).
