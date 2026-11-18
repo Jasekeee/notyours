@@ -1,39 +1,34 @@
 #!/usr/bin/env node
-// CLI stub wired to the mocks. Owned by feat/cli; commands and options will grow there.
-import { Command } from 'commander';
-import pc from 'picocolors';
-import pkg from '../../package.json' with { type: 'json' };
-import { createEngine } from '../engine/index.js';
-import { createRatchet } from '../ratchet/index.js';
-import { createReport } from '../report/index.js';
-import { mockBoundary, mockConfig, mockIdentities } from '../mocks/fixtures.js';
+// notyours CLI entry. Checks the Node version before loading anything that might need Node 22.
+const MIN_NODE = 22;
+const major = Number(process.versions.node.split('.')[0]);
+if (major < MIN_NODE) {
+  console.error(
+    `notyours requires Node ${MIN_NODE}+ (found ${process.versions.node}).\n` +
+      `Upgrade: \`nvm install ${MIN_NODE}\` (or \`fnm install ${MIN_NODE}\`, or https://nodejs.org), then rerun.`,
+  );
+  process.exit(1);
+}
 
-const program = new Command();
-program.name('notyours').description(pkg.description).version(pkg.version);
+const [{ buildProgram }, { actions }, { UserError }, { SymlinkError }, pc] = await Promise.all([
+  import('./program.js'),
+  import('./commands.js'),
+  import('./workspace.js'),
+  import('./safe-fs.js'),
+  import('picocolors').then((m) => m.default),
+]);
 
-program
-  .command('probe')
-  .description('Probe boundaries with Kane personas (mock)')
-  .action(async () => {
-    const result = await createEngine().runBoundary(mockBoundary, mockIdentities, mockConfig);
-    console.log(`${pc.bold(result.boundaryId)} ${result.verdict === 'HELD' ? pc.green(result.verdict) : pc.red(result.verdict)}`);
-  });
-
-program
-  .command('replay')
-  .description('Replay locked boundaries at 0 credits (mock)')
-  .action(async () => {
-    const ratchet = createRatchet();
-    await ratchet.lock(mockBoundary, await createEngine().runBoundary(mockBoundary, mockIdentities, mockConfig));
-    for (const r of await ratchet.replay(mockIdentities)) console.log(`${r.boundaryId} ${r.verdict}`);
-  });
-
-program
-  .command('report')
-  .description('Write a report (mock)')
-  .option('-o, --out <dir>', 'output directory', '.notyours/runs')
-  .action((opts: { out: string }) => {
-    console.log(createReport().write([], opts.out));
-  });
-
-await program.parseAsync();
+const debug = process.argv.includes('--debug');
+try {
+  await buildProgram(actions).parseAsync(process.argv);
+} catch (e) {
+  const err = e as Error;
+  if (err instanceof UserError || err instanceof SymlinkError) {
+    console.error(pc.red(`✗ ${err.message}`));
+  } else {
+    console.error(pc.red(`✗ ${err.message}`));
+    if (debug) console.error(err.stack);
+    else console.error(pc.dim('(rerun with --debug for details)'));
+  }
+  process.exitCode = 2;
+}
