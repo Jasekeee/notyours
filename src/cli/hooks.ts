@@ -66,7 +66,22 @@ function toolPath(input: HookInput): string | undefined {
 }
 
 const SECRET_PATHS = [`${NY_DIR}/secrets.json`, `${NY_DIR}/profiles`];
-const READONLY_PATHS = [`${NY_DIR}/runs`, `${NY_DIR}/config.yaml`, '.testmuai'];
+const READONLY_PATHS = [
+  `${NY_DIR}/runs`,
+  `${NY_DIR}/config.yaml`,
+  '.testmuai',
+  // The hooks themselves: an agent that could edit these could switch the guard off.
+  '.claude/settings.json',
+  '.claude/settings.local.json',
+  '.claude/commands/notyours-map.md',
+];
+
+/**
+ * Bash segments that touch protected folders must be one of these read-only commands, with no redirects.
+ * Allowlist, not denylist: anything unrecognised (interpreters, cp, sed, editors, scripts) is refused.
+ */
+const READONLY_BASH_RE = /^(?:ls|cat|head|tail|wc|stat|file|jq|yq|grep|rg|diff|tree|git\s+(?:status|diff|log|show)|npx\s+notyours\s+(?:replay|report|map|doctor|run\s+--dry-run)|notyours\s+(?:replay|report|map|doctor|run\s+--dry-run))\b/;
+const PROTECTED_IN_SHELL_RE = /\.notyours\b|\.testmuai\b|\.claude\/(?:settings|commands\/notyours)/;
 
 const under = (rel: string, p: string) => rel === p || rel.startsWith(`${p}/`);
 /** rel is a directory that contains p (e.g. Grep over .notyours/ would read secrets.json). Project root excluded. */
@@ -89,7 +104,6 @@ export function lockedBoundaryFiles(root: string): string[] {
     .map((f) => `${NY_DIR}/boundaries/${f}`.toLowerCase());
 }
 
-const WRITE_SHELL_RE = /(?:^|[^<0-9&])>{1,2}|\b(?:rm|mv|cp|tee|truncate|chmod|chown|unlink|ln|dd|install|rsync)\b|\bsed\s+(?:-[a-zA-Z]*\s+)*-[a-zA-Z]*i|\bperl\s+-[a-zA-Z]*i|\bgit\s+(?:checkout|restore|rm|reset|clean|stash)\b|writeFile|\bnpx?\s+notyours\s+lock\b/;
 
 export function guard(input: HookInput, root: string): GuardResult {
   const tool = input.tool_name ?? '';
@@ -98,7 +112,10 @@ export function guard(input: HookInput, root: string): GuardResult {
 
   if (tool === 'Bash') {
     const raw = typeof input.tool_input?.command === 'string' ? (input.tool_input.command as string) : '';
-    const cmd = raw.toLowerCase();
+    // Best-effort normalisation of shell quoting (se'cr'ets.json, se\crets.json, $'...'). This is a
+    // guardrail for a cooperating agent, not a sandbox: see README.
+    const cmd = raw.toLowerCase().replace(/\$'/g, "'").replace(/['"\\]/g, '');
+    if (/notyours_home/.test(cmd)) return deny('NOTYOURS_HOME is for the test suite only.');
     const secretMsg = '.notyours/secrets.json and browser profiles hold identity passwords and sessions; they are off limits.';
     if (/secrets\.json|\.notyours\/profiles|owned-hosts|\.config\/notyours/.test(cmd)) return deny(secretMsg);
     // Globs at the top of .notyours/ (cat .notyours/s*) or recursive reads of the whole folder (grep -r x .notyours).
@@ -107,10 +124,17 @@ export function guard(input: HookInput, root: string): GuardResult {
     if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
     }
-    const locked = lockedBoundaryFiles(root);
-    const touchesOracle = [...READONLY_PATHS, ...locked].some((p) => cmd.includes(p)) || /\.testmuai\b/.test(cmd);
-    if (touchesOracle && WRITE_SHELL_RE.test(cmd)) {
-      return deny('locked boundaries, Kane recordings (.testmuai/), run results and config are read-only. Fix the app code, then replay: npx notyours replay');
+    // Every segment that mentions a protected folder must be an allowlisted read-only command.
+    const segments = cmd.split(/&&|\|\||;|\||\n|\$\(|`/).map((s) => s.trim()).filter(Boolean);
+    for (const seg of segments) {
+      if (!PROTECTED_IN_SHELL_RE.test(seg)) continue;
+      const bare = seg.replace(/^(?:[a-z_][a-z0-9_]*=\S*\s+)+/, ''); // drop VAR=value prefixes
+      if (!READONLY_BASH_RE.test(bare) || /(?:^|[^<0-9&])>|<\(|-exec\b|--output\b/.test(bare)) {
+        return deny(
+          'in Bash, .notyours/, .testmuai/ and .claude/settings are read-only (ls, cat, grep, jq, git diff, notyours replay/report). ' +
+            'Edit unlocked boundaries with the Edit/Write tools; fix the app code, then: npx notyours replay',
+        );
+      }
     }
     return { allow: true };
   }

@@ -58,14 +58,27 @@ export function exitCodeFor(results: ProbeResult[]): number {
   return results.some((r) => verdictGroup(r.verdict) !== 'HELD') ? 1 : 0;
 }
 
-/** Hosts a boundary will make Kane visit: absolute URLs anywhere, plus bare "domain.tld/" mentions in objectives. */
+/** Dotted words in objectives that are file names, not hosts (index.html, page.tsx). */
+const FILE_EXT = new Set(['html', 'htm', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'json', 'yaml', 'yml', 'md', 'css', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'pdf', 'csv', 'txt', 'xml', 'php', 'py', 'rb', 'go', 'zip']);
+
+/**
+ * Hosts a boundary will make Kane visit: absolute URLs in targets and objectives, plus (deny by default)
+ * every hostname-like token or IPv4 address in the objectives, with or without a scheme or slash.
+ * Email domains (alice@demo.test) are not navigation targets and are skipped.
+ */
 export function boundaryUrls(b: Boundary): string[] {
   const objectives = [b.create.objective, b.proAction?.objective ?? ''].join('\n');
   const text = [objectives, ...b.targets.ui, ...b.targets.api].join('\n');
   const urls = [...text.matchAll(/https?:\/\/[^\s'"`<>)]+/gi)].map((m) => m[0].replace(/[.,;]+$/, ''));
-  const bare = [...objectives.matchAll(/(?<![\w./:@-])((?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?\//gi)].map((m) => `http://${m[1]}/`);
-  return [...new Set([...urls, ...bare])];
+  const hostTokens = [...objectives.matchAll(/(?<![\w@.-])((?:[a-z0-9-]+\.)+[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3})(?![\w-]*@)\b/gi)]
+    .map((m) => m[1]!.toLowerCase())
+    .filter((h) => /^\d/.test(h) || !FILE_EXT.has(h.slice(h.lastIndexOf('.') + 1)))
+    .map((h) => `http://${h}/`);
+  return [...new Set([...urls, ...hostTokens])];
 }
+
+/** A target is an absolute http(s) URL, or exactly a stored value optionally followed by a path/query. */
+export const TARGET_RE = /^(?:https?:\/\/.+|\{\{\s*[A-Za-z_][\w.]*\s*\}\}(?:[/?#].*)?)$/i;
 
 /**
  * Refuse to probe hosts we may not touch: the base URL and every URL in the boundaries must be in
@@ -90,7 +103,7 @@ export function assertHostsAllowed(cfg: Config, boundaries: Boundary[], root: st
   check(cfg.baseUrl, 'config.yaml baseUrl');
   for (const b of boundaries) {
     for (const t of [...b.targets.ui, ...b.targets.api]) {
-      if (!/^https?:\/\//i.test(t) && !t.startsWith('{{')) throw new UserError(`boundary ${b.id}: target "${t}" must be an absolute http(s) URL or start with a {{stored}} value`);
+      if (!TARGET_RE.test(t)) throw new UserError(`boundary ${b.id}: target "${t}" must be an absolute http(s) URL, or a {{stored}} value optionally followed by /path`);
     }
     for (const u of boundaryUrls(b)) check(u, `boundary ${b.id}`);
   }
