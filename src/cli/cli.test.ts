@@ -10,7 +10,7 @@ import { mockBoundary, mockConfig } from '../mocks/fixtures.js';
 import { buildProgram, type Actions } from './program.js';
 import { checkHost } from './hosts.js';
 import { runInit, parseUsersFile, readPublicIdentities } from './init.js';
-import { assertHostsAllowed, boundaryUrls, ensureCredits, exitCodeFor, logHook, runHook } from './commands.js';
+import { assertHostsAllowed, assertHuman, boundaryUrls, ensureCredits, exitCodeFor, logHook, runHook } from './commands.js';
 import { checkNode, runDoctor } from './doctor.js';
 import type { Exec } from './system.js';
 import { guard, mergeHookSettings } from './hooks.js';
@@ -308,6 +308,21 @@ describe('allowHosts', () => {
 
 // ---------- credits, exit codes, doctor ----------
 
+describe('authoring needs a human', () => {
+  it('run/lock/demo/init/install-hooks refuse from a Claude Code agent shell (CLAUDECODE=1, no TTY)', () => {
+    expect(() => assertHuman('lock', { CLAUDECODE: '1' }, false)).toThrow(/won't run from a coding agent/);
+    expect(() => assertHuman('lock', { CLAUDECODE: '1' }, true)).not.toThrow(); // a person at a terminal
+    expect(() => assertHuman('lock', { CLAUDECODE: '1', NOTYOURS_ALLOW_AGENT_AUTHORING: '1' }, false)).not.toThrow(); // CI / explicit
+    expect(() => assertHuman('lock', {}, false)).not.toThrow(); // not inside Claude Code
+  });
+
+  it('the guard never lets the agent set the override', () => {
+    const r = hookProject();
+    expect(guard({ tool_name: 'Bash', tool_input: { command: 'NOTYOURS_ALLOW_AGENT_AUTHORING=1 npx notyours run --dry-run' } }, r).allow).toBe(false);
+    expect(guard({ tool_name: 'Bash', tool_input: { command: 'export NOTYOURS_ALLOW_AGENT_AUTHORING=1' } }, r).allow).toBe(false);
+  });
+});
+
 describe('credits and exit codes', () => {
   it('refuses authoring below creditFloor; unknown balance is an error', async () => {
     await expect(ensureCredits(mockConfig, 1, async () => 299)).rejects.toThrow(/below creditFloor 300/);
@@ -567,7 +582,13 @@ describe('hooks', () => {
     ]));
     fs.writeFileSync(path.join(r4, 'users.yaml'), 'users:\n  - { id: alice, role: owner, plan: pro, email: a@x.test }\n');
     const { actions } = await import('./commands.js');
-    await actions.init({ cwd: r4, url: 'http://127.0.0.1:3077', users: path.join(r4, 'users.yaml'), allowHost: [], iOwnThis: false } as never);
+    const was = process.env.CLAUDECODE;
+    delete process.env.CLAUDECODE; // the suite may itself run inside Claude Code; this test is about init, not the agent check
+    try {
+      await actions.init({ cwd: r4, url: 'http://127.0.0.1:3077', users: path.join(r4, 'users.yaml'), allowHost: [], iOwnThis: false } as never);
+    } finally {
+      if (was !== undefined) process.env.CLAUDECODE = was;
+    }
     const ids = JSON.parse(fs.readFileSync(path.join(r4, '.notyours/secrets.json'), 'utf8')).identities as Identity[];
     expect(ids[0]!.token).toBe('NY-ALICE-JOTTERSEED2A');
     expect(ids[0]!.cdpPort).toBe(9301);

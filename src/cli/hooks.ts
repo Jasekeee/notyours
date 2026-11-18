@@ -212,6 +212,8 @@ export function guard(input: HookInput, root: string): GuardResult {
     // Globs at the top of .notyours/ (cat .notyours/s*) or recursive reads of the whole folder (grep -r x .notyours).
     if (/\.notyours\/[^\s/'"]*[*?[{]/.test(cmd)) return deny(secretMsg);
     if (/\.notyours\/?(?=$|[\s'";|&)])/.test(cmd) && /\b(?:grep|rg|ag|find|tar|zip|cp|rsync|cat|less|head|tail|xxd|strings|base64|scp|curl)\b/.test(cmd)) return deny(secretMsg);
+    // The human-only override for authoring commands (see assertHuman in commands.ts) is never the agent's to set.
+    if (/notyours_allow_agent_authoring/.test(cmd)) return deny('NOTYOURS_ALLOW_AGENT_AUTHORING is for a person or CI, not the coding agent.');
     // Authoring spends Kane credits and (re)records the oracle: the human's call, never the agent's.
     const notyoursDenied = agentNotyoursDenied(raw); // decided on the raw command, not the normalised one
     if (notyoursDenied) return deny(notyoursDenied);

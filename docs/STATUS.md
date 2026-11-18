@@ -59,6 +59,9 @@ Claude Code usage for the four headless sessions.
   By decision they're never committed (`**/.notyours/tests/` is gitignored), so every fresh demo authors (~45 credits
   quick, ~120 full).
 - **Bash edits bypass post-tool.** Run 3's agent edited a route with `python3`, and that doesn't mark boundaries dirty.
+- **Authoring is refused from agent shells in the CLI itself:** `run` (except `--dry-run`), `lock`, `demo`, `init` and
+  `install-hooks` exit with an error when `CLAUDECODE=1` and there's no TTY, unless a person or CI sets
+  `NOTYOURS_ALLOW_AGENT_AUTHORING=1` (which the guard never lets the agent set). No Bash spelling gets around that.
 - **The guard is a guardrail, not a sandbox.** Automated security review found successive parser differentials in the
   Bash checks. The current version is deny-by-default for any notyours invocation (exact plain-word allowlist, with no
   quotes, expansions, subshells or command runners) plus a fail-closed regex backstop. A determined agent with shell

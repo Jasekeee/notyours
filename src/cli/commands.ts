@@ -58,6 +58,22 @@ export function exitCodeFor(results: ProbeResult[]): number {
   return results.some((r) => verdictGroup(r.verdict) !== 'HELD') ? 1 : 0;
 }
 
+export const AGENT_OVERRIDE_ENV = 'NOTYOURS_ALLOW_AGENT_AUTHORING';
+
+/**
+ * Commands that spend Kane credits or change the oracle (run, lock, demo, init, install-hooks) refuse to start
+ * from a coding agent's shell: Claude Code sets CLAUDECODE=1 and gives the agent no TTY. This is enforced here,
+ * in the CLI, so no Bash spelling can get around it. A person (or CI) opts in with NOTYOURS_ALLOW_AGENT_AUTHORING=1,
+ * which the guard never lets the agent set.
+ */
+export function assertHuman(command: string, env: NodeJS.ProcessEnv = process.env, tty = process.stdin.isTTY === true): void {
+  if (env.CLAUDECODE !== '1' || tty || env[AGENT_OVERRIDE_ENV] === '1') return;
+  throw new UserError(
+    `notyours ${command} spends Kane credits or changes the oracle, so it won't run from a coding agent. ` +
+      `Run it yourself in a terminal (or set ${AGENT_OVERRIDE_ENV}=1 in CI). Replays are fine: npx notyours replay`,
+  );
+}
+
 function assertIdentities(boundaries: Boundary[], identities: Identity[]): void {
   const ids = new Set(identities.map((i) => i.id));
   for (const b of boundaries) {
@@ -212,6 +228,7 @@ export const actions: Actions = {
   },
 
   async init(o) {
+    assertHuman('init');
     const root = enter(o);
     if (o.iOwnThis) await confirmOwnership([o.url, ...o.allowHost.map((h) => `http://${h}`)]);
     // Keep tokens/ports from a previous init (secrets.json), else from the committed identities.json, so
@@ -258,6 +275,7 @@ export const actions: Actions = {
       log(pc.dim('Dry run: nothing started.'));
       return 0;
     }
+    assertHuman('run');
     await ensureCredits(p.cfg, chosen.length);
     const started = new Date();
     const results = await author(p, chosen);
@@ -266,6 +284,7 @@ export const actions: Actions = {
   },
 
   async lock(ids, o) {
+    assertHuman('lock');
     const root = enter(o);
     const p = loadProject(root);
     const chosen = selectBoundaries(p.all, ids).map((b) => b.boundary);
@@ -335,11 +354,13 @@ export const actions: Actions = {
   },
 
   async demo(o) {
+    assertHuman('demo');
     const { runDemo } = await import('./demo.js');
     return runDemo(o);
   },
 
   async installHooks(o) {
+    assertHuman('install-hooks');
     const root = enter(o);
     const r = installHooks(root, o.cli);
     log(`${pc.green('✓')} ${path.relative(root, r.settingsFile)}  PreToolUse guard, PostToolUse post-tool, Stop replay  ${pc.dim(`(${o.cli} hook …)`)}`);
