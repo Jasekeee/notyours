@@ -8,7 +8,7 @@ Early spike. See `spike/RESULTS.md`.
 
 ## Development
 
-Requires Node 18+ and [kane-cli](https://www.testmuai.com/kane-cli/).
+Requires Node 22+ and [kane-cli](https://www.testmuai.com/kane-cli/).
 
 Secrets live only in `.env` (gitignored); copy `.env.example` to start. After cloning, enable the
 repo's secret-blocking pre-push hook:
