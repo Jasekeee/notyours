@@ -88,6 +88,12 @@ describe('guard hook', () => {
     expect(r.exitCode).toBe(2);
   });
 
+  it('blocks a write through a dangling symlink whose target is inside .notyours', async () => {
+    symlinkSync(path.join(project, '.notyours', 'not-yet'), path.join(project, 'sneaky'));
+    const r = await runHook('guard', JSON.stringify({ cwd: project, tool_name: 'Write', tool_input: { file_path: `${project}/sneaky/x.json` } }));
+    expect(r.exitCode).toBe(2);
+  });
+
   for (const name of ['guard-edit-app', 'guard-bash-npm-test']) {
     it(`allows ${name}`, async () => expect((await runHook('guard', fixture(name, project))).exitCode).toBe(0));
   }
@@ -111,6 +117,12 @@ describe('guard hook', () => {
     ['rg --pre "rm -f" x .notyours', true],
     ['tree -o .notyours/attempts.json .', true],
     ['cat $D/.notyours/config.yaml', true],
+    ["rm .not''yours/attempts.json", true],
+    ['rm .noty\\ours/attempts.json', true],
+    ['rm ".notyours"/attempts.json', true],
+    ['rm .{n,x}otyours/attempts.json', true],
+    ["find .notyours -'delete'", true],
+    ['cat ".notyours/runs/a b.md"', false],
     ['rm -rf build/* dist/*', false],
     ['ls .git .github', false],
     ['cat .notyours/runs/last/report.md', false],

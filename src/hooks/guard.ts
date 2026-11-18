@@ -1,7 +1,7 @@
 // PreToolUse (Edit|Write|MultiEdit|Bash): .notyours/ (boundaries, tests, attempts, config) is read-only for the agent.
 // This is a speed bump, not a sandbox: shell variables or an interpreter can still reach the files. The backstop
 // is that .notyours/ changes show up in git, where the human reviews them.
-import { existsSync, realpathSync } from 'node:fs';
+import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { globToRegExp, toProjectPath } from './glob.js';
 import { ok, projectDirOf, type HookInput, type HookResult } from './types.js';
@@ -54,16 +54,31 @@ function isReadOnly(command: string): boolean {
 }
 
 export function bashTouchesNotyours(command: string): boolean {
-  if (MUTATING_CLI.test(command)) return true;
-  const mentions = NOTYOURS_PATH.test(command) || globReachesNotyours(command);
-  return mentions && !isReadOnly(command);
+  // The shell drops quotes and backslashes (`.not''yours`, `.noty\ours`), so match on that form too. Fail-closed:
+  // the normalized form only adds matches, and isReadOnly() sees it as well.
+  const norm = command.replace(/['"\\]/g, '');
+  if (MUTATING_CLI.test(command) || MUTATING_CLI.test(norm)) return true;
+  const mentions = [command, norm].some((c) => NOTYOURS_PATH.test(c) || globReachesNotyours(c));
+  return mentions && !(isReadOnly(command) && isReadOnly(norm));
 }
 
-/** realpath of the nearest existing ancestor, plus the not-yet-existing rest (Write creates new files). */
-function realish(p: string): string {
+const lexists = (p: string): boolean => {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * realpath of the nearest existing ancestor, plus the not-yet-existing rest (Write creates new files).
+ * Uses lstat, so a dangling symlink (`x -> .notyours/new`) is followed to its target instead of skipped.
+ */
+function realish(p: string, depth = 0): string {
   let head = path.resolve(p);
   const rest: string[] = [];
-  while (!existsSync(head)) {
+  while (!lexists(head)) {
     const parent = path.dirname(head);
     if (parent === head) break;
     rest.unshift(path.basename(head));
@@ -72,7 +87,14 @@ function realish(p: string): string {
   try {
     head = realpathSync(head);
   } catch {
-    // keep the lexical path
+    // A dangling symlink: resolve its target lexically and keep walking.
+    try {
+      if (depth < 16 && lstatSync(head).isSymbolicLink()) {
+        return path.join(realish(path.resolve(path.dirname(head), readlinkSync(head)), depth + 1), ...rest);
+      }
+    } catch {
+      // keep the lexical path
+    }
   }
   return path.join(head, ...rest);
 }
