@@ -126,7 +126,7 @@ export function hasDangerousGlob(raw: string): boolean {
 /** notyours subcommands an agent may run itself; everything else (run, lock, demo, init, hook, install-hooks) is the human's. */
 const AGENT_NOTYOURS = new Set(['replay', 'report', 'map', 'doctor']);
 /** A token that starts notyours: npx notyours, notyours@1.2, ./node_modules/.bin/notyours(.cmd), node .../cli/index.js */
-const NOTYOURS_ENTRY_RE = /(?:^|\/)notyours(?:@[\w.^~<>=-]*)?(?:\.(?:c?js|mjs|cmd|ps1|exe))?$|(?:^|\/)cli\/index\.(?:c?js|mjs|ts)$/i;
+const NOTYOURS_ENTRY_RE = /(?:^|\/)notyours(?:@[\w.^~<>=-]*)?(?:\.(?:c?js|mjs|cmd|ps1|exe))?$|(?:^|\/)(?:dist|src)\/cli(?:\/index(?:\.(?:c?js|mjs|ts))?)?\/?$|(?:^|\/)cli\/index(?:\.(?:c?js|mjs|ts))?$/i;
 /** Commands whose arguments are themselves a command: notyours after one of these is an invocation. */
 const COMMAND_RUNNERS = new Set(['xargs', 'env', 'nohup', 'time', 'watch', 'nice', 'timeout', 'sudo', 'doas', 'command', 'builtin', 'parallel', 'npm', 'pnpm', 'yarn', 'bunx', 'bun']);
 /** Plain argv words only: no quoting, expansion or redirection can hide inside an allowed invocation. */
@@ -141,7 +141,7 @@ const PLAIN_ARG_RE = /^[A-Za-z0-9._\/:=@+-]+$/;
  */
 export function agentNotyoursDenied(raw: string): string | undefined {
   const human = '`notyours run/lock/demo/init` author Kane recordings (credits) or change the oracle: ask the user to run them. Replays are fine: npx notyours replay';
-  const invokes = (seg: string) => seg.split(/\s+/).some((w) => NOTYOURS_ENTRY_RE.test(w.replace(/^['"]+|['"]+$/g, '')));
+  const invokes = (seg: string) => /(?:^|[\s;&|])npx\s+\.(?:\s|$)/.test(seg) || seg.split(/\s+/).some((w) => NOTYOURS_ENTRY_RE.test(w.replace(/^['"]+|['"]+$/g, '')));
   if (!invokes(raw.replace(/\\\n/g, ' ').replace(/['"\\]/g, ''))) return undefined; // notyours only mentioned as data, or not at all
   if (/['"\\$`(){}]/.test(raw) || /\b(?:xargs|eval|exec)\b|\b(?:ba|z|da)?sh\s+-c\b/.test(raw)) {
     return 'notyours commands from the agent must be plain words (no quotes, backslashes, $, backticks, ( ) { }, xargs, sh -c, eval or exec).';
@@ -154,8 +154,11 @@ export function agentNotyoursDenied(raw: string): string | undefined {
     if (!seg || !invokes(seg)) continue;
     const words = seg.split(/\s+/);
     let i = 0;
-    if (words[i] === 'npx') i++;
-    if (words[i] === 'node') i++;
+    if (words[i] === 'npx' || words[i] === 'node' || words[i] === 'tsx') {
+      // `npx .` / `npx -y …` / `node --flag …`: anything but a plain entry right after the runner is denied.
+      if (words[i] === 'npx' && (words[i + 1] === '.' || words[i + 1]?.startsWith('-'))) return human;
+      i++;
+    }
     if (!NOTYOURS_ENTRY_RE.test(words[i] ?? '')) {
       // notyours as an argument: fine for ordinary commands (git log --grep notyours), not for command runners.
       if (COMMAND_RUNNERS.has((words[0] ?? '').replace(/^.*\//, '')) || words.includes('-exec') || words.includes('-execdir')) return human;
