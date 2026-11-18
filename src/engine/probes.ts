@@ -1,6 +1,6 @@
 // The four probe kinds. Kane drives the personas; the oracle (oracle.ts) decides.
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { ProbeResultSchema, TOKEN_RE } from '../schemas.js';
 import type { Boundary, Config, Identity, KaneRun, ProbeResult } from '../types.js';
 import type { ChromePool } from './chrome.js';
@@ -284,9 +284,17 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
   }
 }
 
+/** Real path, also for a path that does not exist yet (macOS: /tmp is a symlink to /private/tmp). */
+function realish(p: string): string {
+  const abs = resolve(p);
+  if (existsSync(abs)) return realpathSync(abs);
+  const parent = dirname(abs);
+  return parent === abs ? abs : join(realish(parent), basename(abs));
+}
+
 export async function wipeProfile(identity: Identity, deps: Pick<ProbeDeps, 'stateDir' | 'pool'>): Promise<void> {
-  const profiles = resolve(deps.stateDir, 'profiles');
-  const dir = resolve(identity.userDataDir);
+  const profiles = realish(resolve(deps.stateDir, 'profiles'));
+  const dir = realish(identity.userDataDir);
   const rel = relative(profiles, dir);
   if (!rel || rel.startsWith('..')) throw new Error(`Refusing to wipe ${dir}: guest profiles must live under ${profiles}.`);
   await deps.pool.close(identity.id);

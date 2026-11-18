@@ -95,13 +95,19 @@ export class RealRatchet implements Ratchet {
     return this.withChromes(async (pool, oracle) => {
       const out: ProbeResult[] = [];
       for (const b of bs) {
-        if (pool) {
-          const viewer = ids.find((i) => i.id === b.viewer);
-          // A guest replays on a wiped profile: no cookies from earlier runs.
-          if (b.kind === 'guest' && viewer) await wipeProfile(viewer, { stateDir: this.paths.dir, pool });
-          await Promise.all([b.owner, b.viewer].map((id) => ids.find((i) => i.id === id)).filter((i): i is Identity => !!i).map((i) => pool.get(i)));
+        try {
+          if (pool) {
+            const viewer = ids.find((i) => i.id === b.viewer);
+            // A guest replays on a wiped profile: no cookies from earlier runs.
+            if (b.kind === 'guest' && viewer) await wipeProfile(viewer, { stateDir: this.paths.dir, pool });
+            await Promise.all([b.owner, b.viewer].map((id) => ids.find((i) => i.id === id)).filter((i): i is Identity => !!i).map((i) => pool.get(i)));
+          }
+          out.push(...(await replayBoundaries([b], ids, { paths: this.paths, config: this.config(), kane: this.kane, oracle })));
+        } catch (e) {
+          // One boundary's failure must not discard the others' verdicts (loop-run-1 lost a RED this way).
+          this.opts.log?.(`notyours: ${b.id} could not be replayed: ${(e as Error).message}`);
+          out.push({ boundaryId: b.id, verdict: 'HARNESS_BROKEN', controls: { ownerSeesOwnToken: false, viewerSeesOwnToken: false }, hits: [], screenshots: [], kaneRuns: [], ts: new Date().toISOString() });
         }
-        out.push(...(await replayBoundaries([b], ids, { paths: this.paths, config: this.config(), kane: this.kane, oracle })));
       }
       return out;
     });

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 import { MOCK_TS, mockHeldResult, mockIdentities, mockLeakResult, mockKaneRun } from '../mocks/fixtures.js';
-import type { Engine, ProbeResult } from '../types.js';
+import type { Boundary, Engine, ProbeResult } from '../types.js';
 import { createRatchet, MockRatchet, RealRatchet } from './index.js';
 import { KaneCli, redactKaneText, parseAuthorRun, parseBalance, parseReplay } from './kane.js';
 import { planLock, probeRunsPassed, resolveTemplate } from './lock.js';
@@ -206,6 +206,13 @@ describe('replay', () => {
     project = tempProject([lockedBoundary, { ...lockedBoundary, id: 'not-locked', locked: false }]);
   });
   const engine = (r: ProbeResult): Engine => ({ runBoundary: async (b) => ({ ...r, boundaryId: b.id }) });
+
+  it("one boundary's replay error does not discard the others' verdicts", async () => {
+    project = tempProject([lockedBoundary, { ...lockedBoundary, id: 'second' }]);
+    const oracle = { judge: async (b: Boundary) => { if (b.id === 'second') throw new Error('boom'); return { ...mockLeakResult, boundaryId: b.id }; } };
+    const rs = await new RealRatchet({ projectDir: project, kane: new FakeKane(), oracle }).replay(mockIdentities);
+    expect(rs.map((r) => [r.boundaryId, classify(r)])).toEqual([[lockedBoundary.id, 'RED'], ['second', 'YELLOW']]);
+  });
 
   it('a failed Kane replay never hides the oracle verdict (the app changed, so the recording diverged)', async () => {
     const kane = new FakeKane();
