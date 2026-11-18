@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import type { Identity } from '../types.js';
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -519,6 +520,20 @@ describe('hooks', () => {
       expect(r.exitCode).toBe(0); // never blocks, never replays
       expect(`${r.stdout ?? ''}${r.stderr ?? ''}`).toMatch(/victim\.example\.org.*not in allowHosts/);
     }
+  });
+
+  it('`notyours init` (the CLI action) keeps the committed identities.json tokens and ports', async () => {
+    const r4 = tmp('ny-init-');
+    fs.mkdirSync(path.join(r4, '.notyours'), { recursive: true });
+    fs.writeFileSync(path.join(r4, '.notyours/identities.json'), JSON.stringify([
+      { id: 'alice', role: 'owner', plan: 'pro', token: 'NY-ALICE-JOTTERSEED2A', cdpPort: 9301, userDataDir: 'x' },
+    ]));
+    fs.writeFileSync(path.join(r4, 'users.yaml'), 'users:\n  - { id: alice, role: owner, plan: pro, email: a@x.test }\n');
+    const { actions } = await import('./commands.js');
+    await actions.init({ cwd: r4, url: 'http://127.0.0.1:3077', users: path.join(r4, 'users.yaml'), allowHost: [], iOwnThis: false } as never);
+    const ids = JSON.parse(fs.readFileSync(path.join(r4, '.notyours/secrets.json'), 'utf8')).identities as Identity[];
+    expect(ids[0]!.token).toBe('NY-ALICE-JOTTERSEED2A');
+    expect(ids[0]!.cdpPort).toBe(9301);
   });
 
   it('init never takes a profile path from a committed identities.json', () => {

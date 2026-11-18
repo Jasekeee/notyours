@@ -15,7 +15,7 @@ import { assertHostsAllowed } from './host-gate.js';
 import { hostOf, isLocalHost } from './hosts.js';
 import { guard, guardOutput, installHooks, type HookInput } from './hooks.js';
 import { postToolHook, stopHook, type HookResult } from '../hooks/index.js';
-import { runInit } from './init.js';
+import { readPublicIdentities, runInit } from './init.js';
 import type { Actions, GlobalOpts, HookEvent } from './program.js';
 import { safeAppendFile } from './safe-fs.js';
 import { kaneBalance, openFile } from './system.js';
@@ -214,8 +214,9 @@ export const actions: Actions = {
   async init(o) {
     const root = enter(o);
     if (o.iOwnThis) await confirmOwnership([o.url, ...o.allowHost.map((h) => `http://${h}`)]);
-    let existing: Identity[] = [];
-    if (fs.existsSync(nyPaths(root).secrets)) existing = readIdentities(root);
+    // Keep tokens/ports from a previous init (secrets.json), else from the committed identities.json, so
+    // seeded data and recorded tests stay valid. (Found by the E2E: an empty list here minted new tokens.)
+    const existing: Identity[] = fs.existsSync(nyPaths(root).secrets) ? readIdentities(root) : readPublicIdentities(root);
     const r = runInit(root, { url: o.url, users: o.users, allowHost: o.allowHost, iOwnThis: o.iOwnThis }, existing);
     ensureGitignore(root);
     log(`${pc.green('✓')} .notyours/config.yaml  baseUrl ${r.baseUrl}  allowHosts ${r.allowHosts.join(', ')}`);
