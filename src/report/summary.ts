@@ -68,9 +68,13 @@ export function verdictExplanation(r: ProbeResult, p: Parties): string {
     case 'LEAK_VISIBLE':
       return p.kind === 'plan-gate' ? `The Pro-only result appeared on ${v}'s screen.` : `${o}'s canary token appeared on ${v}'s screen.`;
     case 'LEAK_PAYLOAD':
-      return `${o}'s canary token reached ${v}'s browser in a network response, even though the page didn't show it.`;
+      return p.kind === 'plan-gate'
+        ? `The Pro-only result (with ${v}'s own data) reached ${v}'s browser in a network response, even though the page didn't show it.`
+        : `${o}'s canary token reached ${v}'s browser in a network response, even though the page didn't show it.`;
     case 'HELD':
-      return `${v} never received ${o}'s token, and both positive controls passed.`;
+      return p.kind === 'plan-gate'
+        ? `${v} (free plan) never got the Pro-only result, and both positive controls passed.`
+        : `${v} never received ${o}'s token, and both positive controls passed.`;
     case 'HARNESS_BROKEN':
       return 'The probe could not prove anything: a positive control failed. This is not a pass.';
   }

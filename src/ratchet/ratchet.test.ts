@@ -3,11 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import YAML from 'yaml';
-import { MOCK_TS, mockHeldResult, mockIdentities, mockLeakResult } from '../mocks/fixtures.js';
+import { MOCK_TS, mockHeldResult, mockIdentities, mockLeakResult, mockKaneRun } from '../mocks/fixtures.js';
 import type { Engine, ProbeResult } from '../types.js';
 import { createRatchet, MockRatchet, RealRatchet } from './index.js';
 import { KaneCli, parseAuthorRun, parseBalance, parseReplay } from './kane.js';
-import { planLock, resolveTemplate } from './lock.js';
+import { planLock, probeRunsPassed, resolveTemplate } from './lock.js';
 import { notyoursPaths, testFile } from './paths.js';
 import { classify, engineOracle } from './replay.js';
 import { loadIdentities, logCredits, readCreditLog } from './store.js';
@@ -130,9 +130,19 @@ describe('lock', () => {
     expect(YAML.parse(readFileSync(notyoursPaths(project).boundariesFile, 'utf8')).boundaries[0].locked).toBe(false);
   });
 
-  it('plan-gate locks the pro action as the viewer objective', () => {
+  it('plan-gate records a plain visit of the GET targets for the viewer, never the (refused) pro action', () => {
     const b = { ...unlocked, kind: 'plan-gate' as const, viewer: 'free_user', proAction: { objective: 'Go to {{note_url}} and click Export PDF' } };
-    expect(planLock(b, heldWithUrl, mockIdentities)[1]?.objective).toBe('Go to http://127.0.0.1:3000/notes/7 and click Export PDF');
+    expect(planLock(b, heldWithUrl, mockIdentities)[1]?.objective).toBe('Go to http://127.0.0.1:3000/notes/7, then go to http://127.0.0.1:3000/api/notes');
+  });
+
+  it('only adopts probe recordings whose runs passed (a refused plan-gate pro action is fine)', () => {
+    const ok = { ...mockHeldResult, kaneRuns: [{ ...mockKaneRun, identity: 'alice' }, { ...mockKaneRun, identity: 'bob' }] };
+    expect(probeRunsPassed(unlocked, ok)).toBe(true);
+    const failedVisit = { ...ok, kaneRuns: [ok.kaneRuns[0]!, { ...mockKaneRun, identity: 'bob', status: 'failed' as const }] };
+    expect(probeRunsPassed(unlocked, failedVisit)).toBe(false);
+    const pg = { ...unlocked, kind: 'plan-gate' as const, proAction: { objective: 'Export my notes' } };
+    const refused = { ...ok, kaneRuns: [...ok.kaneRuns, { ...mockKaneRun, identity: 'bob', objective: 'Export my notes', status: 'failed' as const }] };
+    expect(probeRunsPassed(pg, refused)).toBe(true);
   });
 
   // Shapes from the Jotter demo (feat/demo: demo/.notyours/boundaries/b1-cross-user.yaml, b3-plan-gate.yaml).
@@ -155,12 +165,12 @@ describe('lock', () => {
     expect(v?.objective).toBe('Go to http://127.0.0.1:3077/notes/1001, then go to http://127.0.0.1:3077/api/notes/1001');
   });
 
-  it('demo B3 plan-gate: owner checks the pro button, viewer runs the pro action', () => {
+  it('demo B3 plan-gate: owner checks the pro button, viewer records a visit of the GET target', () => {
     const [o, v] = planLock(demoB3, { ...mockHeldResult, boundaryId: demoB3.id }, mockIdentities);
     expect(o?.objective).toBe(demoB3.create.objective);
-    expect(v?.objective).toBe(demoB3.proAction.objective);
+    expect(v?.objective).toBe('Go to http://127.0.0.1:3077/pro/export'); // POST /api/export is the oracle's job
     const sweep = planLock({ ...demoB3, kind: 'sweep' }, { ...mockHeldResult, boundaryId: demoB3.id }, mockIdentities)[1];
-    expect(sweep?.objective).toBe('Go to http://127.0.0.1:3077/pro/export, then call POST http://127.0.0.1:3077/api/export');
+    expect(sweep?.objective).toBe('Go to http://127.0.0.1:3077/pro/export');
   });
 
   it('loads identities.json merged with secrets.json by id', () => {

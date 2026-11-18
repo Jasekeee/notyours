@@ -469,6 +469,14 @@ describe('hooks', () => {
     expect(g('Bash', { command: 'npx notyours init --url https://x.dev --allow-host x.dev --i-own-this' }).allow).toBe(false);
   });
 
+  it('guard: recorded logins (they hold the typed password) are off limits like secrets.json', () => {
+    expect(g('Read', { file_path: '.notyours/tests/login_alice_test.md' }).allow).toBe(false);
+    expect(g('Read', { file_path: '.notyours/tests/output-login_alice/.internal/meta.json' }).allow).toBe(false);
+    expect(g('Grep', { path: '.notyours/tests' }).allow).toBe(false);
+    expect(g('Bash', { command: 'cat .notyours/tests/login_bob_test.md' }).allow).toBe(false);
+    expect(g('Read', { file_path: '.notyours/tests/b1-notes-cross-user_bob_test.md' }).allow).toBe(true);
+  });
+
   it('guard: normal work is allowed (app code, unlocked boundaries, drafts, reading the oracle)', () => {
     expect(g('Edit', { file_path: 'src/notes/route.ts' }).allow).toBe(true);
     expect(g('Edit', { file_path: '.notyours/boundaries/invoices.yaml' }).allow).toBe(true);

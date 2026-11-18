@@ -20,6 +20,16 @@ export interface LockDeps {
   prepare?: (identities: Identity[]) => Promise<void>;
 }
 
+/**
+ * The probe's recordings are only worth adopting if its runs passed. Exception: the free user's pro-action
+ * attempt in a plan-gate, which is expected to be refused (and is not a recording).
+ */
+export function probeRunsPassed(b: Boundary, result: ProbeResult): boolean {
+  const relevant = result.kaneRuns.filter((r) => (r.identity === b.owner || r.identity === b.viewer)
+    && !(b.kind === 'plan-gate' && r.identity === b.viewer && b.proAction && r.objective === b.proAction.objective));
+  return relevant.length > 0 && relevant.every((r) => r.status === 'passed');
+}
+
 /** Adopts `<boundary>_<owner>` and `<boundary>_<viewer>` from .testmuai/tests when both exist. */
 export function adoptProbeRecordings(paths: NotyoursPaths, b: Boundary): boolean {
   const names = [testName(b.id, b.owner), testName(b.id, b.viewer)];
@@ -89,10 +99,12 @@ export function planLock(b: Boundary, result: ProbeResult, identities: Identity[
   if (!targets.length) throw new Error(`notyours: cannot lock ${b.id}, it has no targets`);
 
   const ownerObjective = resolveTemplate(b.create.objective, { ...values, token: owner.token });
-  const viewerObjective =
-    b.kind === 'plan-gate' && b.proAction
-      ? resolveTemplate(b.proAction.objective, { ...values, token: viewer.token })
-      : targets.map((t, n) => targetStep(t, n === 0)).join(', ');
+  // The viewer's recording is a plain visit of the GET targets, for every kind. Non-GET api targets
+  // ("POST <url>") are called by the oracle itself; and a plan-gate's pro action is not recorded, because a
+  // correctly refused attempt (paywall) would replay as "failed" and read as a broken harness.
+  const gets = targets.filter((t) => !/^(POST|PUT|PATCH|DELETE)\s/i.test(t.trim()));
+  if (!gets.length) throw new Error(`notyours: cannot lock ${b.id}, it has no GET target for the viewer to record`);
+  const viewerObjective = gets.map((t, n) => targetStep(t, n === 0)).join(', ');
   return [
     { identity: owner, name: testName(b.id, owner.id), objective: ownerObjective },
     { identity: viewer, name: testName(b.id, viewer.id), objective: viewerObjective },
@@ -155,7 +167,7 @@ export async function lockBoundary(stored: StoredBoundary, result: ProbeResult, 
 
   // The probe that produced this HELD result already recorded both runs under the same names
   // (<boundary>_<identity> in .testmuai/tests): adopt them instead of paying for two new recordings.
-  if (!deps.reauthor && adoptProbeRecordings(deps.paths, b)) {
+  if (!deps.reauthor && probeRunsPassed(b, result) && adoptProbeRecordings(deps.paths, b)) {
     markLocked(stored);
     log(`${b.id}: adopted the probe's recordings, 0 authoring runs`);
     return;

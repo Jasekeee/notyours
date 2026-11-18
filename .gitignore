@@ -16,3 +16,8 @@ dist/
 spike/logs/
 **/.notyours/dirty.json
 **/.notyours/attempts.json
+# Recorded logins contain the typed password (kane-cli frontmatter): local only. The demo's are public dev defaults.
+**/.notyours/tests/login_*_test.md
+**/.notyours/tests/output-login_*/
+!demo/.notyours/tests/login_*_test.md
+!demo/.notyours/tests/output-login_*/

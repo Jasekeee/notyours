@@ -40,7 +40,8 @@ const fakeRunner: KaneRunner = async (objective, identity, vars, kopts) => {
     stored.item_url = `${app.url}/notes/${n.id}`;
   } else {
     // Like Kane: open the {{tN}} pages in the identity's own Chrome first (this warms its HTTP cache).
-    const urls = Object.entries(vars).filter(([k]) => /^t\d+$/.test(k)).map(([, v]) => (typeof v === 'string' ? v : v.value));
+    // The visit objective lists its URLs literally (kane-cli needs a visible start URL).
+    const urls = [...objective.matchAll(/https?:\/\/[^\s,]+/g)].map((m) => m[0].replace(/[.,]+$/, ''));
     if (urls.length) {
       const b = await puppeteer.connect({ browserURL: (await pool.get(identity)).endpoint, defaultViewport: null });
       const p = (await b.pages())[0] ?? (await b.newPage());

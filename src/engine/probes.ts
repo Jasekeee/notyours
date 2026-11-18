@@ -48,12 +48,15 @@ export async function assertReachable(baseUrl: string): Promise<void> {
   }
 }
 
-/** Kane objective that just opens pages (no sign-in/out, no forms). */
-export function visitObjective(n: number): string {
-  const list = Array.from({ length: n }, (_, i) => `{{t${i + 1}}}`);
-  return n === 1
-    ? `Go to ${list[0]} and wait for the page to finish loading. Do not sign in, sign out or submit any form.`
-    : `Open these pages one after another and wait for each to finish loading: ${list.join(', ')}. Do not sign in, sign out or submit any form.`;
+/**
+ * Kane objective that just opens pages (no sign-in/out, no forms). The URLs are written out literally:
+ * kane-cli needs a start URL it can see in the objective (a {{t1}} placeholder fails with "No start URL").
+ * They are host-gated targets, so they are safe to inline.
+ */
+export function visitObjective(urls: string[]): string {
+  return urls.length === 1
+    ? `Go to ${urls[0]} and wait for the page to finish loading. Do not sign in, sign out or submit any form.`
+    : `Open these pages one after another and wait for each to finish loading: ${urls.join(', ')}. Do not sign in, sign out or submit any form.`;
 }
 
 interface Targets { ui: string[]; api: string[] }
@@ -147,15 +150,21 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     if (ocapLive) captures.push(ocapLive);
     // Kane can only open pages: give it the ui targets and GET api targets ("POST …" ones are the oracle's job).
     const kaneUrls = (t: Targets) => [...t.ui, ...t.api.filter((u) => parseTarget(u).method === 'GET').map((u) => parseTarget(u).url)];
-    const visitVars = (ctx: Ctx, urls: string[]): KaneVars => ({ ...ctx, ...Object.fromEntries(urls.map((u, i) => [`t${i + 1}`, u])) });
-    if (b.kind === 'plan-gate') {
+    const urls = kaneUrls(leakTargets);
+    if (judgeOnly) {
+      /* the recorded runs were just replayed by the ratchet */
+    } else if (b.kind === 'plan-gate') {
+      // Both try the pro action (the free user's attempt is expected to be refused in the UI: Kane may
+      // report a paywall). Neither is the replay recording: a refused attempt would replay as "failed".
       const proAction = b.proAction!.objective;
-      if (!judgeOnly) await both(cfg.parallel, () => kane(proAction, owner, ownerCtx), () => kane(proAction, viewer, viewerCtx, 'record'));
+      await both(cfg.parallel, () => kane(proAction, owner, ownerCtx), () => kane(proAction, viewer, viewerCtx));
+      // The free user's recording is a plain visit of the gated GET targets; the oracle makes the
+      // non-GET calls itself. Replays of this visit pass whether or not the gate holds.
+      if (urls.length) await kane(visitObjective(urls), viewer, viewerCtx, 'record');
+    } else if (urls.length) {
+      await kane(visitObjective(urls), viewer, leakCtx, 'record');
     } else {
-      const urls = kaneUrls(leakTargets);
-      if (judgeOnly) { /* the viewer's recorded visit was just replayed */ }
-      else if (urls.length) await kane(visitObjective(urls.length), viewer, visitVars(leakCtx, urls), 'record');
-      else notes.push('no GET targets: skipped the Kane visit run (the oracle still calls every target)');
+      notes.push('no GET targets: skipped the Kane visit run (the oracle still calls every target)');
     }
 
     // Phase 3: the oracle opens every target itself (new tabs) and checks the positive controls.
