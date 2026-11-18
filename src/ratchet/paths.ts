@@ -9,7 +9,9 @@ export interface NotyoursPaths {
   boundariesFile: string;
   /** Directory store: one boundary (or a list) per .yaml/.yml/.json file. */
   boundariesDir: string;
-  /** Identities with passwords (gitignored). */
+  /** Identities without passwords: tokens, CDP ports, profile dirs. */
+  identities: string;
+  /** Passwords (gitignored); merged over identities.json by id. */
   secrets: string;
   map: string;
   dirty: string;
@@ -32,6 +34,7 @@ export function notyoursPaths(projectDir: string): NotyoursPaths {
     config: path.join(dir, 'config.yaml'),
     boundariesFile: path.join(dir, 'boundaries.yaml'),
     boundariesDir: path.join(dir, 'boundaries'),
+    identities: path.join(dir, 'identities.json'),
     secrets: path.join(dir, 'secrets.json'),
     map: path.join(dir, 'map.json'),
     dirty: path.join(dir, 'dirty.json'),

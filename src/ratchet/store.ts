@@ -139,21 +139,30 @@ function getIn(v: unknown, keys: (string | number)[]): unknown {
  * Holds passwords: never print what this returns without redactIdentity().
  */
 export function loadIdentities(p: NotyoursPaths): Identity[] {
-  const raw = readJson<unknown>(p.secrets, null);
-  if (raw == null) return [];
-  let list: unknown[];
-  if (Array.isArray(raw)) list = raw;
-  else if (typeof raw === 'object' && Array.isArray((raw as { identities?: unknown }).identities)) {
-    list = (raw as { identities: unknown[] }).identities;
-  } else if (typeof raw === 'object') {
-    list = Object.entries(raw as Record<string, unknown>).map(([id, v]) => ({ id, ...(v as object) }));
-  } else list = [];
+  // identities.json (tokens, ports; committed by the demo) merged with secrets.json (passwords; gitignored).
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const file of [p.identities, p.secrets]) {
+    for (const i of identityList(readJson<unknown>(file, null))) {
+      if (i && typeof i === 'object' && typeof (i as { id?: unknown }).id === 'string') {
+        const id = (i as { id: string }).id;
+        byId.set(id, { ...(byId.get(id) ?? {}), ...(i as Record<string, unknown>) });
+      }
+    }
+  }
   // Errors name the field only; zod messages never echo a password value.
-  return list.map((i, n) => {
+  return [...byId.entries()].map(([id, i]) => {
     const r = IdentitySchema.safeParse(i);
-    if (!r.success) throw new Error(`notyours: invalid identity #${n} in .notyours/secrets.json: ${r.error.issues[0]?.path.join('.')}`);
+    if (!r.success) throw new Error(`notyours: invalid identity ${id} in .notyours/identities.json/secrets.json: ${r.error.issues[0]?.path.join('.')}`);
     return r.data;
   });
+}
+
+function identityList(raw: unknown): unknown[] {
+  if (raw == null || typeof raw !== 'object') return [];
+  if (Array.isArray(raw)) return raw;
+  const ids = (raw as { identities?: unknown }).identities;
+  if (Array.isArray(ids)) return ids;
+  return Object.entries(raw as Record<string, unknown>).map(([id, v]) => ({ id, ...(v as object) }));
 }
 
 /**

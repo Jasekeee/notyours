@@ -10,7 +10,7 @@ import { KaneCli, parseAuthorRun, parseBalance, parseReplay } from './kane.js';
 import { planLock, resolveTemplate } from './lock.js';
 import { notyoursPaths, testFile } from './paths.js';
 import { classify, engineOracle } from './replay.js';
-import { readCreditLog } from './store.js';
+import { loadIdentities, readCreditLog } from './store.js';
 import { FakeKane, heldWithUrl, lockedBoundary, tempProject } from './testkit.js';
 
 const unlocked = { ...lockedBoundary, locked: false };
@@ -38,7 +38,9 @@ describe('lock', () => {
       ['notes-cross-user_alice', 'http://127.0.0.1:9301'],
       ['notes-cross-user_bob', 'http://127.0.0.1:9302'],
     ]);
-    expect(kane.authored[0]?.objective).toBe("Go to http://127.0.0.1:3000/notes/7 and verify the page shows 'NY-ALICE-AAAAAAAAAAAA'");
+    expect(kane.authored[0]?.objective).toBe(
+      "Go to http://127.0.0.1:3000/notes/new, create a note titled 'NY-ALICE-AAAAAAAAAAAA', save it, store the note URL as 'note_url'",
+    );
     expect(kane.authored[1]?.objective).toBe('Go to http://127.0.0.1:3000/notes/7, then go to http://127.0.0.1:3000/api/notes');
     for (const id of ['alice', 'bob']) {
       expect(existsSync(testFile(p, 'notes-cross-user', id))).toBe(true);
@@ -106,6 +108,45 @@ describe('lock', () => {
   it('plan-gate locks the pro action as the viewer objective', () => {
     const b = { ...unlocked, kind: 'plan-gate' as const, viewer: 'free_user', proAction: { objective: 'Go to {{note_url}} and click Export PDF' } };
     expect(planLock(b, heldWithUrl, mockIdentities)[1]?.objective).toBe('Go to http://127.0.0.1:3000/notes/7 and click Export PDF');
+  });
+
+  // Shapes from the Jotter demo (feat/demo: demo/.notyours/boundaries/b1-cross-user.yaml, b3-plan-gate.yaml).
+  const demoB1 = {
+    id: 'b1-notes-cross-user', kind: 'cross-user' as const, owner: 'alice', viewer: 'bob',
+    create: { objective: "Go to http://127.0.0.1:3077/notes/1001, verify the note text contains '{{token}}', and store the current page URL as 'note_url'", store: ['note_url'] },
+    targets: { ui: ['http://127.0.0.1:3077/notes/1001'], api: ['http://127.0.0.1:3077/api/notes/1001'] },
+    expect: 'denied' as const, surface: ['routes/notes.js'],
+  };
+  const demoB3 = {
+    ...demoB1, id: 'b3-export-plan-gate', kind: 'plan-gate' as const,
+    create: { objective: "Go to http://127.0.0.1:3077/pro/export and verify an 'Export my notes' button is visible", store: [] },
+    targets: { ui: ['http://127.0.0.1:3077/pro/export'], api: ['POST http://127.0.0.1:3077/api/export'] },
+    proAction: { objective: 'Go to http://127.0.0.1:3077/pro/export and export my notes' },
+  };
+
+  it('demo B1: owner replays the create check with the real token; viewer visits page then API', () => {
+    const [o, v] = planLock(demoB1, { ...mockHeldResult, boundaryId: demoB1.id }, mockIdentities);
+    expect(o?.objective).toBe("Go to http://127.0.0.1:3077/notes/1001, verify the note text contains 'NY-ALICE-AAAAAAAAAAAA', and store the current page URL as 'note_url'");
+    expect(v?.objective).toBe('Go to http://127.0.0.1:3077/notes/1001, then go to http://127.0.0.1:3077/api/notes/1001');
+  });
+
+  it('demo B3 plan-gate: owner checks the pro button, viewer runs the pro action', () => {
+    const [o, v] = planLock(demoB3, { ...mockHeldResult, boundaryId: demoB3.id }, mockIdentities);
+    expect(o?.objective).toBe(demoB3.create.objective);
+    expect(v?.objective).toBe(demoB3.proAction.objective);
+    const sweep = planLock({ ...demoB3, kind: 'sweep' }, { ...mockHeldResult, boundaryId: demoB3.id }, mockIdentities)[1];
+    expect(sweep?.objective).toBe('Go to http://127.0.0.1:3077/pro/export, then call POST http://127.0.0.1:3077/api/export');
+  });
+
+  it('loads identities.json merged with secrets.json by id', () => {
+    const p = notyoursPaths(project);
+    const noPw = mockIdentities.map(({ password: _pw, ...rest }) => rest);
+    writeFileSync(p.identities, JSON.stringify(Object.fromEntries(noPw.map(({ id, ...rest }) => [id, rest]))));
+    writeFileSync(p.secrets, JSON.stringify({ alice: { password: 'from-secrets' } })); // notyours:allow-secret (fake fixture)
+    const ids = loadIdentities(p);
+    expect(ids.map((i) => i.id)).toEqual(['alice', 'bob', 'guest', 'free_user']);
+    expect(ids.find((i) => i.id === 'alice')?.password).toBe('from-secrets');
+    expect(ids.find((i) => i.id === 'bob')?.password).toBeUndefined();
   });
 
   it('resolveTemplate fills values and rejects missing ones', () => {

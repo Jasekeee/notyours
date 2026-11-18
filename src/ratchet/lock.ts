@@ -55,21 +55,34 @@ export function assertLockable(b: Boundary, result: ProbeResult): void {
   }
 }
 
-/** The two authoring runs a lock needs: the owner proves their data is reachable, the viewer visits the targets. */
+/** `"POST http://x/api"` (the demo's convention for non-GET API targets) or a plain URL (GET). */
+export function targetStep(target: string, first: boolean): string {
+  const m = /^(GET|POST|PUT|PATCH|DELETE)\s+(\S+)$/i.exec(target.trim());
+  const method = (m?.[1] ?? 'GET').toUpperCase();
+  const url = m?.[2] ?? target.trim();
+  if (method === 'GET') return `${first ? 'Go' : 'then go'} to ${url}`;
+  return `${first ? 'Call' : 'then call'} ${method} ${url}`;
+}
+
+/**
+ * The two authoring runs a lock needs. Owner: the boundary's own create objective (its positive control:
+ * the owner reaches data holding their token; works for every kind, incl. plan-gate). Viewer: the targets,
+ * or the pro action for a plan-gate. Every {{name}} is resolved to the probe's stored values, so replays
+ * go to fixed URLs (replay ignores changed variables).
+ */
 export function planLock(b: Boundary, result: ProbeResult, identities: Identity[]): LockPlan[] {
   const owner = identities.find((i) => i.id === b.owner);
   const viewer = identities.find((i) => i.id === b.viewer);
   if (!owner || !viewer) throw new Error(`notyours: cannot lock ${b.id}, identity ${!owner ? b.owner : b.viewer} not configured`);
   const values = storedValues(b, result);
   const targets = [...b.targets.ui, ...b.targets.api].map((t) => resolveTemplate(t, values));
-  const first = targets[0];
-  if (!first) throw new Error(`notyours: cannot lock ${b.id}, it has no targets`);
+  if (!targets.length) throw new Error(`notyours: cannot lock ${b.id}, it has no targets`);
 
-  const ownerObjective = `Go to ${first} and verify the page shows '${owner.token}'`;
+  const ownerObjective = resolveTemplate(b.create.objective, { ...values, token: owner.token });
   const viewerObjective =
     b.kind === 'plan-gate' && b.proAction
       ? resolveTemplate(b.proAction.objective, { ...values, token: viewer.token })
-      : targets.map((t, n) => (n === 0 ? `Go to ${t}` : `then go to ${t}`)).join(', ');
+      : targets.map((t, n) => targetStep(t, n === 0)).join(', ');
   return [
     { identity: owner, name: testName(b.id, owner.id), objective: ownerObjective },
     { identity: viewer, name: testName(b.id, viewer.id), objective: viewerObjective },
