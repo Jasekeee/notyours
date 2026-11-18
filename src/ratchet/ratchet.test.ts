@@ -197,6 +197,14 @@ describe('replay', () => {
   });
   const engine = (r: ProbeResult): Engine => ({ runBoundary: async (b) => ({ ...r, boundaryId: b.id }) });
 
+  it('a failed Kane replay never hides the oracle verdict (the app changed, so the recording diverged)', async () => {
+    const kane = new FakeKane();
+    kane.replayStatus = (req) => (req.identity === 'bob' ? 'failed' : 'passed');
+    const [r] = await new RealRatchet({ projectDir: project, kane, oracle: engineOracle(engine(mockLeakResult)) }).replay(mockIdentities);
+    expect(classify(r!)).toBe('RED');
+    expect(r!.kaneRuns.some((k) => k.identity === 'bob' && k.status === 'failed')).toBe(true);
+  });
+
   it('replays only locked boundaries, at 0 credits, and returns the oracle verdict with the replay runs', async () => {
     const kane = new FakeKane();
     const results = await new RealRatchet({ projectDir: project, kane, oracle: engineOracle(engine(mockLeakResult)) }).replay(mockIdentities);

@@ -93,8 +93,10 @@ export async function replayBoundary(b: Boundary, ids: Identity[], deps: ReplayD
   }
   const runs = outcomes.map((o) => o.run);
 
-  // A Kane step that fails means the persona never reached the target: nothing to judge.
-  if (outcomes.some((o) => o.run.status !== 'passed')) return harnessBroken(b, runs, ts);
+  // The oracle decides, never Kane. A replay can "fail" exactly because the app changed (a recorded wait for
+  // "Note not found" fails once the note leaks), and kane-cli 0.10.0 replays analyze->assert steps without
+  // their extracted value. So always judge: the oracle visits every target itself, and its positive controls
+  // turn a lost session into HARNESS_BROKEN. The replay statuses stay in kaneRuns for the report.
 
   const judged = await deps.oracle.judge(b, ids, deps.config, runs);
   return { ...judged, boundaryId: b.id, kaneRuns: [...judged.kaneRuns, ...runs] };

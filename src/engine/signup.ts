@@ -1,11 +1,15 @@
 // Sign up (or log in) each identity once in its own Chrome profile, so later probes start signed in.
 import type { Identity } from '../types.js';
+import { safeObjectiveUrl } from './probes.js';
 import type { KaneOutcome, KaneRunner, KaneRunOptions } from './kane.js';
 
-export const SIGNUP_OBJECTIVE =
-  'Go to {{base_url}}/signup, sign up with email {{email}} and password {{password}}, then verify you are signed in';
-export const LOGIN_OBJECTIVE =
-  'Go to {{base_url}}/login, log in with email {{email}} and password {{password}}, then verify you are signed in';
+// The base URL is written out (kane-cli needs a start URL it can see; a {{base_url}} placeholder is flaky).
+// No "verify" step: kane-cli 0.10.0 replays analyze->assert chains without their value, so a recorded
+// assertion fails on replay even when the login worked. The oracle's positive controls prove the session.
+export const signupObjective = (baseUrl: string) =>
+  `Go to ${baseUrl}/signup, sign up with email {{email}} and password {{password}}, then wait for the next page to load`;
+export const loginObjective = (baseUrl: string) =>
+  `Go to ${baseUrl}/login, log in with email {{email}} and password {{password}}, then wait for the next page to load`;
 
 /** Things a Kane persona cannot get past on its own. */
 const UNSUPPORTED = /captcha|i'?m not a robot|oauth|sign in with (google|github|apple|microsoft)|social login|sms|text message|verification code|one[- ]time (pass)?code|\botp\b|2fa|two[- ]factor/i;
@@ -22,7 +26,8 @@ function vars(identity: Identity, baseUrl: string) {
 }
 
 async function authRun(kind: 'signup' | 'login', identity: Identity, runner: KaneRunner, opts: KaneRunOptions): Promise<KaneOutcome> {
-  const out = await runner(kind === 'signup' ? SIGNUP_OBJECTIVE : LOGIN_OBJECTIVE, identity, vars(identity, opts.cfg.baseUrl), opts);
+  const base = safeObjectiveUrl(opts.cfg.baseUrl.replace(/\/+$/, '') + '/').replace(/\/+$/, '');
+  const out = await runner(kind === 'signup' ? signupObjective(base) : loginObjective(base), identity, vars(identity, opts.cfg.baseUrl), opts);
   if (out.run.status !== 'passed' && UNSUPPORTED.test(`${out.text}\n${out.run.reason ?? ''}`)) {
     throw new UnsupportedSignupError(
       `Automatic ${kind} for "${identity.id}" is not supported: the app requires a captcha, OAuth-only login or an SMS/one-time code. ` +

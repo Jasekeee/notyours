@@ -117,16 +117,14 @@ describe('stop hook', () => {
     expect(existsSync(notyoursPaths(project).escalation)).toBe(true);
   });
 
-  it('YELLOW when a Kane replay step fails: exit 0, human message, oracle not called, dirty kept', async () => {
-    const engine = new SequenceEngine([]);
+  it('a failed Kane replay step does not hide a leak: the oracle still judges (RED blocks)', async () => {
+    const engine = new SequenceEngine([mockLeakResult]);
     kane.replayStatus = (req) => (req.identity === 'bob' ? 'failed' : 'passed');
     dirtyNotes();
     const r = await stopHook(input('stop-first', project), deps(engine));
-    expect(r.exitCode).toBe(0);
-    expect(JSON.parse(r.stdout!).systemMessage).toContain('harness needs re-recording: notyours lock --reauthor notes-cross-user');
-    expect(engine.calls).toHaveLength(0);
-    expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
-    expect(readAttempts(notyoursPaths(project))).toEqual({});
+    expect(engine.calls).toHaveLength(1);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('LEAK in boundary notes-cross-user');
   });
 
   it('YELLOW when the oracle says HARNESS_BROKEN', async () => {

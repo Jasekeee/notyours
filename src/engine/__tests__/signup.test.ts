@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ConfigSchema } from '../../schemas.js';
 import { mockIdentities } from '../../mocks/fixtures.js';
 import type { KaneOutcome, KaneRunner } from '../kane.js';
-import { SIGNUP_OBJECTIVE, UnsupportedSignupError, signup } from '../signup.js';
+import { UnsupportedSignupError, signup, signupObjective } from '../signup.js';
 
 const cfg = ConfigSchema.parse({ baseUrl: 'http://127.0.0.1:3000/' });
 const opts = { cfg, stateDir: '/tmp/unused' };
@@ -19,7 +19,9 @@ describe('signup', () => {
     let seen: Parameters<KaneRunner> | undefined;
     const runner: KaneRunner = async (...args) => { seen = args; return outcome('passed', 'Signed in'); };
     await signup(alice, runner, opts);
-    expect(seen?.[0]).toBe(SIGNUP_OBJECTIVE);
+    expect(seen?.[0]).toBe(signupObjective('http://127.0.0.1:3000'));
+    expect(seen?.[0]).toMatch(/^Go to http:\/\/127\.0\.0\.1:3000\/signup, /); // a start URL kane-cli can see
+    expect(seen?.[0]).not.toMatch(/verify/); // recorded assertions do not replay on kane-cli 0.10.0
     expect(seen?.[2]).toEqual({ base_url: 'http://127.0.0.1:3000', email: alice.email, password: { value: alice.password, secret: true } });
   });
 

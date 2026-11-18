@@ -44,8 +44,11 @@ describe('session pool', () => {
     await Promise.all([first.get(alice), first.get(guest)]);
     await first.closeAll();
     expect(authored).toEqual([`alice:${loginTestName('alice')}`]);
-    expect(existsSync(join(stateDir, 'tests', 'login_alice_test.md'))).toBe(true);
-    expect(existsSync(join(stateDir, 'tests', 'output-login_alice', '.env.example'))).toBe(false); // stripped
+    // Kept inside the persona's own (guarded, gitignored) Chrome profile dir: it holds the typed password.
+    const rec = join(stateDir, 'profiles', 'alice', 'notyours-login');
+    expect(existsSync(join(rec, 'login_alice_test.md'))).toBe(true);
+    expect(existsSync(join(stateDir, 'tests', 'login_alice_test.md'))).toBe(false);
+    expect(existsSync(join(rec, 'output-login_alice', '.env.example'))).toBe(false); // stripped
     expect(existsSync(join(root, '.testmuai', 'tests', 'login_alice_test.md'))).toBe(false); // adopted (moved)
 
     const second = sessionPool(opts, { headful: false });

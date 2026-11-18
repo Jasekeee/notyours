@@ -475,6 +475,9 @@ describe('hooks', () => {
     expect(g('Grep', { path: '.notyours/tests' }).allow).toBe(false);
     expect(g('Bash', { command: 'cat .notyours/tests/login_bob_test.md' }).allow).toBe(false);
     expect(g('Read', { file_path: '.notyours/tests/b1-notes-cross-user_bob_test.md' }).allow).toBe(true);
+    expect(g('Read', { file_path: '.testmuai/tests/login_alice_test.md' }).allow).toBe(false); // before adoption
+    expect(g('Bash', { command: 'grep -r value .notyours/tests/output-log*' }).allow).toBe(false);
+    expect(g('Bash', { command: 'cat .notyours/profiles/alice/notyours-login/login_alice_test.md' }).allow).toBe(false);
   });
 
   it('guard: normal work is allowed (app code, unlocked boundaries, drafts, reading the oracle)', () => {

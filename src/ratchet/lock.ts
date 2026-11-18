@@ -2,6 +2,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Boundary, Config, Identity, KaneRun, ProbeResult } from '../types.js';
+import { safeObjectiveUrl } from '../engine/probes.js';
 import { cdpEndpoint, type KaneClient } from './kane.js';
 import { testFile, testName, testOutputDir, type NotyoursPaths } from './paths.js';
 import { logCredits, markLocked, readCreditLog, type StoredBoundary } from './store.js';
@@ -79,7 +80,8 @@ export function assertLockable(b: Boundary, result: ProbeResult): void {
 export function targetStep(target: string, first: boolean): string {
   const m = /^(GET|POST|PUT|PATCH|DELETE)\s+(\S+)$/i.exec(target.trim());
   const method = (m?.[1] ?? 'GET').toUpperCase();
-  const url = m?.[2] ?? target.trim();
+  // Written into a recorded Kane objective: exactly one http(s) URL, normalised (no smuggled instructions).
+  const url = safeObjectiveUrl(m?.[2] ?? target.trim());
   if (method === 'GET') return `${first ? 'Go' : 'then go'} to ${url}`;
   return `${first ? 'Call' : 'then call'} ${method} ${url}`;
 }

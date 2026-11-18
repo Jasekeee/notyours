@@ -49,11 +49,21 @@ export async function assertReachable(baseUrl: string): Promise<void> {
 }
 
 /**
+ * A target about to be written into a Kane objective must be exactly one http(s) URL: no whitespace or quotes
+ * that could smuggle instructions into the objective. Returns the normalised href (what the browser opens).
+ */
+export function safeObjectiveUrl(u: string): string {
+  if (!/^https?:\/\/\S+$/i.test(u) || /["'`<>\\]/.test(u)) throw new Error(`Refusing to put "${u}" in a Kane objective: not a single http(s) URL.`);
+  return new URL(u).href;
+}
+
+/**
  * Kane objective that just opens pages (no sign-in/out, no forms). The URLs are written out literally:
  * kane-cli needs a start URL it can see in the objective (a {{t1}} placeholder fails with "No start URL").
  * They are host-gated targets, so they are safe to inline.
  */
 export function visitObjective(urls: string[]): string {
+  urls = urls.map(safeObjectiveUrl);
   return urls.length === 1
     ? `Go to ${urls[0]} and wait for the page to finish loading. Do not sign in, sign out or submit any form.`
     : `Open these pages one after another and wait for each to finish loading: ${urls.join(', ')}. Do not sign in, sign out or submit any form.`;
@@ -150,7 +160,8 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     if (ocapLive) captures.push(ocapLive);
     // Kane can only open pages: give it the ui targets and GET api targets ("POST …" ones are the oracle's job).
     const kaneUrls = (t: Targets) => [...t.ui, ...t.api.filter((u) => parseTarget(u).method === 'GET').map((u) => parseTarget(u).url)];
-    const urls = kaneUrls(leakTargets);
+    const urls = kaneUrls(leakTargets).map(safeObjectiveUrl);
+    for (const u of urls) assertAllowed(u, cfg);
     if (judgeOnly) {
       /* the recorded runs were just replayed by the ratchet */
     } else if (b.kind === 'plan-gate') {

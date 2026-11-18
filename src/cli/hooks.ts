@@ -67,8 +67,9 @@ function toolPath(input: HookInput): string | undefined {
 
 const SECRET_PATHS = [`${NY_DIR}/secrets.json`, `${NY_DIR}/profiles`];
 /** Recorded login tests: kane-cli writes the typed password into them (frontmatter value, `secret: true`). */
-const LOGIN_RECORDING_RE = new RegExp(`^${NY_DIR.replace('.', '\\.')}/tests/(?:output-)?login_[^/]+`);
-const LOGIN_PREFIX = `${NY_DIR}/tests/login_`;
+// Both where kane-cli writes them (.testmuai/tests) and where notyours keeps them (.notyours/tests).
+const LOGIN_RECORDING_RE = /^(?:\.notyours|\.testmuai)\/tests\/(?:output-)?login_[^/]+/;
+const LOGIN_PREFIXES = [`${NY_DIR}/tests/login_`, '.testmuai/tests/login_'];
 const READONLY_PATHS = [
   `${NY_DIR}/runs`,
   `${NY_DIR}/config.yaml`,
@@ -137,7 +138,7 @@ export function guard(input: HookInput, root: string): GuardResult {
       return deny('commands that touch .notyours/, .testmuai/ or .claude/settings may not use $, backticks, ~ or ../');
     }
     const secretMsg = '.notyours/secrets.json and browser profiles hold identity passwords and sessions; they are off limits.';
-    if (/secrets\.json|\.notyours\/profiles|owned-hosts|\.config\/notyours|login_[\w-]*_test\.md|output-login_/.test(cmd)) return deny(secretMsg);
+    if (/secrets\.json|\.notyours\/profiles|owned-hosts|\.config\/notyours|login_|(?:\.notyours|\.testmuai)\/tests\/(?:output-)?log|notyours-login/.test(cmd)) return deny(secretMsg);
     // Globs at the top of .notyours/ (cat .notyours/s*) or recursive reads of the whole folder (grep -r x .notyours).
     if (/\.notyours\/[^\s/'"]*[*?[{]/.test(cmd)) return deny(secretMsg);
     if (/\.notyours\/?(?=$|[\s'";|&)])/.test(cmd) && /\b(?:grep|rg|ag|find|tar|zip|cp|rsync|cat|less|head|tail|xxd|strings|base64|scp|curl)\b/.test(cmd)) return deny(secretMsg);
@@ -170,7 +171,7 @@ export function guard(input: HookInput, root: string): GuardResult {
   if (rel === undefined) return { allow: true };
 
   const secret = SECRET_PATHS.some((s) => under(rel, s) || (READ_TOOLS.has(tool) && contains(rel, s)))
-    || LOGIN_RECORDING_RE.test(rel) || (READ_TOOLS.has(tool) && contains(rel, LOGIN_PREFIX));
+    || LOGIN_RECORDING_RE.test(rel) || (READ_TOOLS.has(tool) && LOGIN_PREFIXES.some((p) => contains(rel, p)));
   if ((READ_TOOLS.has(tool) || WRITE_TOOLS.has(tool)) && secret) {
     return deny(`${rel} holds (or contains) identity passwords/sessions and is off limits. Use identity ids from .notyours/map.json.`);
   }
@@ -211,6 +212,8 @@ export const PERMISSION_DENY = [
   'Read(./.notyours/profiles/**)',
   'Read(./.notyours/tests/login_*)',
   'Read(./.notyours/tests/output-login_*/**)',
+  'Read(./.testmuai/tests/login_*)',
+  'Read(./.testmuai/tests/output-login_*/**)',
   'Edit(./.notyours/secrets.json)',
   'Edit(./.notyours/config.yaml)',
   'Edit(./.notyours/runs/**)',

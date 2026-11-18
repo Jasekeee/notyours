@@ -22,6 +22,9 @@ export interface SessionOptions {
 
 export const loginTestName = (identityId: string) => `login_${identityId}`;
 
+/** Where a persona's recorded login lives: inside its own (guarded, gitignored) Chrome profile dir. */
+export const loginRecordingDir = (identity: Identity) => join(identity.userDataDir, 'notyours-login');
+
 /** Identities whose login was (re)recorded in this process: never record twice (no credit loops). */
 const recordedThisProcess = new Set<string>();
 
@@ -60,10 +63,13 @@ export async function logIn(identity: Identity, handle: ChromeHandle, opts: Sess
   if (identity.role === 'guest' || !identity.email || !identity.password) return;
   const log = opts.log ?? ((l: string) => console.error(l));
   const name = loginTestName(identity.id);
-  const testsDir = join(opts.stateDir, 'tests');
-  const recorded = join(testsDir, `${name}_test.md`);
+  // kane-cli writes the typed password into a recorded login, so recordings live inside the persona's
+  // Chrome profile dir (already secret to the guard, gitignored, in the deny list). A committed demo login
+  // in .notyours/tests (public dev-default passwords only) is used as a fallback.
+  const testsDir = loginRecordingDir(identity);
+  const recorded = [join(testsDir, `${name}_test.md`), join(opts.stateDir, 'tests', `${name}_test.md`)].find((f) => existsSync(f));
 
-  if (existsSync(recorded)) {
+  if (recorded) {
     const kane = opts.kane ?? new KaneCli();
     const out = await kane.replay({ testPath: recorded, identity: identity.id, cdpEndpoint: handle.endpoint, cwd: opts.cwd });
     logCredits(opts.stateDir, { kind: 'replay', identity: identity.id, status: out.run.status, credits: out.run.creditsConsumed, durationS: out.run.durationS, objective: `login replay ${name}` });
