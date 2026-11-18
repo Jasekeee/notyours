@@ -1,7 +1,7 @@
 // PreToolUse (Edit|Write|MultiEdit|Bash): .notyours/ (boundaries, tests, attempts, config) is read-only for the agent.
 // This is a speed bump, not a sandbox: shell variables or an interpreter can still reach the files. The backstop
 // is that .notyours/ changes show up in git, where the human reviews them.
-import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
+import { lstatSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import { globToRegExp, toProjectPath } from './glob.js';
 import { ok, projectDirOf, type HookInput, type HookResult } from './types.js';
@@ -62,47 +62,52 @@ export function bashTouchesNotyours(command: string): boolean {
   return mentions && !(isReadOnly(command) && isReadOnly(norm));
 }
 
-const lexists = (p: string): boolean => {
-  try {
-    lstatSync(p);
-    return true;
-  } catch {
-    return false;
-  }
-};
+class Unresolvable extends Error {}
+const MAX_LINKS = 40; // macOS gives up at 32 links, Linux at 40
 
 /**
- * realpath of the nearest existing ancestor, plus the not-yet-existing rest (Write creates new files).
- * Uses lstat, so a dangling symlink (`x -> .notyours/new`) is followed to its target instead of skipped.
+ * Where the kernel would put `p`, walked one component at a time the way path lookup works: `..` applies to the
+ * physical directory reached so far (never to the raw string, which path.resolve/join would do), and every symlink,
+ * dangling ones included, is spliced into the remaining components. Components that don't exist yet are taken as
+ * plain directories, since Write creates missing parents. Throws Unresolvable on a loop; callers fail closed.
  */
-class Unresolvable extends Error {}
-const MAX_LINK_DEPTH = 40; // macOS/Linux give up at 32/40 links
-
-function realish(p: string, depth = 0): string {
-  if (depth > MAX_LINK_DEPTH) throw new Unresolvable(p); // symlink loop or absurd chain: caller fails closed
-  let head = path.resolve(p);
-  const rest: string[] = [];
-  while (!lexists(head)) {
-    const parent = path.dirname(head);
-    if (parent === head) break;
-    rest.unshift(path.basename(head));
-    head = parent;
-  }
-  try {
-    return path.join(realpathSync(head), ...rest);
-  } catch {
-    // realpath fails on an existing path only for a dangling symlink (or a loop). Follow the link from its
-    // physical parent directory, so a symlinked parent cannot hide where the target really is.
-    let target: string;
-    try {
-      if (!lstatSync(head).isSymbolicLink()) throw new Unresolvable(head);
-      target = readlinkSync(head);
-    } catch {
-      throw new Unresolvable(head);
+export function physicalPath(p: string): string {
+  if (!path.isAbsolute(p)) throw new Unresolvable(p);
+  const todo = p.split(/[\\/]+/).filter(Boolean);
+  let cur = path.parse(p).root || '/';
+  let links = 0;
+  let missing = false; // once a component is missing, nothing below it exists either
+  while (todo.length) {
+    const c = todo.shift() as string;
+    if (c === '.') continue;
+    if (c === '..') {
+      cur = path.dirname(cur);
+      missing = false;
+      continue;
     }
-    const dir = realish(path.dirname(head), depth + 1);
-    return path.join(realish(path.resolve(dir, target), depth + 1), ...rest);
+    const next = path.join(cur, c);
+    if (missing) {
+      cur = next;
+      continue;
+    }
+    let st: import('node:fs').Stats;
+    try {
+      st = lstatSync(next);
+    } catch {
+      missing = true;
+      cur = next;
+      continue;
+    }
+    if (!st.isSymbolicLink()) {
+      cur = next;
+      continue;
+    }
+    if (++links > MAX_LINKS) throw new Unresolvable(p);
+    const target = readlinkSync(next);
+    if (path.isAbsolute(target)) cur = path.parse(target).root || '/';
+    todo.unshift(...target.split(/[\\/]+/).filter(Boolean)); // relative targets resolve from cur (the link's physical parent)
   }
+  return cur;
 }
 
 const hasNotyoursComponent = (p: string): boolean => p.split(/[\\/]/).some((c) => c.toLowerCase() === '.notyours');
@@ -114,14 +119,15 @@ const isNotyoursRel = (rel: string | undefined): boolean => {
 };
 
 export function fileTouchesNotyours(projectDir: string, filePath: string): boolean {
-  const abs = path.isAbsolute(filePath) ? filePath : path.join(projectDir, filePath);
+  // Raw concatenation, not path.join: join would collapse `link/..` lexically, which is exactly the bypass.
+  const abs = path.isAbsolute(filePath) ? filePath : `${projectDir}/${filePath}`;
   // Lexical check, then the symlink-resolved one (a symlink elsewhere in the tree may point into .notyours).
   if (isNotyoursRel(toProjectPath(projectDir, abs)) || hasNotyoursComponent(abs)) return true;
   let real: string;
   let realProject: string;
   try {
-    real = realish(abs);
-    realProject = realish(projectDir);
+    real = physicalPath(abs);
+    realProject = physicalPath(path.resolve(projectDir));
   } catch {
     return true; // can't tell where the write lands: fail closed
   }
