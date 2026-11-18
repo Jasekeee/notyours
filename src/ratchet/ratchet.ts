@@ -90,23 +90,35 @@ export class RealRatchet implements Ratchet {
     // the human's out-of-repo ownership record. Throws (fails closed) before any Chrome or Kane work.
     assertHostsAllowed(this.config(), bs, this.paths.root);
     return this.withChromes(async (pool, oracle) => {
-      const out: ProbeResult[] = [];
-      for (const b of bs) {
-        try {
-          if (pool) {
-            const viewer = ids.find((i) => i.id === b.viewer);
-            // A guest replays on a wiped profile: no cookies from earlier runs.
-            if (b.kind === 'guest' && viewer) await wipeProfile(viewer, { stateDir: this.paths.dir, pool });
-            await Promise.all([b.owner, b.viewer].map((id) => ids.find((i) => i.id === id)).filter((i): i is Identity => !!i).map((i) => pool.get(i)));
-          }
-          out.push(...(await replayBoundaries([b], ids, { paths: this.paths, config: this.config(), kane: this.kane, oracle })));
-        } catch (e) {
-          // One boundary's failure must not discard the others' verdicts (loop-run-1 lost a RED this way).
-          this.opts.log?.(`notyours: ${b.id} could not be replayed: ${(e as Error).message}`);
-          out.push({ boundaryId: b.id, verdict: 'HARNESS_BROKEN', controls: { ownerSeesOwnToken: false, viewerSeesOwnToken: false }, hits: [], screenshots: [], kaneRuns: [], ts: new Date().toISOString() });
-        }
+      const out: ProbeResult[] = new Array(bs.length);
+      // Up to 2 boundaries at once, only when they share no persona (two Kane replays can't drive one Chrome).
+      const running: { who: Set<string>; done: Promise<void> }[] = [];
+      for (const [n, b] of bs.entries()) {
+        const who = new Set([b.owner, b.viewer]);
+        while (running.length >= 2 || running.some((r) => [...who].some((w) => r.who.has(w)))) await Promise.race(running.map((r) => r.done));
+        const slot = { who, done: Promise.resolve() };
+        slot.done = this.replayOne(b, ids, pool, oracle).then((r) => { out[n] = r; }).finally(() => { running.splice(running.indexOf(slot), 1); });
+        running.push(slot);
       }
+      await Promise.all(running.map((r) => r.done));
       return out;
     });
+  }
+
+  private async replayOne(b: Boundary, ids: Identity[], pool: ChromePool | undefined, oracle: Oracle): Promise<ProbeResult> {
+    try {
+      if (pool) {
+        const viewer = ids.find((i) => i.id === b.viewer);
+        // A guest replays on a wiped profile: no cookies from earlier runs.
+        if (b.kind === 'guest' && viewer) await wipeProfile(viewer, { stateDir: this.paths.dir, pool });
+        await Promise.all([b.owner, b.viewer].map((id) => ids.find((i) => i.id === id)).filter((i): i is Identity => !!i).map((i) => pool.get(i)));
+      }
+      const [r] = await replayBoundaries([b], ids, { paths: this.paths, config: this.config(), kane: this.kane, oracle });
+      return r!;
+    } catch (e) {
+      // One boundary's failure must not discard the others' verdicts (loop-run-1 lost a RED this way).
+      this.opts.log?.(`notyours: ${b.id} could not be replayed: ${(e as Error).message}`);
+      return { boundaryId: b.id, verdict: 'HARNESS_BROKEN', controls: { ownerSeesOwnToken: false, viewerSeesOwnToken: false }, hits: [], screenshots: [], kaneRuns: [], ts: new Date().toISOString() };
+    }
   }
 }

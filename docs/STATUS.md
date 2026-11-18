@@ -2,7 +2,7 @@
 
 ## What works (verified with real Kane and real Claude Code)
 - **Integration:** A–D merged in order, CC-1 applied, `NOTYOURS_REAL` removed (the CLI always uses the real engine and
-  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 293
+  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 304
   tests, including the 25 demo tests.
 - **Oracle on Jotter (authoring):** B1 LEAK_VISIBLE, B2 HELD, B3 LEAK_PAYLOAD (free Bob got the Pro export), B4 HELD,
   all with both positive controls. HARNESS_BROKEN correctly refused to call a broken harness HELD 3 times while bugs
@@ -36,6 +36,23 @@
 | Loop runs 1 / 2 / 3 end to end | 477 s / 262 s / 1687 s |
 | Login replay / login recording | ~10 s / 50–75 s |
 
+### Replay speed-ups (2026-11-18, kane-cli 0.10.0, `/tmp/ny-loop`, Stop hook run as Claude Code would)
+Changes: one Chrome set per Stop pass (already), the owner's and viewer's oracle visits in parallel, up to 2 boundaries
+in parallel when they share no persona, screenshots only of hit pages, and plan-gate viewers recorded on their own
+non-gated page.
+
+| Stop pass | Before | After |
+|---|---|---|
+| 1 boundary (B1) | 53 s, 0.73 credits | 56 s, 0.73 credits (no gain) |
+| B3 plan-gate | 64 s, **13.17 credits** (Bob's paywalled replay "failed", so Kane billed triage) | **39 s, 0.55 credits** (both replays pass) |
+| 3 boundaries (B1, B2, B4) | 120 s, 4.36 credits | **99 s, 1.13 credits** |
+
+Where a 1-boundary Stop's ~55 s goes: process start + Chrome launch + scan ~13 s, two login replays ~10 s (in
+parallel), the two recorded-test replays ~26 s (kane-cli process overhead around 2–12 s of replay), the oracle ~6 s.
+The floor is Kane, not notyours. The demo's boundaries all include Alice, so they never qualify for the 2-in-parallel
+path. It helps projects whose boundaries use different personas. Stopped after 18 of the 90 timeboxed minutes:
+the rest would have been Kane time.
+
 ## Credits spent in this prompt
 **529.17 Kane credits** (balance 10,960.34 → 10,431.17), **44 authoring runs** of the 52 approved, plus about $2.48 of
 Claude Code usage for the four headless sessions.
@@ -64,7 +81,8 @@ Claude Code usage for the four headless sessions.
 - **Recordings aren't portable.** kane-cli replays them only with the recording machine's TestMu org/user/project ids.
   By decision they're never committed (`**/.notyours/tests/` is gitignored), so every fresh demo authors (~45 credits
   quick, ~120 full).
-- **Bash edits bypass post-tool.** Run 3's agent edited a route with `python3`, and that doesn't mark boundaries dirty.
+- **Bash edits bypassed post-tool (fixed).** Run 3's agent edited a route with `python3`. Each Stop pass now also scans
+  every boundary's surface for changes since the previous pass (git in a git repo, else an mtime snapshot).
 - **The guard is a guardrail, not a sandbox.** It decides by text-matching Bash commands, so a determined agent with
   shell access can still find spellings it doesn't anticipate. The backstops are Claude Code's `permissions.deny`
   rules and reviewing `.notyours/` in `git diff`. Credits don't depend on the guard: the daily budget is enforced
@@ -91,17 +109,21 @@ From the automated security review. By decision, only real secret or credential 
   (re-recording the oracle).
 - The budget is per project: an agent can start a fresh project dir (or delete `.notyours/` through an unguarded
   path) and get a new daily cap. A per-machine or per-account cap is not implemented.
+- Surface scan (catch every edit): the fingerprint is mtime + size, not a content hash, so a write that restores both
+  goes unnoticed. In a git repo, gitignored files under a surface aren't scanned, and the agent could edit
+  `.gitignore`. Git file listings aren't `-z`-quoted, so unusual file names may be missed. The non-git walk skips
+  `node_modules`, `dist`, `data` (and others) at any depth and stops at 50,000 files.
 - The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and
   overshoot the cap by the number of parallel runs (the engine runs at most 2 at once).
 
 ## Top 3 fixes
-1. **Make replays fast and free.**
-   - Reuse one Chrome set across boundaries in a Stop pass, and judge boundaries in parallel.
-   - Screenshot only hit pages (not every control page) on HELD.
-   - Record plan-gate viewers on a non-gated page, so no replay "fails" and triggers paid triage.
-   - Target: under 30 s and 0 credits for a 1-boundary Stop.
-2. **Catch every edit.** Bash `sed`/`python` edits should mark boundaries dirty: on Stop, diff the surface globs
-   against `git diff`/mtime since the last pass instead of relying only on PostToolUse.
+1. **Keep persona Chromes alive between Stop passes.** Chrome launch and login replays are ~23 of a 1-boundary Stop's
+   ~55 s; a small per-project Chrome daemon would remove them. (Done 2026-11-18: one Chrome set per pass, parallel
+   oracle visits, 2 disjoint boundaries at once, hit-only screenshots, non-gated plan-gate recordings. See the
+   table above.)
+2. **Version-aware costs everywhere** (docs/KANE_COMPAT.md): on kane-cli 0.10.4+ replays cost credits, so count
+   replay credits against a daily credit cap, not only authoring runs. (Done: catch every edit via a surface scan on
+   each Stop.)
 3. **Kane robustness and portability.**
    - Evaluate kane-cli 0.10.6 (it changes replay, variables and healing; your decision, since healing may cost
      credits).

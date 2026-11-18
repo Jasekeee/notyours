@@ -9,6 +9,6 @@ export function getEngine(root: string, pool?: ChromePool): Engine {
   return createEngine({ cwd: root, ...(pool ? { pool } : {}) });
 }
 
-export function getRatchet(root: string): RealRatchet {
-  return new RealRatchet({ projectDir: root, log: (l) => console.error(l) });
+export function getRatchet(root: string, opts: { reauthor?: boolean } = {}): RealRatchet {
+  return new RealRatchet({ projectDir: root, log: (l) => console.error(l), ...(opts.reauthor ? { reauthor: true } : {}) });
 }

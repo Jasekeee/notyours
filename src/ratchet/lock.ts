@@ -106,7 +106,10 @@ export function planLock(b: Boundary, result: ProbeResult, identities: Identity[
   // The viewer's recording is a plain visit of the GET targets, for every kind. Non-GET api targets
   // ("POST <url>") are called by the oracle itself; and a plan-gate's pro action is not recorded, because a
   // correctly refused attempt (paywall) would replay as "failed" and read as a broken harness.
-  const gets = targets.filter((t) => !/^(POST|PUT|PATCH|DELETE)\s/i.test(t.trim()));
+  // A plan-gate viewer records on its own, non-gated page (viewerOwn) when it has one: a gated page makes
+  // kane-cli report blocker.paywall, and a replay that "fails" costs paid triage.
+  const own = b.kind === 'plan-gate' ? (b.viewerOwn?.ui ?? []).map((t) => resolveTemplate(t, values)) : [];
+  const gets = own.length ? own : targets.filter((t) => !/^(POST|PUT|PATCH|DELETE)\s/i.test(t.trim()));
   if (!gets.length) throw new Error(`notyours: cannot lock ${b.id}, it has no GET target for the viewer to record`);
   const viewerObjective = gets.map((t, n) => targetStep(t, n === 0)).join(', ');
   return [
@@ -162,6 +165,13 @@ export async function lockBoundary(stored: StoredBoundary, result: ProbeResult, 
   const b = stored.boundary;
   const log = deps.log ?? (() => {});
   assertLockable(b, result);
+
+  // --reauthor right after a fresh probe (`notyours lock --reauthor` proves first): its recordings are the new ones.
+  if (deps.reauthor && probeRunsPassed(b, result) && adoptProbeRecordings(deps.paths, b)) {
+    markLocked(stored);
+    log(`${b.id}: re-recorded from the fresh probe, 0 extra authoring runs`);
+    return;
+  }
 
   if (!deps.reauthor && hasLockedTests(deps.paths, b)) {
     if (!b.locked) markLocked(stored);

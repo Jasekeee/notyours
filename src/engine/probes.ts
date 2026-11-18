@@ -184,9 +184,13 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
       // report a paywall). Neither is the replay recording: a refused attempt would replay as "failed".
       const proAction = b.proAction!.objective;
       await both(cfg.parallel, () => kane(proAction, owner, ownerCtx), () => kane(proAction, viewer, viewerCtx));
-      // The free user's recording is a plain visit of the gated GET targets; the oracle makes the
-      // non-GET calls itself. Replays of this visit pass whether or not the gate holds.
-      if (urls.length) await kane(visitObjective(urls), viewer, viewerCtx, 'record');
+      // The free user's recording is a plain visit of a NON-gated page: its own page (viewerOwn) when the
+      // boundary has one. A gated page makes kane-cli report blocker.paywall, and a replay that "fails" costs
+      // paid triage. The oracle makes the gated and non-GET calls itself.
+      const ownUrls = (b.viewerOwn?.ui ?? []).map((u) => resolveTemplate(u, viewerCtx)).filter((u) => !/\{\{/.test(u)).map(safeObjectiveUrl);
+      const rec = ownUrls.length ? ownUrls : urls;
+      for (const u of rec) assertAllowed(u, cfg);
+      if (rec.length) await kane(visitObjective(rec), viewer, viewerCtx, 'record');
     } else if (urls.length) {
       await kane(visitObjective(urls), viewer, leakCtx, 'record');
     } else {
@@ -203,8 +207,8 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
       for (const [i, u] of t.api.entries()) out.push(await cap.visit(u, `${prefix}:api${i}`, 'api', cfg.maxAttempts));
       return out;
     };
-    const leakVisits = await visitAll(vcap, leakTargets, 'leak');
-    const ownerVisits = await visitAll(ocap, ownerTargets, 'octl');
+    // The viewer's leak visits and the owner's control visits run in different Chromes: do them in parallel.
+    const [leakVisits, ownerVisits] = await Promise.all([visitAll(vcap, leakTargets, 'leak'), visitAll(ocap, ownerTargets, 'octl')]);
     let viewerCtlVisits: Visit[] = [];
     let viewerOk: boolean;
     if (b.viewerOwn && b.kind === 'guest') notes.push('viewerOwn is ignored for guest boundaries (a guest has no own page)');
@@ -263,7 +267,7 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     for (const v of misfired) notes.push(`api target "${v.url}" answered ${v.status}: wrong method or path? (never counted as HELD)`);
     if (verdict === 'HELD' && misfired.length) verdict = 'HARNESS_BROKEN';
 
-    // Screenshots: every hit page and every control page.
+    // Screenshots: hit pages only (control pages are proven by their tokens; screenshots of them cost ~2-5 s each).
     const hitTags = new Set(judgedRecords.filter((r) => r.tokens.some((o) => !o.echo && leakTokens.has(o.token))).map((r) => r.tag));
     const isHitPage = (v: Visit) => hitTags.has(v.tag) || v.dom.some((o) => !o.echo && leakTokens.has(o.token));
     const screenshots: string[] = [];
@@ -271,8 +275,7 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
       const file = join(deps.runDir, `${b.id}-${who}-${v.tag.replace(/:/g, '-')}.png`);
       try { await v.page.screenshot({ path: file as `${string}.png`, fullPage: true }); screenshots.push(file); } catch { /* page gone */ }
     };
-    for (const v of judgedVisits) if (isHitPage(v) || v.tag.startsWith('vctl')) await shoot(v, viewer.id);
-    for (const v of ownerVisits) await shoot(v, owner.id);
+    for (const v of judgedVisits) if (isHitPage(v)) await shoot(v, viewer.id);
     for (const v of [...leakVisits, ...viewerCtlVisits, ...ownerVisits]) await v.page.close().catch(() => {});
 
     return finish(verdict, { controls: { ownerSeesOwnToken, viewerSeesOwnToken: viewerOk }, hits, screenshots });

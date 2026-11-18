@@ -296,7 +296,7 @@ export const actions: Actions = {
       fresh = await author(p, chosen);
     }
     const latest = latestResultsByBoundary(root);
-    const ratchet = getRatchet(root);
+    const ratchet = getRatchet(root, { reauthor: o.reauthor === true });
     let locked = 0;
     for (const b of chosen) {
       const r = fresh.find((x) => x.boundaryId === b.id) ?? latest.get(b.id);

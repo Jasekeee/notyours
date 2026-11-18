@@ -32,6 +32,20 @@ describe('lock', () => {
     kane = new FakeKane();
   });
 
+  it('--reauthor replaces existing recordings with the fresh probe\'s (0 extra runs)', async () => {
+    const p = notyoursPaths(project);
+    mkdirSync(p.tests, { recursive: true });
+    mkdirSync(p.kaneTests, { recursive: true });
+    for (const id of ['alice', 'bob']) {
+      writeFileSync(path.join(p.tests, `notes-cross-user_${id}_test.md`), 'old recording\n');
+      writeFileSync(path.join(p.kaneTests, `notes-cross-user_${id}_test.md`), 'fresh probe recording\n');
+    }
+    const ok = { ...heldWithUrl, kaneRuns: [{ ...mockKaneRun, identity: 'alice' }, { ...mockKaneRun, identity: 'bob' }] };
+    await ratchet({ reauthor: true }).lock(unlocked, ok);
+    expect(kane.authored).toEqual([]);
+    expect(readFileSync(testFile(p, 'notes-cross-user', 'bob'), 'utf8')).toContain('fresh probe recording');
+  });
+
   it('adopts the probe\'s own recordings (same names) instead of authoring: 0 runs', async () => {
     const p = notyoursPaths(project);
     mkdirSync(p.kaneTests, { recursive: true });
@@ -213,6 +227,31 @@ describe('replay', () => {
     project = tempProject([lockedBoundary, { ...lockedBoundary, id: 'not-locked', locked: false }]);
   });
   const engine = (r: ProbeResult): Engine => ({ runBoundary: async (b) => ({ ...r, boundaryId: b.id }) });
+
+  it('replays up to 2 boundaries at once, but never two that share a persona', async () => {
+    const disjoint = { ...lockedBoundary, id: 'other-pair', owner: 'guest', viewer: 'free_user' };
+    const shares = { ...lockedBoundary, id: 'shares-alice' };
+    project = tempProject([lockedBoundary, disjoint, shares]);
+    const active = new Set<string>();
+    const together: string[][] = [];
+    const oracle = { judge: async (b: Boundary) => {
+      active.add(b.id); together.push([...active].sort());
+      await new Promise((r) => setTimeout(r, 60));
+      active.delete(b.id);
+      return { ...mockHeldResult, boundaryId: b.id };
+    } };
+    const rs = await new RealRatchet({ projectDir: project, kane: new FakeKane(), oracle }).replay(mockIdentities);
+    expect(rs.map((r) => r.boundaryId)).toEqual([lockedBoundary.id, 'other-pair', 'shares-alice']); // order kept
+    expect(Math.max(...together.map((t) => t.length))).toBe(2); // the disjoint pair overlapped
+    expect(together.some((t) => t.includes(lockedBoundary.id) && t.includes('shares-alice'))).toBe(false); // never alice/bob twice at once
+  });
+
+  it('plan-gate viewers record on their own non-gated page (viewerOwn), so a replay never hits the paywall', () => {
+    const pg = { ...unlocked, kind: 'plan-gate' as const, viewer: 'free_user', proAction: { objective: 'Export' },
+      targets: { ui: ['http://127.0.0.1:3000/pro/export'], api: ['POST http://127.0.0.1:3000/api/export'] },
+      viewerOwn: { ui: ['http://127.0.0.1:3000/notes/2'], api: [] } };
+    expect(planLock(pg, heldWithUrl, mockIdentities)[1]?.objective).toBe('Go to http://127.0.0.1:3000/notes/2');
+  });
 
   it("one boundary's replay error does not discard the others' verdicts", async () => {
     project = tempProject([lockedBoundary, { ...lockedBoundary, id: 'second' }]);

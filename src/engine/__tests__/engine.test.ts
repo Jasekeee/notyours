@@ -197,7 +197,7 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
       expect(r.verdict).toBe('HELD');
       expect(r.controls).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true });
       expect(r.kaneRuns.map((k) => `${k.identity}:${k.status}`)).toEqual(['alice:passed', 'bob:passed']); // owner create + viewer visit
-      expect(r.screenshots.some((f) => f.endsWith('own-held-bob-vctl-ui0.png'))).toBe(true);
+      expect(r.screenshots).toEqual([]); // HELD: no hit pages, so no screenshots (control pages aren't screenshotted)
     }, 60_000);
 
     it('seeded cross-user, IDOR route: -> LEAK_VISIBLE with both controls', async () => {
@@ -222,7 +222,8 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
       const gated = await engine.runBoundary(b3('own-b3-gated', 'POST {{base_url}}/api/export'), ids, cfg);
       expect(gated.verdict).toBe('HELD');
       expect(gated.controls).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true });
-      expect(gated.kaneRuns.map((k) => k.identity).sort()).toEqual(['free_user', 'pro_user', 'pro_user']); // no free create
+      // no free create; pro create + both pro actions + the free user's recording visit of its own (non-gated) page
+      expect(gated.kaneRuns.map((k) => k.identity).sort()).toEqual(['free_user', 'free_user', 'pro_user', 'pro_user']);
       const leaky = await engine.runBoundary(b3('own-b3-leaky', 'POST {{base_url}}/api/export-leaky'), ids, cfg);
       expect(leaky.verdict).toBe('LEAK_PAYLOAD');
     }, 60_000);
