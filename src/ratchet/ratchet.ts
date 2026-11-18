@@ -16,8 +16,6 @@ export interface RatchetOptions {
   kane?: KaneClient;
   /** Defaults to engineOracle(createEngine()). */
   oracle?: Oracle;
-  /** Max authoring runs for this project (Kane credit budget; ~30 credits each). Default 8. */
-  maxAuthoringRuns?: number;
   reauthor?: boolean;
   log?: (line: string) => void;
   /**
@@ -70,7 +68,6 @@ export class RealRatchet implements Ratchet {
       config: this.config(),
       identities: this.opts.identities ?? loadIdentities(this.paths),
       kane: this.kane,
-      maxAuthoringRuns: this.opts.maxAuthoringRuns ?? 8,
       reauthor: this.opts.reauthor ?? false,
       ...(this.opts.log ? { log: this.opts.log } : {}),
       ...(pool ? { prepare: async (people: Identity[]) => { await Promise.all(people.map((i) => pool.get(i))); } } : {}),

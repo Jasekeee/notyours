@@ -49,6 +49,7 @@ function harness() {
     demo: rec('demo'),
     installHooks: rec('installHooks'),
     hook: rec('hook'),
+    budget: rec('budget'),
   };
   const codes: number[] = [];
   const parse = (...argv: string[]) => buildProgram(actions, { testing: true, onExit: (c) => codes.push(c) }).parseAsync(['node', 'notyours', ...argv]);
@@ -308,18 +309,33 @@ describe('allowHosts', () => {
 
 // ---------- credits, exit codes, doctor ----------
 
-describe('authoring needs a human', () => {
-  it('run/lock/demo/init/install-hooks refuse from a Claude Code agent shell (CLAUDECODE=1, no TTY)', () => {
-    expect(() => assertHuman('lock', { CLAUDECODE: '1' }, false)).toThrow(/won't run from a coding agent/);
-    expect(() => assertHuman('lock', { CLAUDECODE: '1' }, true)).not.toThrow(); // a person at a terminal
-    expect(() => assertHuman('lock', { CLAUDECODE: '1', NOTYOURS_ALLOW_AGENT_AUTHORING: '1' }, false)).not.toThrow(); // CI / explicit
-    expect(() => assertHuman('lock', {}, false)).not.toThrow(); // not inside Claude Code
+describe('daily authoring budget', () => {
+  it('`budget --set` refuses from a Claude Code agent shell (CLAUDECODE=1, no TTY): the agent cannot raise its own cap', () => {
+    expect(() => assertHuman('budget --set', { CLAUDECODE: '1' }, false)).toThrow(/won't run from a coding agent/);
+    expect(() => assertHuman('budget --set', { CLAUDECODE: '1' }, true)).not.toThrow(); // a person at a terminal
+    expect(() => assertHuman('budget --set', { CLAUDECODE: '1', NOTYOURS_ALLOW_AGENT_AUTHORING: '1' }, false)).not.toThrow(); // CI
+    expect(() => assertHuman('budget --set', {}, false)).not.toThrow(); // not inside Claude Code
   });
 
-  it('the guard never lets the agent set the override', () => {
-    const r = hookProject();
-    expect(guard({ tool_name: 'Bash', tool_input: { command: 'NOTYOURS_ALLOW_AGENT_AUTHORING=1 npx notyours run --dry-run' } }, r).allow).toBe(false);
-    expect(guard({ tool_name: 'Bash', tool_input: { command: 'export NOTYOURS_ALLOW_AGENT_AUTHORING=1' } }, r).allow).toBe(false);
+  it('`notyours budget` shows usage; `--set` writes budget.json (as a person) and parses', async () => {
+    const r = tmp('ny-budget-');
+    runInit(r, { url: 'http://localhost:3000' });
+    const was = process.env.CLAUDECODE;
+    delete process.env.CLAUDECODE;
+    try {
+      const { actions } = await import('./commands.js');
+      expect(await actions.budget({ cwd: r, set: 7 } as never)).toBe(0);
+      expect(JSON.parse(fs.readFileSync(path.join(r, '.notyours/budget.json'), 'utf8'))).toEqual({ dailyCap: 7 });
+      process.env.CLAUDECODE = '1';
+      await expect(actions.budget({ cwd: r, set: 99 } as never)).rejects.toThrow(/coding agent/);
+      expect(JSON.parse(fs.readFileSync(path.join(r, '.notyours/budget.json'), 'utf8'))).toEqual({ dailyCap: 7 });
+      expect(await actions.budget({ cwd: r } as never)).toBe(0); // showing it is fine for anyone
+    } finally {
+      if (was === undefined) delete process.env.CLAUDECODE; else process.env.CLAUDECODE = was;
+    }
+    const h = harness();
+    await h.parse('budget', '--set', '30');
+    expect(h.calls[0]).toEqual(['budget', expect.objectContaining({ set: 30 })]);
   });
 });
 
@@ -481,30 +497,21 @@ describe('hooks', () => {
     expect(g('Bash', { command: "sed -i '' '/guard/d' .claude/settings.json" }).allow).toBe(false);
   });
 
-  it('guard: notyours commands are parsed, not pattern-matched (no newline/comment/flag tricks)', () => {
-    const bad = [
-      'npx notyours run b1\necho --dry-run', 'npx notyours run b1 # --dry-run', 'npx notyours run b1 -- --dry-run',
-      'npx notyours demo', 'npx notyours init --url http://127.0.0.1:3077', 'npx notyours -C . lock', 'node dist/cli/index.js lock',
-      'npx notyours $(echo lock)', './node_modules/.bin/notyours lock', 'true && npx notyours install-hooks',
-      // from the security review: quoting, continuations, xargs, versioned/suffixed entry points, bare invocation
-      'npx notyours run "--dry-run x" b1', "npx notyours 'lock'", 'npx notyours run b1 \\\n--dry-run', 'echo lock | xargs npx notyours',
-      'npx notyours@0.1.0 lock', './node_modules/.bin/notyours.cmd lock', 'sh -c "npx notyours lock"', 'npx notyours',
-    ];
-    for (const c of bad) expect([c, g('Bash', { command: c }).allow]).toEqual([c, false]);
-    for (const c of ['nohup npx notyours lock', 'env FOO=1 notyours run b1', 'find . -exec notyours lock {} +', 'npm exec notyours lock',
-      '(npx notyours lock)', '{ npx notyours lock; }', 'npx notyours replay b1 > out.txt',
-      'npx . lock', 'node dist/cli lock', 'node ./dist/cli/ lock', 'tsx src/cli/index lock', 'npx -y notyours lock', 'FOO=1 npx notyours lock',
-      'if true; then npx notyours lock; fi', '! npx notyours lock', 'echo npx notyours lock | sh', 'npx notyours hook stop', 'npx notyours run b1 -- --dry-run',
-      'node dist/cli/index.js run b1']) expect([c, g('Bash', { command: c }).allow]).toEqual([c, false]);
-    const ok = ['npx notyours replay b1', 'npx notyours run --dry-run', 'npx notyours -C . run b1 --dry-run', 'npx notyours report --open', 'npx notyours doctor', 'git log --grep notyours', 'grep -rn notyours README.md', 'npx notyours replay b1 # then lock'];
-    for (const c of ok) expect([c, g('Bash', { command: c }).allow]).toEqual([c, true]);
+  it('guard: coding agents MAY run notyours authoring commands (the daily budget bounds the credits)', () => {
+    for (const c of ['npx notyours run b1', 'npx notyours lock', 'npx notyours lock --reauthor b1', 'npx notyours demo --quick',
+      'npx notyours init --url http://127.0.0.1:3077', 'npx notyours install-hooks', 'npx notyours replay b1', 'npx notyours budget']) {
+      expect([c, g('Bash', { command: c }).allow]).toEqual([c, true]);
+    }
   });
 
-  it('guard: the agent may replay but not author (run/lock spend credits and re-record the oracle)', () => {
-    for (const c of ['npx notyours lock --reauthor b1', 'notyours lock', 'npx notyours run b1', 'node dist/cli/index.js run && echo x'.replace('node dist/cli/index.js', 'npx notyours')]) {
-      expect(g('Bash', { command: c }).allow).toBe(false);
+  it('guard: the agent cannot raise or reset its own budget (budget.json, credits logs, the override env var)', () => {
+    for (const f of ['.notyours/budget.json', '.notyours/credits.log', '.notyours/runs/credits.jsonl']) {
+      expect([f, g('Write', { file_path: f }).allow]).toEqual([f, false]);
     }
-    for (const c of ['npx notyours replay b1', 'npx notyours run --dry-run', 'notyours report']) expect(g('Bash', { command: c }).allow).toBe(true);
+    expect(g('Bash', { command: 'echo {} > .notyours/budget.json' }).allow).toBe(false);
+    expect(g('Bash', { command: 'NOTYOURS_ALLOW_AGENT_AUTHORING=1 npx notyours budget --set 99' }).allow).toBe(false);
+    const deny = (mergeHookSettings({}, 'notyours').permissions as { deny: string[] }).deny;
+    expect(deny).toEqual(expect.arrayContaining(['Edit(./.notyours/budget.json)', 'Edit(./.notyours/credits.log)']));
   });
 
   it('guard: self-approving a new host is blocked', () => {

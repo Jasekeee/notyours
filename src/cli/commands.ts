@@ -4,6 +4,7 @@ import path from 'node:path';
 import pc from 'picocolors';
 import { getEngine, getRatchet } from './backends.js';
 import { sessionPool } from '../engine/index.js';
+import { budgetStatus, writeBudget } from '../shared/budget.js';
 import { createReport } from '../report/index.js';
 import { credits, headline, isLeak, parties, verdictExplanation, verdictGroup } from '../report/summary.js';
 import { fmtCredits } from '../report/html.js';
@@ -61,16 +62,16 @@ export function exitCodeFor(results: ProbeResult[]): number {
 export const AGENT_OVERRIDE_ENV = 'NOTYOURS_ALLOW_AGENT_AUTHORING';
 
 /**
- * Commands that spend Kane credits or change the oracle (run, lock, demo, init, install-hooks) refuse to start
- * from a coding agent's shell: Claude Code sets CLAUDECODE=1 and gives the agent no TTY. This is enforced here,
- * in the CLI, so no Bash spelling can get around it. A person (or CI) opts in with NOTYOURS_ALLOW_AGENT_AUTHORING=1,
- * which the guard never lets the agent set.
+ * Raising the daily authoring budget is a person's decision: `notyours budget --set` refuses from a coding agent's
+ * shell (Claude Code sets CLAUDECODE=1 and gives the agent no TTY), so an agent can't raise its own cap. CI (or a
+ * person scripting it) opts in with NOTYOURS_ALLOW_AGENT_AUTHORING=1, which the guard never lets the agent set.
+ * Agents MAY run run/lock/demo/init/install-hooks; those are bounded by the cap instead.
  */
 export function assertHuman(command: string, env: NodeJS.ProcessEnv = process.env, tty = process.stdin.isTTY === true): void {
   if (env.CLAUDECODE !== '1' || tty || env[AGENT_OVERRIDE_ENV] === '1') return;
   throw new UserError(
-    `notyours ${command} spends Kane credits or changes the oracle, so it won't run from a coding agent. ` +
-      `Run it yourself in a terminal (or set ${AGENT_OVERRIDE_ENV}=1 in CI). Replays are fine: npx notyours replay`,
+    `notyours ${command} raises the Kane credit budget, which is a person's decision, so it won't run from a coding agent. ` +
+      `Run it yourself in a terminal (or set ${AGENT_OVERRIDE_ENV}=1 in CI).`,
   );
 }
 
@@ -228,7 +229,6 @@ export const actions: Actions = {
   },
 
   async init(o) {
-    assertHuman('init');
     const root = enter(o);
     if (o.iOwnThis) await confirmOwnership([o.url, ...o.allowHost.map((h) => `http://${h}`)]);
     // Keep tokens/ports from a previous init (secrets.json), else from the committed identities.json, so
@@ -275,7 +275,6 @@ export const actions: Actions = {
       log(pc.dim('Dry run: nothing started.'));
       return 0;
     }
-    assertHuman('run');
     await ensureCredits(p.cfg, chosen.length);
     const started = new Date();
     const results = await author(p, chosen);
@@ -284,7 +283,6 @@ export const actions: Actions = {
   },
 
   async lock(ids, o) {
-    assertHuman('lock');
     const root = enter(o);
     const p = loadProject(root);
     const chosen = selectBoundaries(p.all, ids).map((b) => b.boundary);
@@ -354,18 +352,30 @@ export const actions: Actions = {
   },
 
   async demo(o) {
-    assertHuman('demo');
     const { runDemo } = await import('./demo.js');
     return runDemo(o);
   },
 
   async installHooks(o) {
-    assertHuman('install-hooks');
     const root = enter(o);
     const r = installHooks(root, o.cli);
     log(`${pc.green('✓')} ${path.relative(root, r.settingsFile)}  PreToolUse guard, PostToolUse post-tool, Stop replay  ${pc.dim(`(${o.cli} hook …)`)}`);
     log(`${pc.green('✓')} ${path.relative(root, r.commandFile)}  /notyours-map`);
     log(pc.dim('The guard keeps locked boundaries, Kane recordings, results and secrets read-only for the agent.'));
+    return 0;
+  },
+
+  async budget(o) {
+    const root = enter(o);
+    const dir = nyPaths(root).dir;
+    if (o.set !== undefined) {
+      assertHuman('budget --set');
+      if (!Number.isInteger(o.set) || o.set < 0) throw new UserError(`--set needs a whole number >= 0 (got ${o.set})`);
+      writeBudget(dir, o.set);
+      log(`${pc.green('✓')} daily authoring budget set to ${o.set} Kane runs (.notyours/budget.json)`);
+    }
+    const b = budgetStatus(dir);
+    log(`Authoring Kane runs today: ${b.used}/${b.cap} (${b.left} left). Replays don't count. Raise it (a person): notyours budget --set N`);
     return 0;
   },
 

@@ -8,6 +8,7 @@ import type { Boundary, Engine, ProbeResult } from '../types.js';
 import { createRatchet, MockRatchet, RealRatchet } from './index.js';
 import { KaneCli, redactKaneText, parseAuthorRun, parseBalance, parseReplay } from './kane.js';
 import { planLock, probeRunsPassed, resolveTemplate } from './lock.js';
+import { writeBudget } from '../shared/budget.js';
 import { notyoursPaths, testFile } from './paths.js';
 import { classify, engineOracle } from './replay.js';
 import { loadIdentities, logCredits, readCreditLog } from './store.js';
@@ -111,16 +112,22 @@ describe('lock', () => {
     expect(kane.authored).toHaveLength(0);
   });
 
-  it('defaults to a budget of 8 authoring runs (4 boundaries)', async () => {
+  it('uses the per-project daily budget (default 20): authoring stops at the cap', async () => {
     const p = notyoursPaths(project);
-    for (let n = 0; n < 7; n++) logCredits(p, { ts: MOCK_TS, kind: 'author', name: `x${n}`, identity: 'alice', status: 'passed', credits: 30 });
-    await expect(ratchet().lock(unlocked, heldWithUrl)).rejects.toThrow(/budget reached \(7\/8/);
+    const now = new Date().toISOString();
+    for (let n = 0; n < 19; n++) logCredits(p, { ts: now, kind: 'author', name: `x${n}`, identity: 'alice', status: 'passed', credits: 30 });
+    await expect(ratchet().lock(unlocked, heldWithUrl)).rejects.toThrow(/Daily Kane authoring budget reached: 19\/20/);
     expect(kane.authored).toHaveLength(0);
   });
 
-  it('enforces the authoring-run budget', async () => {
-    await expect(ratchet({ maxAuthoringRuns: 1 }).lock(unlocked, heldWithUrl)).rejects.toThrow(/budget/);
-    expect(kane.authored).toHaveLength(0);
+  it('yesterday\'s runs do not count; a raised cap lets authoring continue', async () => {
+    const p = notyoursPaths(project);
+    for (let n = 0; n < 25; n++) logCredits(p, { ts: '2020-01-01T12:00:00.000Z', kind: 'author', name: `old${n}`, identity: 'alice', status: 'passed', credits: 30 });
+    writeBudget(p.dir, 1);
+    await expect(ratchet().lock(unlocked, heldWithUrl)).rejects.toThrow(/0\/1/);
+    writeBudget(p.dir, 2);
+    await ratchet().lock(unlocked, heldWithUrl);
+    expect(kane.authored).toHaveLength(2);
   });
 
   it('stops after a failed owner recording (viewer credits not spent), boundary stays unlocked', async () => {

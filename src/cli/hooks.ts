@@ -76,6 +76,9 @@ const READONLY_PATHS = [
   // Hook state and recordings: clearing dirty.json or attempts.json would let the agent skip the Stop replay.
   `${NY_DIR}/dirty.json`,
   `${NY_DIR}/attempts.json`,
+  // The daily authoring budget and the logs it is counted from: an agent must not raise or reset its own cap.
+  `${NY_DIR}/budget.json`,
+  `${NY_DIR}/credits.log`,
   `${NY_DIR}/tests`,
   '.testmuai',
   // The hooks themselves: an agent that could edit these could switch the guard off.
@@ -123,72 +126,6 @@ export function hasDangerousGlob(raw: string): boolean {
   return /(?:^|[\s/=><(;|&:])\.[^\s]*[*?[{]/.test(unquoted) || /\{[^}\s]*(?:,|\.\.)[^}\s]*\}/.test(unquoted);
 }
 
-/** notyours subcommands an agent may run itself; everything else (run, lock, demo, init, hook, install-hooks) is the human's. */
-const AGENT_NOTYOURS = new Set(['replay', 'report', 'map', 'doctor']);
-/** A token that starts notyours: npx notyours, notyours@1.2, ./node_modules/.bin/notyours(.cmd), node .../cli/index.js */
-const NOTYOURS_ENTRY_RE = /(?:^|\/)notyours(?:@[\w.^~<>=-]*)?(?:\.(?:c?js|mjs|cmd|ps1|exe))?$|(?:^|\/)(?:dist|src)\/cli(?:\/index(?:\.(?:c?js|mjs|ts))?)?\/?$|(?:^|\/)cli\/index(?:\.(?:c?js|mjs|ts))?$/i;
-/** The only commands that may carry the word notyours as an argument (they read text, they don't run it). */
-const TEXT_READERS = new Set(['git', 'grep', 'rg', 'cat', 'head', 'tail', 'ls', 'wc', 'jq']);
-/** Plain argv words only: no quoting, expansion or redirection can hide inside an allowed invocation. */
-const PLAIN_ARG_RE = /^[A-Za-z0-9._\/:=@+-]+$/;
-
-/**
- * Deny-by-default check of every notyours invocation in a Bash command, decided on the RAW command:
- * a segment (split on newlines, `;`, `&`, `|`) that invokes notyours must be exactly
- * `[npx] <entry> [-C|--cwd <dir>] <replay|report|map|doctor|run --dry-run> [plain args]`.
- * Quotes, backslashes, `$`, backticks, xargs/sh -c/eval/exec near notyours, or no visible subcommand: denied.
- * Returns a deny reason, or undefined when the command may run.
- */
-export function agentNotyoursDenied(raw: string): string | undefined {
-  const human = '`notyours run/lock/demo/init` author Kane recordings (credits) or change the oracle: ask the user to run them. Replays are fine: npx notyours replay';
-  const invokes = (seg: string) => /(?:^|[\s;&|])npx\s+\.(?:\s|$)/.test(seg) || seg.split(/\s+/).some((w) => NOTYOURS_ENTRY_RE.test(w.replace(/^['"]+|['"]+$/g, '')));
-  if (!invokes(raw.replace(/\\\n/g, ' ').replace(/['"\\]/g, ''))) return undefined; // notyours only mentioned as data, or not at all
-  if (/['"\\$`(){}]/.test(raw) || /\b(?:xargs|eval|exec)\b|\b(?:ba|z|da)?sh\s+-c\b/.test(raw)) {
-    return 'notyours commands from the agent must be plain words (no quotes, backslashes, $, backticks, ( ) { }, xargs, sh -c, eval or exec).';
-  }
-  // Fail-closed backstop next to the parser (comments stripped, every entry form): an authoring subcommand
-  // anywhere after a notyours entry is denied; `run` only with --dry-run before any `--`.
-  const flat = raw.split('\n').map((l) => l.replace(/(^|\s)#.*$/, '')).join(' ').replace(/\s+/g, ' ');
-  const words0 = flat.split(' ');
-  const entryAt = words0.findIndex((w) => NOTYOURS_ENTRY_RE.test(w)) >= 0 ? words0.findIndex((w) => NOTYOURS_ENTRY_RE.test(w)) : words0.findIndex((w, k) => w === '.' && words0[k - 1] === 'npx');
-  if (entryAt >= 0) {
-    const after = words0.slice(entryAt + 1);
-    if (after.some((w) => /^(?:lock|demo|init|install-hooks|hook)$/i.test(w))) return human;
-    const r = after.findIndex((w) => /^run$/i.test(w));
-    if (r >= 0) {
-      const rest = after.slice(r + 1);
-      const dd = rest.indexOf('--');
-      if (!(dd < 0 ? rest : rest.slice(0, dd)).includes('--dry-run')) return human;
-    }
-  }
-  if (/\|\s*(?:ba|z|da|k)?sh\b/.test(raw)) return 'piping into a shell next to a notyours command is not allowed for the agent.';
-  for (const segRaw of raw.split(/[\n;&|]+/)) {
-    const seg = segRaw.replace(/(^|\s)#.*$/, '').trim();
-    if (!seg || !invokes(seg)) continue;
-    const words = seg.split(/\s+/);
-    let i = 0;
-    while (i < words.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]!) || ['!', 'then', 'do', 'else', 'elif', 'time', 'coproc', 'if', 'while', 'until'].includes(words[i]!))) i++;
-    if (words[i] === 'npx' || words[i] === 'node' || words[i] === 'tsx') {
-      // `npx .` / `npx -y …` / `node --flag …`: anything but a plain entry right after the runner is denied.
-      if (words[i] === 'npx' && (words[i + 1] === '.' || words[i + 1]?.startsWith('-'))) return human;
-      i++;
-    }
-    if (!NOTYOURS_ENTRY_RE.test(words[i] ?? '')) {
-      // notyours outside command position: fine only as data for a small set of text readers.
-      if (TEXT_READERS.has((words[i] ?? '').replace(/^.*\//, '')) && !words.includes('-exec') && !words.includes('-execdir')) continue;
-      return human;
-    }
-    i++;
-    if (words[i] === '-C' || words[i] === '--cwd') i += 2;
-    const sub = words[i];
-    const args = words.slice(i + 1);
-    if (!sub || !args.every((a) => PLAIN_ARG_RE.test(a))) return human;
-    if (sub === 'run') { if (args.includes('--dry-run') && !args.includes('--')) continue; return human; }
-    if (!AGENT_NOTYOURS.has(sub)) return human;
-  }
-  return undefined;
-}
-
 export function guard(input: HookInput, root: string): GuardResult {
   const tool = input.tool_name ?? '';
   const cwd = input.cwd ?? root;
@@ -212,11 +149,8 @@ export function guard(input: HookInput, root: string): GuardResult {
     // Globs at the top of .notyours/ (cat .notyours/s*) or recursive reads of the whole folder (grep -r x .notyours).
     if (/\.notyours\/[^\s/'"]*[*?[{]/.test(cmd)) return deny(secretMsg);
     if (/\.notyours\/?(?=$|[\s'";|&)])/.test(cmd) && /\b(?:grep|rg|ag|find|tar|zip|cp|rsync|cat|less|head|tail|xxd|strings|base64|scp|curl)\b/.test(cmd)) return deny(secretMsg);
-    // The human-only override for authoring commands (see assertHuman in commands.ts) is never the agent's to set.
+    // The person/CI override for raising the budget (see assertHuman in commands.ts) is never the agent's to set.
     if (/notyours_allow_agent_authoring/.test(cmd)) return deny('NOTYOURS_ALLOW_AGENT_AUTHORING is for a person or CI, not the coding agent.');
-    // Authoring spends Kane credits and (re)records the oracle: the human's call, never the agent's.
-    const notyoursDenied = agentNotyoursDenied(raw); // decided on the raw command, not the normalised one
-    if (notyoursDenied) return deny(notyoursDenied);
     if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
     }
@@ -295,6 +229,8 @@ export const PERMISSION_DENY = [
   'Edit(./.testmuai/**)',
   'Edit(./.notyours/dirty.json)',
   'Edit(./.notyours/attempts.json)',
+  'Edit(./.notyours/budget.json)',
+  'Edit(./.notyours/credits.log)',
   'Edit(./.notyours/tests/**)',
   'Edit(./.claude/**)',
 ];

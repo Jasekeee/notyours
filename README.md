@@ -169,8 +169,9 @@ This merges three hooks and a few `permissions.deny` rules (for the secrets and 
 - **post-tool** (PostToolUse): when the agent edits a file in a boundary's `surface`, that boundary
   is marked for re-checking.
 - **stop** (Stop): before the agent finishes, changed locked boundaries are replayed (no authoring).
-  A leak blocks the stop and hands the agent the evidence and the code to fix. Unlocked
-  boundaries are never re-authored automatically; the agent is told to ask you first.
+  A leak blocks the stop and hands the agent the evidence and the code to fix. The hook
+  itself never authors; unlocked boundaries are proved with `notyours run` (the agent may run it, within the
+  daily budget below).
 
 The guard is a guardrail for a cooperating agent, not a sandbox. It also keeps the hook config
 (`.claude/settings*.json`) read-only, and in Bash it only allows read-only commands (ls, cat, grep,
@@ -188,8 +189,25 @@ passwords, for your identities.
 | `doctor`, `map`, `report`, `run --dry-run` | 0 |
 
 notyours refuses to start authoring runs when your balance is below `creditFloor` (default 300,
-in `.notyours/config.yaml`), and logs every Kane run's `credits_consumed` to
-`.notyours/runs/credits.jsonl`.
+in `.notyours/config.yaml`), and logs every Kane run's `credits_consumed` (`.notyours/credits.log`,
+`.notyours/runs/credits.jsonl`).
+
+### Coding agents and the daily budget
+
+Your coding agent **may** drive notyours end to end: `notyours run`, `lock`, `demo`, `init` and
+`install-hooks` work from Claude Code. That's the point: the agent and Kane interact. Credits are bounded by
+a **per-project daily cap on authoring Kane runs** (default **20**, in `.notyours/budget.json`). Replays
+don't count. When the cap is reached, the command prints what happened and how to continue, and exits
+non-zero.
+
+```sh
+npx notyours budget          # today's authoring runs vs the cap
+npx notyours budget --set 40 # raise it (a person only)
+```
+
+`budget --set` refuses to run from a coding agent's shell (Claude Code sets `CLAUDECODE=1` and gives the
+agent no TTY), so an agent can't raise its own cap. CI can opt in with `NOTYOURS_ALLOW_AGENT_AUTHORING=1`.
+The guard never lets the agent set that variable, or edit `budget.json` or the credit logs it is counted from.
 
 ## Limits
 

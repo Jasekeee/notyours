@@ -5,15 +5,14 @@ import type { Boundary, Config, Identity, KaneRun, ProbeResult } from '../types.
 import { safeObjectiveUrl } from '../engine/probes.js';
 import { cdpEndpoint, type KaneClient } from './kane.js';
 import { testFile, testName, testOutputDir, type NotyoursPaths } from './paths.js';
-import { logCredits, markLocked, readCreditLog, type StoredBoundary } from './store.js';
+import { assertBudget } from '../shared/budget.js';
+import { logCredits, markLocked, type StoredBoundary } from './store.js';
 
 export interface LockDeps {
   paths: NotyoursPaths;
   config: Config;
   identities: Identity[];
   kane: KaneClient;
-  /** Hard cap on authoring runs across the project (counted from the credits log). */
-  maxAuthoringRuns: number;
   /** Re-record even when tests already exist (`notyours lock --reauthor <id>`). */
   reauthor?: boolean;
   log?: (line: string) => void;
@@ -181,10 +180,8 @@ export async function lockBoundary(stored: StoredBoundary, result: ProbeResult, 
   const plans = planLock(b, result, deps.identities);
   if (deps.prepare) await deps.prepare(plans.map((p) => p.identity));
 
-  const used = readCreditLog(deps.paths).filter((e) => e.kind === 'author').length;
-  if (used + plans.length > deps.maxAuthoringRuns) {
-    throw new Error(`notyours: authoring budget reached (${used}/${deps.maxAuthoringRuns} runs used, ${b.id} needs ${plans.length})`);
-  }
+  // Per-project daily authoring cap (.notyours/budget.json), shared with the engine's runs.
+  assertBudget(deps.paths.dir, plans.length);
   const balance = await deps.kane.balance(deps.paths.root);
   if (balance === undefined) throw new Error('notyours: could not read the Kane credit balance; not authoring');
   if (balance < deps.config.creditFloor) {

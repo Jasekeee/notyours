@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execa } from 'execa';
 import { KaneRunSchema } from '../schemas.js';
+import { assertBudget } from '../shared/budget.js';
 import type { Config, Identity, KaneRun, KaneRunStatus } from '../types.js';
 import { cdpEndpoint } from './chrome.js';
 
@@ -104,6 +105,7 @@ export function logCredits(stateDir: string, entry: Record<string, unknown>): vo
  */
 export const runKane: KaneRunner = async (objective, identity, vars, opts) => {
   if (opts.name !== undefined && !/^[a-zA-Z0-9_-]+$/.test(opts.name)) throw new Error(`Invalid Kane test name "${opts.name}" (allowed: [a-zA-Z0-9_-]+).`);
+  assertBudget(opts.stateDir); // per-project daily authoring cap (.notyours/budget.json)
   await assertCreditFloor(opts.cfg.creditFloor);
   if (opts.name) {
     // A fresh recording: never let kane-cli build on a stale local test of the same name.

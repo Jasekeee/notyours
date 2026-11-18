@@ -47,6 +47,12 @@ export interface Actions {
   demo(o: DemoOpts): Promise<number>;
   installHooks(o: InstallHooksOpts): Promise<number>;
   hook(event: HookEvent, o: GlobalOpts): Promise<number>;
+  budget(o: BudgetOpts): Promise<number>;
+}
+
+export interface BudgetOpts extends GlobalOpts {
+  /** New daily cap on authoring Kane runs (a person only). */
+  set?: number;
 }
 
 export const DEFAULT_HOOK_CLI = 'npx notyours';
@@ -113,6 +119,12 @@ export function buildProgram(actions: Actions, { onExit = (c) => void (process.e
     .description('replay locked boundaries (0 credits, about a second each)')
     .argument('[ids...]', 'boundary ids (default: all locked)')
     .action(async (ids: string[], _o, cmd: Command) => done(actions.replay(ids, g(cmd))));
+
+  program
+    .command('budget')
+    .description("show today's authoring Kane runs vs the daily cap; --set N raises it (a person only, not an agent)")
+    .option('--set <n>', 'new daily cap on authoring Kane runs (default 20)', (v) => Number(v))
+    .action(async (o: { set?: number }, cmd: Command) => done(actions.budget({ ...g(cmd), ...(o.set !== undefined ? { set: o.set } : {}) })));
 
   program
     .command('report')

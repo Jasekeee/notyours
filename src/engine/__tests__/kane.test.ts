@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ConfigSchema } from '../../schemas.js';
 import { mockIdentities } from '../../mocks/fixtures.js';
 import { CreditFloorError, lastRunEnd, runKane, statusFromExit } from '../kane.js';
+import { budgetStatus, writeBudget } from '../../shared/budget.js';
 
 const fake = fileURLToPath(new URL('./fake-kane.mjs', import.meta.url));
 const stateDir = mkdtempSync(join(tmpdir(), 'ny-kane-'));
@@ -55,6 +56,17 @@ describe('kane', () => {
     await runKane('x', alice, {}, { cfg, stateDir, cwd: stateDir, name: 'b1-notes_owner' });
     expect(JSON.parse(readFileSync(debugFile, 'utf8')).name).toBe('b1-notes_owner');
     await expect(runKane('x', alice, {}, { cfg, stateDir, name: 'bad name!' })).rejects.toThrow(/Invalid Kane test name/);
+  });
+
+  it('refuses to start when the daily authoring budget is used up (default 20; yesterday does not count)', async () => {
+    process.env.NOTYOURS_KANE_BIN = fake;
+    const dir = mkdtempSync(join(tmpdir(), 'ny-budget-'));
+    writeBudget(dir, 2);
+    await runKane('x', alice, {}, { cfg, stateDir: dir, cwd: dir });
+    await runKane('x', alice, {}, { cfg, stateDir: dir, cwd: dir });
+    await expect(runKane('x', alice, {}, { cfg, stateDir: dir, cwd: dir })).rejects.toThrow(/Daily Kane authoring budget reached: 2\/2.*notyours budget --set/);
+    expect(budgetStatus(dir, new Date(Date.now() + 86_400_000 * 2)).used).toBe(0);
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('refuses to start below the credit floor', async () => {
