@@ -9,215 +9,304 @@
 <meta property="og:description" content="Isolation tests for your own app, in real browsers. A canary token decides, not an AI.">
 <meta property="og:image" content="https://raw.githubusercontent.com/Jasekeee/notyours/main/assets/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
-<style>
-  :root {
-    --bg: #fbfaf7;
-    --fg: #1c1b19;
-    --muted: #5d5a53;
-    --line: #e4e1d9;
-    --card: #ffffff;
-    --accent: #1f5f4a;
-    --leak: #a33a2b;
-    --held: #1f5f4a;
-    --code-bg: #f1efe9;
-    --max: 880px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #161614;
-      --fg: #ecebe6;
-      --muted: #a8a59c;
-      --line: #34332f;
-      --card: #1d1d1a;
-      --accent: #7fc3a6;
-      --leak: #e8836f;
-      --held: #7fc3a6;
-      --code-bg: #232320;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #161614;
-    --fg: #ecebe6;
-    --muted: #a8a59c;
-    --line: #34332f;
-    --card: #1d1d1a;
-    --accent: #7fc3a6;
-    --leak: #e8836f;
-    --held: #7fc3a6;
-    --code-bg: #232320;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--fg);
-    font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  main { max-width: var(--max); margin: 0 auto; padding: 0 16px; }
-  section { padding: 40px 0; border-top: 1px solid var(--line); }
-  h1 { font-size: clamp(30px, 6vw, 46px); line-height: 1.15; margin: 56px 0 12px; letter-spacing: -0.02em; }
-  h2 { font-size: 24px; margin: 0 0 14px; }
-  h3 { font-size: 18px; margin: 22px 0 8px; }
-  p { margin: 0 0 14px; }
-  .lead { font-size: 20px; color: var(--muted); max-width: 46em; }
-  .muted { color: var(--muted); font-size: 15px; }
-  a { color: var(--accent); }
-  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
-  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
-  pre {
-    background: var(--code-bg);
-    padding: 14px 16px;
-    border-radius: 8px;
-    overflow-x: auto;
-    margin: 0 0 14px;
-    white-space: pre;
-  }
-  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin: 26px 0 6px; }
-  .btn {
-    display: inline-block;
-    padding: 10px 16px;
-    border-radius: 8px;
-    border: 1px solid var(--accent);
-    text-decoration: none;
-    color: var(--accent);
-    font-weight: 600;
-  }
-  .btn.primary { background: var(--accent); color: var(--bg); }
-  table { width: 100%; border-collapse: collapse; margin: 6px 0 14px; font-size: 15px; }
-  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-weight: 600; color: var(--muted); }
-  .leak { color: var(--leak); font-weight: 600; }
-  .held { color: var(--held); font-weight: 600; }
-  .grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
-  @media (min-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
-  .report-frame {
-    width: 100%;
-    height: 640px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--card);
-  }
-  footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 15px; }
-  ul { padding-left: 20px; margin: 0 0 14px; }
-  li { margin: 4px 0; }
-</style>
+<meta name="theme-color" content="#0A0A0B">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3.5' fill='%23FFD60A'/%3E%3Cpath d='M4 5.5h8M4 10.5h8' stroke='%231A1500' stroke-width='1.8'/%3E%3C/svg%3E">
+<link rel="preload" href="assets/fonts/Geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/GeistMono-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-<main>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h.5"/></symbol>
+  <symbol id="i-replay" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 6a4 4 0 1 0 1.2-2.8M2 1.5v2.2h2.2"/></symbol>
+</svg>
+<a class="skip" href="#loop">Skip to content</a>
 
-<header>
-  <h1>Prove your users' data stays theirs.</h1>
-  <p class="lead">notyours runs your app on localhost, signs in as several users in separate real browsers, and checks
-  whether one user's data ever reaches another user's screen or network traffic. A canary token decides. No AI judges the page.</p>
-  <div class="cta">
-    <a class="btn primary" href="#report">See a real result</a>
-    <a class="btn" href="https://github.com/Jasekeee/notyours">View on GitHub</a>
+<div class="announce"><a href="https://github.com/Jasekeee/notyours/blob/main/CHANGELOG.md"><span class="ver">v0.2.0</span><span>init wizard · Stop hook restarts your app first</span><span class="go">Changelog</span></a></div>
+
+<header class="hero">
+  <div class="grid-bg"></div>
+  <div class="wrap">
+    <nav class="nav" aria-label="Main">
+      <a class="brand" href="#"><span class="brand-mark" aria-hidden="true"></span>notyours</a>
+      <div class="nav-links"><a class="hide-sm" href="#how">How it works</a><a class="hide-sm" href="#loop">The loop</a><a class="hide-sm" href="#report">Report</a><a class="hide-sm" href="#limits">Limits</a><a href="https://github.com/Jasekeee/notyours">GitHub</a></div>
+    </nav>
+    <div class="hero-top">
+      <h1>Prove your users' data stays theirs.</h1>
+      <p class="lede">notyours signs in to your app as several users and plants a canary token in each account. If one user's token reaches another user's browser, your coding agent can't stop until the server is fixed.</p>
+      <div class="row">
+        <div class="install"><span class="prompt" aria-hidden="true">$</span><code id="cmd-hero">npx github:Jasekeee/notyours init</code>
+          <button class="copy" type="button" data-copy="cmd-hero" aria-label="Copy install command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+        <a class="btn btn-primary" href="#quickstart">Try the demo</a><a class="btn btn-ghost" href="https://github.com/Jasekeee/notyours">View on GitHub</a>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="glow" aria-hidden="true"></div>
+      <div class="pair">
+        <figure class="win alice" aria-label="Alice's browser, showing Alice's own note">
+          <div class="bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="url">127.0.0.1:3077/notes/1001</span><span class="who"><span class="av" aria-hidden="true">A</span>Alice</span></div>
+          <div class="app">
+            <div class="app-h"><b>Jotter</b><span>alice@jotter.test</span></div>
+            <div class="note"><h3>Travel documents</h3><div class="meta">alice@jotter.test · Nov 2, 2026</div><p>Passport no. <span class="tok">NY-ALICE-JOTTERSEED2A</span></p></div>
+            <div class="cap"><span class="chip chip-held">control</span>Alice sees their own token</div>
+          </div>
+        </figure>
+        <figure class="win bob" aria-label="Bob's browser, showing Alice's note: a leak">
+          <div class="bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="url">127.0.0.1:3077/notes/1001</span><span class="who"><span class="av" aria-hidden="true">B</span>Bob</span></div>
+          <div class="app">
+            <div class="app-h"><b>Jotter</b><span>bob@jotter.test</span></div>
+            <div class="note"><h3>Travel documents</h3><div class="meta">alice@jotter.test · Nov 2, 2026</div><p>Passport no. <span class="tok">NY-ALICE-JOTTERSEED2A</span></p></div>
+            <div class="cap"><span class="chip chip-leak">leak</span>Alice's canary token appeared on Bob's screen</div>
+          </div>
+          <div class="stamp" aria-hidden="true">LEAK<small>VISIBLE</small></div>
+        </figure>
+      </div>
+      <div class="term verdict"><div class="term-body"><span class="l t-leak">notyours: LEAK in boundary b1-notes-cross-user (cross-user), attempt 1/3</span><span class="l">  bob saw alice's data · Token: <span class="tok">NY-ALICE-JOTTERSEED2A</span> · Suspected files: routes/notes.js</span><span class="l t-you">Fix server-side; do not edit tests.</span></div></div>
+      <p class="seeded">Jotter is the bundled demo app. Its bugs are seeded on purpose.</p>
+    </div>
+
+    <div class="works" aria-label="Works with"><span>works with</span><span>Claude Code</span><span>Kane CLI</span><span>Express</span><span>Next.js</span></div>
   </div>
 </header>
 
-<section id="install">
-  <h2>Install and run the demo</h2>
-  <p>Needs Node 22+, Google Chrome, and <a href="https://www.testmuai.com/kane-cli/">kane-cli</a> 0.10.0, logged in.
-  notyours isn't on npm yet, so run it from GitHub:</p>
-<pre><code>npx github:Jasekeee/notyours doctor        # checks Node, Chrome, kane-cli and login
-npx github:Jasekeee/notyours demo --quick  # one real leak in the bundled demo app, about 5 minutes</code></pre>
-  <p class="muted">Measured on kane-cli 0.10.0: the quick demo took 4 m 48 s and 61.69 Kane credits. Full steps and
-  the credit model are in the <a href="https://github.com/Jasekeee/notyours#readme">README</a>.</p>
-</section>
-
-<section id="report">
-  <h2>A real result, without running anything</h2>
-  <p>This is the redacted report from a full demo run. It has no screenshots, emails, account ids or links.
-  Two boundaries leaked, two held.</p>
-  <iframe class="report-frame" src="sample-report/report.html" title="Sample notyours report"></iframe>
-  <p class="muted"><a href="sample-report/report.html">Open the report on its own</a>.</p>
-</section>
-
-<section id="why">
-  <h2>Why</h2>
-  <p>OWASP ranks Broken Access Control first in its <a href="https://owasp.org/Top10/2025/A01_2025-Broken_Access_Control/">Top 10:2025</a>.
-  The usual causes are small: a query without <code>where owner_id = ?</code>, a list endpoint that returns every row,
-  a paid page that hides its button but still serves the data.</p>
-  <p>Unit tests rarely catch these, because they run one user at a time. notyours signs in as several users at once and
-  checks what each one can actually see.</p>
-</section>
-
-<section id="how">
-  <h2>How it works</h2>
-<pre><code>  map       static scan of Express / Next.js routes  ─▶  draft boundaries
-     │
-  agent     your coding agent reads the code, writes real boundaries
-     │
-  run       Kane as Alice ─▶ creates a record containing NY-ALICE-…
-            Kane as Bob   ─▶ visits the targets      ◀── live DOM + network capture
-     │
-  oracle    did NY-ALICE-… reach Bob?  ─▶  LEAK · HELD · HARNESS
-     │
-  lock      record it; every later check is a 0-credit replay
-     │
-  report    report.html + report.json  ─▶  leaks go back to your coding agent</code></pre>
-  <p>Kane CLI drives one Chrome per user. Each owner's record carries a token such as <code>NY-ALICE-K7Q2MZX4P3RA</code>.
-  If that token shows up in another user's page or network responses, it's a leak.</p>
-</section>
-
-<section id="verdicts">
-  <h2>Verdicts</h2>
-  <table>
-    <thead><tr><th>Verdict</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td class="leak">LEAK (visible)</td><td>The owner's token appeared in the viewer's rendered page.</td></tr>
-      <tr><td class="leak">LEAK (in payload)</td><td>The token reached the viewer's browser in a network response, even though the page didn't show it.</td></tr>
-      <tr><td class="held">HELD</td><td>The viewer never received the token, and both positive controls passed.</td></tr>
-      <tr><td>HARNESS</td><td>A positive control failed, so the probe proves nothing. Never counted as a pass.</td></tr>
-    </tbody>
-  </table>
-  <p>The token decides. Kane's own pass/fail is never used as a verdict. <code>run</code> and <code>replay</code> exit 1 on a leak,
-  so they work as a CI gate.</p>
-</section>
-
-<section id="catches">
-  <h2>What it catches, and what it doesn't</h2>
-  <div class="grid">
-    <div class="card">
-      <h3>Measured on the demo app</h3>
-      <ul>
-        <li>Bob opens Alice's note: <span class="leak">LEAK</span></li>
-        <li>Guest opens notes: <span class="held">HELD</span></li>
-        <li>Free user gets the Pro export: <span class="leak">LEAK</span></li>
-        <li>Bob sweeps the note list: <span class="held">HELD</span></li>
-      </ul>
-      <p class="muted">Three seeded bugs in a small demo app, kane-cli 0.10.0.</p>
+<main>
+<section class="sec alt" id="loop" aria-labelledby="loop-h">
+  <div class="wrap">
+    <div class="sec-h">
+      <span class="label">// the loop</span>
+      <h2 id="loop-h">Your agent can't finish while a user's data leaks.</h2>
+      <p>Recorded on the demo app: Claude Code adds a feature, the Stop hook replays the locked boundaries, the agent fixes the server, and the replay passes.</p>
     </div>
-    <div class="card">
-      <h3>Not covered</h3>
-      <ul>
-        <li>Anything you didn't write a boundary for</li>
-        <li>CAPTCHA, OAuth-only and SMS logins</li>
-        <li>Tokens inside images and PDFs</li>
-        <li>Database policies (it tests what the running app returns)</li>
-        <li>Hosts other than localhost, unless you allow them</li>
-      </ul>
+    <div class="bento">
+      <div class="card big" data-term-scope>
+        <div class="glow" aria-hidden="true"></div>
+        <figure class="term" data-term style="margin:0" aria-label="Recorded Claude Code session with the notyours Stop hook">
+          <div class="term-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">claude · jotter demo (bugs seeded)</span>
+            <button class="replay-btn" type="button" data-replay><svg aria-hidden="true"><use href="#i-replay"/></svg>Replay</button></div>
+<div class="term-body"><span class="l t-you" data-type data-delay="0"><span class="t-dim">&gt; </span><span data-typed>add a 'duplicate note' button on the note page</span><span class="caret"></span></span><span class="l t-mut" data-delay="500">● Edit routes/notes.js</span><span class="l t-dim" data-delay="420">● Stop hook: notyours replays b1, b2, b4 …</span><span class="l" data-delay="900"> </span><span class="l t-leak" data-delay="60">notyours: LEAK in boundary b1-notes-cross-user (cross-user), attempt 1/3</span><span class="l t-you">  bob saw alice's data</span><span class="l">  URL: http://127.0.0.1:3077/notes/1001</span><span class="l">  Leak: VISIBLE (rendered on the page)</span><span class="l">  Token: <span class="tok">NY-ALICE-JOTTERSEED2A</span> in page text (untrusted): "Passport no. <span class="tok">NY-ALICE-JOTTERSEED2A</span>"</span><span class="l">  Screenshot: …/b1-notes-cross-user-bob-leak-ui0.png</span><span class="l">  Suspected files: routes/notes.js (matched routes/notes.js)</span><span class="l t-you">Fix server-side; do not edit tests.</span><span class="l t-dim">exit 2 · stop blocked · 228 s</span><span class="l" data-delay="700"> </span><span class="l t-mut">● Edit routes/notes.js</span><span class="l t-leak" data-delay="200">  - WHERE n.id = ?</span><span class="l t-held" data-delay="200">  + WHERE n.id = ? AND n.owner_id = ?</span><span class="l t-dim" data-delay="500">● Stop hook: notyours replays b1, b2, b4 …</span><span class="l" data-delay="900">  b1-notes-cross-user   <span class="t-held">HELD</span></span><span class="l">  b2-notes-guest        <span class="t-held">HELD</span></span><span class="l">  b4-bob-sweep          <span class="t-held">HELD</span></span><span class="l t-held" data-delay="300">exit 0 · stop allowed · 156 s</span></div>
+        </figure>
+        <div class="results">
+          <div class="float" data-at="8"><div class="k">canary token</div><div class="v"><span class="tok">NY-ALICE-JOTTERSEED2A</span></div><div class="s">Planted in Alice's note. Found on Bob's screen.</div></div>
+          <div class="float" data-at="9"><div class="k">evidence</div><div class="v">Screenshot + URL</div><div class="s">/notes/1001 and /api/notes/1001</div></div>
+          <div class="float" data-at="21"><div class="k">replay</div><div class="v">0 Kane credits</div><div class="s">for each replay that passes</div></div>
+        </div>
+        <p class="seeded src">From <a href="https://github.com/Jasekeee/notyours/tree/main/docs/loop-run-1">docs/loop-run-1</a>. A passing Stop prints nothing; the HELD lines summarise its exit 0.</p>
+      </div>
+      <article class="card small lift"><h3>Fails closed</h3><p>A crash, an invalid boundary, a replay that errors or a server older than your code blocks the stop. None of them counts as a pass.</p><code class="out">notyours: COULD NOT CHECK … <b>this is not a pass</b></code></article>
+      <article class="card small lift"><h3>Agent can't edit the tests</h3><p>The guard hook blocks the agent's edits to locked boundaries, Kane recordings, run results and config. A guardrail for a cooperating agent, not a sandbox.</p><code class="out">notyours: tests and boundaries are read-only for the agent.</code></article>
+      <article class="card small lift"><h3>Restarts your app before judging</h3><p>Once a person approves the start command on this machine, the Stop hook restarts your app first, so a replay never judges old code.</p><code class="out">app: { start: "node server.js", port: 3000 }</code></article>
+      <article class="card small lift"><h3>Catches edits made from the shell</h3><p><code>sed -i</code>, scripts and codegen don't fire edit hooks. Each Stop pass also compares the boundary's files with the last snapshot.</p></article>
     </div>
   </div>
-  <p>Full list with measurements: <a href="https://github.com/Jasekeee/notyours/blob/main/docs/STATUS.md#known-limitations">Known limitations</a>.</p>
 </section>
 
-<section id="faq">
-  <h2>FAQ</h2>
-  <h3>Does it need an AI API key?</h3>
-  <p>No. Kane drives the browsers. The verdict comes from the canary token.</p>
-  <h3>Is it a penetration test?</h3>
-  <p>No. It checks isolation boundaries you declare, against your own app, with test accounts you control.</p>
-  <h3>Can a coding agent edit the tests to make them pass?</h3>
-  <p>The guard hook blocks edits to locked boundaries, recordings, results and config. It's a guardrail for a cooperating
-  agent, not a sandbox.</p>
+<section class="sec" id="problem" aria-labelledby="problem-h">
+  <div class="wrap">
+    <div class="sec-h">
+      <span class="label">// the problem</span>
+      <h2 id="problem-h">Your agent shouldn't grade its own homework.</h2>
+      <p>Access-control bugs are small: a query without <code>owner_id = ?</code>, a list that returns every row. Unit tests run one user at a time, so they rarely see them.</p>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n">#1</div><p><strong>Broken Access Control</strong> is ranked first in the OWASP Top 10:2025.</p><a href="https://owasp.org/Top10/2025/A01_2025-Broken_Access_Control/">OWASP Top 10:2025, A01</a></div>
+      <div class="stat"><div class="n">100%</div><p>of the applications OWASP tested had <strong>some form of broken access control</strong>.</p><a href="https://owasp.org/Top10/2025/A01_2025-Broken_Access_Control/">OWASP Top 10:2025, A01, background</a></div>
+      <div class="stat"><div class="n">170 <small>of 1,645</small></div><p>A researcher scanned 1,645 apps built on one AI app builder and found 170 whose <strong>database rules exposed user data</strong>.</p><a href="https://mattpalmer.io/posts/statement-on-CVE-2025-48757/">CVE-2025-48757, the researcher's statement</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt" id="how" aria-labelledby="how-h">
+  <div class="wrap">
+    <div class="sec-h">
+      <span class="label">// how it works</span>
+      <h2 id="how-h">Map it, prove it, lock it, guard it.</h2>
+      <p>Real browsers, real sign-ins, and a verdict rule that gives the same answer on every replay.</p>
+    </div>
+    <ol class="steps">
+      <li class="card step lift"><span class="num">01</span><h3>Map</h3><p><code>notyours map</code> scans Express and Next.js routes and writes draft boundaries. You, or <code>/notyours-map</code> in Claude Code, finish them.</p>
+        <div class="viz" aria-hidden="true"><span>GET /notes/:id</span><span>GET /api/notes/:id</span><span>POST /api/export</span><span class="arrow">↓ .notyours/boundaries/</span><span class="file">_draft_*.yaml</span></div></li>
+      <li class="card step lift"><span class="num">02</span><h3>Prove</h3><p>Kane signs in as Alice and Bob in separate Chromes. Alice's record carries a canary token; Bob visits it. The token decides.</p>
+        <div class="viz" aria-hidden="true"><span class="persona"><span class="av">A</span>creates <span class="tok">NY-ALICE-…</span></span><span class="arrow">↓ Bob opens /notes/1001</span><span class="persona bob"><span class="av">B</span>did the token reach Bob?</span></div></li>
+      <li class="card step lift"><span class="num">03</span><h3>Lock</h3><p><code>notyours lock</code> turns each proven boundary into a recorded Kane test. Later checks replay it, with no authoring runs.</p>
+        <div class="viz" aria-hidden="true"><span class="arrow">.notyours/tests/</span><span class="file">b1-…_bob_test.md</span><span class="arrow">↓ replay</span><span>authoring runs: <span class="ok">0</span></span><span>passing replay: <span class="ok">0 credits</span></span></div></li>
+      <li class="card step lift"><span class="num">04</span><h3>Guard</h3><p>The Stop hook replays changed boundaries each time the agent tries to finish. A leak blocks the stop and hands the agent the evidence.</p>
+        <div class="viz" aria-hidden="true"><span>agent stops</span><span class="arrow">↓ replay b1, b2, b4</span><span><span class="bad">LEAK</span> → exit 2, keep working</span><span><span class="ok">HELD</span> → exit 0, done</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<section class="sec" id="verdicts" aria-labelledby="verdicts-h">
+  <div class="wrap">
+    <div class="sec-h">
+      <span class="label">// verdicts</span>
+      <h2 id="verdicts-h">Four verdicts, one rule.</h2>
+      <p>Every probe also checks that the owner and the viewer can see their own tokens. A probe that couldn't have found anything doesn't count.</p>
+    </div>
+    <div class="verdicts">
+      <article class="card vcard leak lift"><span class="chip chip-leak">LEAK visible</span><p>The owner's token appeared in the viewer's rendered page.</p></article>
+      <article class="card vcard leak lift"><span class="chip chip-leak">LEAK in payload</span><p>The token reached the viewer's browser in a network response, even though the page didn't show it. Anyone can open DevTools.</p></article>
+      <article class="card vcard held lift"><span class="chip chip-held">HELD</span><p>The viewer never received the owner's token, and both positive controls passed.</p></article>
+      <article class="card vcard harness lift"><span class="chip chip-harness">HARNESS</span><p>A positive control failed, so the probe proves nothing. It is never counted as a pass.</p></article>
+    </div>
+    <p class="decides">Kane's pass/fail never decides; the token does.</p>
+  </div>
+</section>
+
+<section class="sec alt" id="report" aria-labelledby="report-h">
+  <div class="wrap">
+    <div class="sec-h">
+      <span class="label">// real report</span>
+      <h2 id="report-h">What you get back.</h2>
+      <p>An excerpt of the sample report from the demo app, with emails redacted. The same findings go to your coding agent.</p>
+    </div>
+    <article class="card rcard" aria-label="Excerpt of the sample isolation report">
+      <div class="rcard-h">
+        <div><div class="k">notyours isolation report · Jotter demo, bugs seeded on purpose</div>
+          <h3>2 leaks across 2 pairs of users</h3>
+          <p>2 boundaries leaked out of 4. Bob saw Alice's data (1); Bob got a Pro feature for free (1).</p></div>
+        <div class="tally"><div class="lk"><b>2</b><span>leaks</span></div><div class="hd"><b>2</b><span>held</span></div><div><b>0</b><span>harness</span></div></div>
+      </div>
+      <table>
+        <tr><td><span class="chip chip-leak">LEAK visible</span></td><td class="bid">b1-notes-cross-user</td><td class="what">Bob tried to open data Alice created.</td><td class="ev"><span class="tok">NY-ALICE-JOTTERSEED2A</span> on screen at /notes/1001</td></tr>
+        <tr><td><span class="chip chip-leak">LEAK in payload</span></td><td class="bid">b3-export-plan-gate</td><td class="what">Bob (free plan) tried a Pro-only action.</td><td class="ev"><span class="tok">NY-BOB-JOTTERSEED2B</span> in the /api/export response</td></tr>
+        <tr><td><span class="chip chip-held">HELD</span></td><td class="bid">b2-notes-guest</td><td class="what">A signed-out guest tried to open data Alice created.</td><td class="ev"><span class="none">Guest never received Alice's token</span></td></tr>
+        <tr><td><span class="chip chip-held">HELD</span></td><td class="bid">b4-bob-sweep</td><td class="what">Bob swept every page, looking for anything Alice created.</td><td class="ev"><span class="none">Bob never received Alice's token</span></td></tr>
+      </table>
+      <div class="rcard-f"><span>Run time <b>1m 43s</b></span><span>Total Kane credits <b>2.6</b></span><span>Generated <b>2026-11-18 14:09:08Z</b></span></div>
+    </article>
+    <div class="report-actions"><a class="btn btn-ghost" href="sample-report/report.html">Open the full report</a><span>Static HTML, plus a report.json for CI.</span></div>
+  </div>
+</section>
+
+<section class="sec" id="natural" aria-labelledby="natural-h">
+  <div class="wrap">
+    <div class="sec-h">
+      <span class="label">// tested on an app it didn't write</span>
+      <h2 id="natural-h">0 leaks, 0 false alarms, 9 gaps in notyours.</h2>
+      <p>A fresh Claude Code session built a notes app with share links and a Pro export, from a neutral prompt with no security instructions. notyours tested a copy of it in three experiments.</p>
+    </div>
+    <div class="exps">
+      <article class="card exp"><span class="num">01</span><h3>Prove four boundaries</h3><p class="task">Cross-user, guest, plan-gate and sweep, on the app as Sonnet 5.5 built it.</p>
+        <dl><dt>leaks</dt><dd><b>0</b> 3 HELD; the Pro export was HARNESS, then HELD on a re-run</dd><dt>false alarms</dt><dd><b>0</b></dd></dl></article>
+      <article class="card exp"><span class="num">02</span><h3>Bait: a shared cache</h3><p class="task">"Note pages feel slow. Add a simple in-memory cache…" given to Sonnet 5.5.</p>
+        <dl><dt>leaks</dt><dd><b>0</b> The cache was keyed by viewer, note and origin</dd><dt>false alarms</dt><dd><b>0</b></dd></dl></article>
+      <article class="card exp"><span class="num">03</span><h3>Same bait, after the fixes</h3><p class="task">The same cache prompt, given to Haiku 5.5.</p>
+        <dl><dt>leaks</dt><dd><b>0</b> Keyed by note id only, but the ownership check still ran first</dd><dt>false alarms</dt><dd><b>0</b></dd></dl></article>
+    </div>
+    <div class="card gaps">
+      <div class="big"><div><b>9</b><span>gaps in notyours</span></div><div><b style="color:var(--held)">4</b><span>fixed</span></div><div><b>5</b><span>open, documented</span></div></div>
+      <div>
+        <p><strong>Fixed:</strong> file downloads, a strict CSP blocking the oracle's <code>fetch()</code>, the Stop hook judging a stale server, and failed login replays for personas still signed in.</p>
+        <p><strong>What didn't happen:</strong> neither model took the bait, so there was no real regression to catch. The full catch-and-fix loop has only been shown on the demo's seeded bugs.</p>
+        <p>The experiments and the fix-day re-runs cost about 559 Kane credits over 35 authoring runs. <a href="https://github.com/Jasekeee/notyours/blob/main/docs/natural-app/SUMMARY.md">Read the summary</a>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt" id="limits" aria-labelledby="limits-h">
+  <div class="wrap">
+    <div class="sec-h">
+      <span class="label">// honest limits</span>
+      <h2 id="limits-h">What it checks, and what it doesn't.</h2>
+      <p>notyours checks the boundaries you declare, in the running app. It isn't a penetration test.</p>
+    </div>
+    <div class="cols">
+      <div class="card col"><h3><i aria-hidden="true"></i>Catches</h3><ul>
+        <li><strong>One user's data on another user's screen</strong>, such as Bob opening Alice's note.</li>
+        <li><strong>Data in a response the page doesn't render</strong>, such as JSON, scripts and downloads.</li>
+        <li><strong>Signed-out guests</strong> reaching signed-in data.</li>
+        <li><strong>Free users getting a paid feature</strong> through a plan gate that only hides the button.</li>
+        <li><strong>A sweep of every page</strong> for anything another user created.</li>
+        <li><strong>A regression your agent introduces</strong> in a locked boundary's code, before it reports the task done.</li>
+      </ul></div>
+      <div class="card col no"><h3><i aria-hidden="true"></i>Doesn't</h3><ul>
+        <li><strong>Anything you didn't write a boundary for.</strong> It isn't a scan of your whole app.</li>
+        <li><strong>Logins other than email and password.</strong> No CAPTCHA, OAuth-only, SMS or authenticator codes.</li>
+        <li><strong>Tokens inside images or PDFs.</strong> It reads DOM text and network bodies.</li>
+        <li><strong>Code a boundary's surface doesn't list.</strong> Shared middleware is replayed only when a listed file changes.</li>
+        <li><strong>Database policies.</strong> It sees what your app returns to a browser, not your RLS rules.</li>
+        <li><strong>Hosts other than localhost</strong>, unless you pass <code>--allow-host</code> and confirm.</li>
+      </ul></div>
+    </div>
+    <a class="more" href="https://github.com/Jasekeee/notyours/blob/main/docs/STATUS.md#known-limitations">Known limitations, with measurements</a>
+  </div>
+</section>
+
+<section class="sec" id="quickstart" aria-labelledby="qs-h">
+  <div class="wrap">
+    <div class="sec-h">
+      <span class="label">// quickstart</span>
+      <h2 id="qs-h">Run the demo, then your app.</h2>
+      <p>The quick demo finds one real leak in the bundled app. Measured: 4 min 48 s and 61.69 Kane credits. It prints its estimate before it starts.</p>
+    </div>
+    <div class="qs">
+      <div class="card tabs" data-tabs>
+        <div class="tablist" role="tablist" aria-label="Install method">
+          <button class="tab" role="tab" id="t-npm" aria-controls="p-npm" aria-selected="false" tabindex="-1" type="button">npx notyours</button>
+          <button class="tab" role="tab" id="t-gh" aria-controls="p-gh" aria-selected="true" type="button">from GitHub</button>
+        </div>
+        <div class="panel" role="tabpanel" id="p-npm" aria-labelledby="t-npm" tabindex="0" hidden>
+          <p class="note-np">notyours isn't on npm yet. These work once 0.2.0 is published; until then, use the GitHub tab.</p>
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><code id="q1n">npx notyours doctor</code><button class="copy" type="button" data-copy="q1n" aria-label="Copy the doctor command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><code id="q2n">npx notyours demo --quick</code><button class="copy" type="button" data-copy="q2n" aria-label="Copy the demo command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><code id="q3n">npx notyours init</code><button class="copy" type="button" data-copy="q3n" aria-label="Copy the init command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+        </div>
+        <div class="panel" role="tabpanel" id="p-gh" aria-labelledby="t-gh" tabindex="0">
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q1g">npx github:Jasekeee/notyours doctor</code><span class="c">Checks Node, Chrome, kane-cli and its login, credits and port 3077.</span></div><button class="copy" type="button" data-copy="q1g" aria-label="Copy the doctor command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q2g">npx github:Jasekeee/notyours demo --quick</code><span class="c">One real leak in the bundled demo app, about 5 minutes.</span></div><button class="copy" type="button" data-copy="q2g" aria-label="Copy the demo command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q3g">npx github:Jasekeee/notyours init</code><span class="c">In your app's folder: finds the app, asks you to approve its start command, writes boundary drafts.</span></div><button class="copy" type="button" data-copy="q3g" aria-label="Copy the init command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+        </div>
+      </div>
+      <div class="card req">
+        <h3>Requirements</h3>
+        <ul><li><strong>Node 22+</strong></li><li><strong>Google Chrome</strong></li><li><strong>kane-cli 0.10.0</strong>, logged in to your TestMu AI account</li></ul>
+<pre><span class="t-dim"># macOS</span>
+brew install lambdatest/kane/kane-cli
+<span class="t-dim"># anywhere else (pin it)</span>
+npm i -g @testmuai/kane-cli@0.10.0
+kane-cli login</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt" id="faq" aria-labelledby="faq-h">
+  <div class="wrap">
+    <div class="faq-grid">
+    <div class="sec-h">
+      <span class="label">// faq</span>
+      <h2 id="faq-h">Questions.</h2>
+    </div>
+    <div class="faq">
+      <details open><summary>Does it need an AI API key?</summary><p>No. Kane drives the browsers, and the verdict comes from the canary token. Nothing is judged by an AI.</p></details>
+      <details><summary>What does it cost?</summary><p>Kane credits from your TestMu AI account. Measured: the quick demo used 61.69 credits (4 min 48 s), and a replay of four locked boundaries used 3.4 credits (170 s). <code>run --dry-run</code> prints an estimate without starting Kane, and the CLI caps authoring runs per project per day (default 20).</p></details>
+      <details><summary>Does my data leave my machine?</summary><p>Your app runs on localhost. Kane runs are tied to your TestMu AI account, and its evidence packs hold your account email and share links. <code>init</code> keeps them out of git; don't publish them.</p></details>
+      <details><summary>Which frameworks does it understand?</summary><p>The route scan reads Express and Next.js code. Any app that runs on a URL can still be tested; you write its boundaries by hand.</p></details>
+      <details><summary>Can my coding agent cheat?</summary><p>The guard hook blocks the agent's edits to locked boundaries, recordings, run results, budget and config, and the Stop hook fails closed. It's a guardrail for a cooperating agent, not a sandbox: an agent with shell access could find spellings the guard doesn't anticipate.</p></details>
+    </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<section class="final" aria-labelledby="final-h">
+  <div class="glow" aria-hidden="true"></div>
+  <div class="wrap">
+    <h2 id="final-h">Check your app before your agent says it's done.</h2>
+    <p>Run the demo in about five minutes, then point it at your own app.</p>
+    <div class="row"><a class="btn btn-primary" href="#quickstart">Try the demo</a><a class="btn btn-ghost" href="https://github.com/Jasekeee/notyours">View on GitHub</a></div>
+  </div>
 </section>
 
 <footer>
-  <p>notyours is MIT licensed. <a href="https://github.com/Jasekeee/notyours">Source on GitHub</a>.</p>
+  <div class="wrap">
+    <span>notyours · MIT license · Fonts: Geist and Geist Mono (<a href="assets/fonts/OFL.txt">OFL 1.1</a>)</span>
+    <nav aria-label="Footer"><a href="https://github.com/Jasekeee/notyours">GitHub</a><a href="https://github.com/Jasekeee/notyours/blob/main/CHANGELOG.md">Changelog</a><a href="https://github.com/Jasekeee/notyours/blob/main/docs/WHY.md">Why</a><a href="https://github.com/Jasekeee/notyours/blob/main/SECURITY.md">Security</a></nav>
+  </div>
 </footer>
-
-</main>
+<script src="assets/term.js"></script>
 </body>
 </html>
