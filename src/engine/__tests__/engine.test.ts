@@ -120,6 +120,12 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
     expect(r.hits.some((h) => h.url.endsWith('/xml') && h.token === alice().token)).toBe(true);
   }, 60_000);
 
+  it('AUD-12: a leak in a text/javascript data response loaded by <script src> is caught (scripts with a text type are scanned)', async () => {
+    const r = await engine.runBoundary(boundary({ id: 'script', targets: { ui: ['{{item_url}}/script-page'], api: [] } }), ids, cfg);
+    expect(r.verdict).toBe('LEAK_PAYLOAD');
+    expect(r.hits.some((h) => h.url.endsWith('/data.js') && h.token === alice().token)).toBe(true);
+  }, 60_000);
+
   it('AUD-12: a leak body over the 2 MB scan cap is never HELD', async () => {
     const r = await engine.runBoundary(boundary({ id: 'big', targets: { ui: ['{{item_url}}/safe'], api: ['{{item_url}}/big'] } }), ids, cfg);
     expect(r.verdict).toBe('HARNESS_BROKEN');

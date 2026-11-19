@@ -138,6 +138,17 @@ export async function startFixture(port = 0): Promise<FixtureApp> {
     if (!me(req) || !n) return res.status(404).type('text').send('not found');
     res.type('text').send(`${'x'.repeat(2 * 1024 * 1024 + 4096)}\n${n.body}`);
   });
+  // A script-typed data endpoint (JSONP-style): no owner check. Loaded by /notes/:id/script-page via <script src>.
+  app.get('/notes/:id/data.js', (req, res) => {
+    const n = notes.get(req.params.id);
+    if (!me(req) || !n) return res.status(404).type('text/javascript').send('window.note = null;');
+    res.type('text/javascript').send(`window.note = ${JSON.stringify({ title: n.title, body: n.body })};`);
+  });
+  app.get('/notes/:id/script-page', (req, res) => {
+    res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'");
+    const u = needLogin(req, res); if (!u) return;
+    page(res, 'Script page', `<h1>Loading</h1><script src="/notes/${esc(req.params.id)}/data.js"></script>`, 200, u);
+  });
   app.get('/notes/:id/pro-raw', (req, res) => {
     const u = me(req); const n = notes.get(req.params.id);
     if (!u || !n || users.get(n.owner)?.plan !== 'pro') return res.status(404).json({ error: 'not found' });

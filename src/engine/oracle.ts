@@ -114,21 +114,23 @@ export class Capture {
     const status = r.status();
     if (status >= 300 && status < 400 && status !== 304) return; // 304: Chrome may still hand us the cached body
     const req = r.request();
-    // Static assets can't carry another user's record; preflights have no body. Everything else is scanned,
-    // whatever its content type (application/xml, octet-stream, …).
-    if (req.method() === 'OPTIONS' || SKIPPED_RESOURCES.has(req.resourceType())) return;
+    if (req.method() === 'OPTIONS') return; // preflights have no body
     const headers = r.headers();
     const url = r.url();
-    if (Number(headers['content-length'] ?? 0) > MAX_BODY) {
-      this.records.push({ url, status, tag, tokens: [], unreadable: `body over ${MAX_BODY / 1024 / 1024} MB` });
-      return;
-    }
+    // Scanned: every document/xhr/fetch/other response whatever its content type (application/xml, octet-stream, …),
+    // plus any response with a text-like content type whatever its resource type (a text/javascript data endpoint).
+    // Static assets (images, fonts, stylesheets, scripts with a binary or unknown type) are skipped and never flagged.
+    const textual = /text\/|json|html|xml|javascript/i.test(headers['content-type'] ?? '');
+    const asset = SKIPPED_RESOURCES.has(req.resourceType());
+    if (asset && !textual) return;
+    // A big bundle or an evicted asset body is not evidence either way: only non-asset bodies are flagged unreadable.
+    const flag = (unreadable: string) => { if (!asset) this.records.push({ url, status, tag, tokens: [], unreadable }); };
+    if (Number(headers['content-length'] ?? 0) > MAX_BODY) return flag(`body over ${MAX_BODY / 1024 / 1024} MB`);
     let body: string;
     try {
       body = await r.text();
     } catch (e) {
-      this.records.push({ url, status, tag, tokens: [], unreadable: `body could not be read (${(e instanceof Error ? e.message : String(e)).slice(0, 60)})` });
-      return;
+      return flag(`body could not be read (${(e instanceof Error ? e.message : String(e)).slice(0, 60)})`);
     }
     if (body.length > MAX_BODY) {
       this.records.push({ url, status, tag, tokens: scanText(body.slice(0, MAX_BODY), url), unreadable: `body over ${MAX_BODY / 1024 / 1024} MB (only the first part was scanned)` });
