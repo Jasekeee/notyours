@@ -17,6 +17,7 @@ import { hostOf, isLocalHost } from './hosts.js';
 import { guard, guardOutput, installHooks, type HookInput } from './hooks.js';
 import { postToolHook, stopHook, writeSurfaceBaseline, type HookResult } from '../hooks/index.js';
 import { notyoursPaths } from '../ratchet/paths.js';
+import { ownPagesFor } from '../ratchet/ratchet.js';
 import { readAttempts, readDirty, readEscalated, writeAttempts, writeDirty, writeEscalated } from '../ratchet/store.js';
 import { readPublicIdentities, runInit } from './init.js';
 import type { Actions, GlobalOpts, HookEvent } from './program.js';
@@ -144,7 +145,9 @@ export function finish(root: string, command: string, startedAt: Date, results: 
 /** Run the engine over boundaries one at a time (each boundary uses all persona Chromes). */
 export async function author(p: Project, boundaries: Boundary[]): Promise<ProbeResult[]> {
   // One logged-in Chrome per persona for the whole command (each launch logs in; replayed logins are free).
-  const pool = sessionPool({ cfg: p.cfg, stateDir: nyPaths(p.root).dir, cwd: p.root });
+  // Personas still signed in (their own page shows their token) skip the login replay: replaying a login while
+  // signed in fails on apps that redirect /login away, and a failed one would cost a re-recording here.
+  const pool = sessionPool({ cfg: p.cfg, stateDir: nyPaths(p.root).dir, cwd: p.root, ownPages: ownPagesFor(boundaries) });
   const engine = getEngine(p.root, pool);
   const results: ProbeResult[] = [];
   try {

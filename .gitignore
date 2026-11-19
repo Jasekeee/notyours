@@ -22,3 +22,5 @@ spike/logs/
 
 # `notyours demo` work folder (default ./notyours-demo; it holds recordings and a local database)
 notyours-demo*/
+# Kane recordings (including old spike ones) stay local: they hold TestMu account ids; logins hold passwords.
+**/.testmuai/tests/

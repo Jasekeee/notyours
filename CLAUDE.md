@@ -37,6 +37,6 @@ The installed kane-cli skill is useful for flags and NDJSON parsing, but this pr
   Stay in your own folder. Ask before editing anything else (src/report, src/hooks, src/map, shared files).
 
 ## Known issues
-- `npm audit`: 7 high findings, all one picomatch <=4.0.7 ReDoS advisory, reached only through dev tools (tsup, vitest).
-  No patched version exists as of 2026-11-18. Do not run `npm audit fix --force` (it downgrades majors).
+- `npm audit`: 0 vulnerabilities (checked 2026-11-19; earlier there were 7 high findings from one picomatch ReDoS
+  advisory, reached only through dev tools). Never run `npm audit fix --force` (it downgrades majors).
 - TypeScript 7 (native) has no JS API, so tsup builds without `.d.ts`; `npm run typecheck` is the type gate.

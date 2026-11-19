@@ -2,7 +2,7 @@
 
 ## What works (verified with real Kane and real Claude Code)
 - **Integration:** A–D merged in order, CC-1 applied, `NOTYOURS_REAL` removed (the CLI always uses the real engine and
-  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 329
+  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 341
   tests, including the 25 demo tests.
 - **Oracle on Jotter (authoring):** B1 LEAK_VISIBLE, B2 HELD, B3 LEAK_PAYLOAD (free Bob got the Pro export), B4 HELD,
   all with both positive controls. HARNESS_BROKEN correctly refused to call a broken harness HELD 3 times while bugs
@@ -135,6 +135,37 @@ Claude Code usage for the four headless sessions.
   blocked those `fetch()` calls, and it would have broken POST targets on any strict-CSP app as well. Natural-app Pro
   export, judge-only (0 credits): **HELD, both controls true** (was HARNESS).
 
+## Fixed after the independent audit (2026-11-19)
+The audit itself stays private; ids below are its finding numbers. Code fixes come with tests that failed before.
+- **Budget bypass (AUD-01).** `budget --set` was refused only for `CLAUDECODE=1`; `CLAUDECODE=0 … budget --set 999`
+  worked. Now it's refused inside Claude Code for any `CLAUDECODE` value or any `CLAUDE_CODE_*` variable (no TTY). The
+  guard denies `budget --set`, `notyours release`, and setting or unsetting those variables in Bash.
+- **False HELD paths in the oracle (AUD-03, AUD-12, AUD-13).** A leak visit that errored, got no response or a 5xx,
+  or a leak body that was over 2 MB or unreadable, made a no-hit result HELD. Now it's HARNESS. Bodies of any content
+  type are scanned (XML, octet-stream, text/javascript data endpoints). A viewer's 404 on an api target counts as a
+  denial only when the owner's call to the same URL returned 2xx.
+- **Stop hook fails closed (AUD-11).** HARNESS results and replay exceptions block too. After `maxAttempts` the
+  boundary is escalated (`ESCALATION.md` + `.notyours/escalated.json`) and **keeps blocking**, with no new Kane runs
+  until its code changes, until a person runs `notyours release` (refused from an agent, denied by the guard).
+- **Report (AUD-02):** no Test Manager links (TestMu ids) or local session paths in `report.html` / `report.json`.
+- **Judge path:**
+  - A start line per Kane run, plus a 30 s heartbeat (AUD-10).
+  - The demo works in `./notyours-demo` and prints the report path first (AUD-19).
+  - `doctor` pins kane-cli 0.10.0 (AUD-05, AUD-22).
+  - The README gives the install line, measured credits and about 2× for 0.10.6 (AUD-05, 06, 07, 32).
+  - `scripts/judge-loop.sh` runs the loop without Claude Code: a simulated regression gives exit 1 LEAK, the fix
+    gives exit 0 GREEN (AUD-15).
+- **Smaller:**
+  - Generated sign-up emails use `notyours.test` (AUD-31); the demo credentials are explained as demo-only (AUD-17).
+  - `allowScripts` for esbuild and fsevents (AUD-24).
+  - The spike recording is untracked and `**/.testmuai/tests/` is ignored (AUD-18).
+  - CLAUDE.md now reports 0 `npm audit` findings (AUD-30).
+  - The README's credit-log keys (AUD-21) and the launcher's "second stop" wording (AUD-20) are corrected.
+  - Signed-in personas also skip the login replay during authoring runs (`run`), not only replays.
+  - `package.json` is 0.1.4 (AUD-09).
+- **Not done here:** AUD-23 (the budget check isn't atomic) stays documented below. AUD-25, 28 and 29 were
+  deferred by the owner. AUD-04, 08 and 26 concern the submission drafts, which wait for the video and posts.
+
 ## Known limitations
 From the automated security review. By decision, only real secret or credential leaks are fixed; the rest is logged here.
 - Bash-guard parser differentials: comment `#` handling, `rg --pre` / `git` aliases running a program, option values
@@ -143,8 +174,8 @@ From the automated security review. By decision, only real secret or credential 
   in the CLI) is the credit control.
 - The budget counts runs from local logs: a person who deletes `.notyours/credits.log` resets today's count (the agent
   can't; the guard blocks it).
-- Hooks are installed with a machine-specific absolute path in `.claude/settings.json` when `--cli` is used. A missing
-  binary makes a hook fail (exit 127), which Claude Code treats as non-blocking.
+- With `--cli`, the launcher calls a machine-specific command. If it's missing, the hook blocks (fails closed) with
+  "notyours guard unavailable".
 - Raw kane-cli stderr can contain local paths and share links; replay reasons use only `err.code` or redacted text.
 - Agents may run `notyours install-hooks` (by decision), so an agent could re-install the hooks with a different
   `--cli` command, swapping in its own guard. Direct edits to `.claude/settings.json` stay blocked; the change would
@@ -164,9 +195,18 @@ From the automated security review. By decision, only real secret or credential 
 - **`app.start` runs a shell command from `.notyours/config.yaml` on every Stop pass that replays.** A cloned repo's
   committed config could therefore start arbitrary commands. The guard keeps the file read-only for the agent, but
   not for whoever wrote the repo. The restart also stops whatever process listens on `app.port`.
-- **Skipping the login replay needs a literal own page** (`viewerOwn`, or the owner's literal targets) and only
-  happens on replays; authoring runs (`notyours run`) still replay the login. A Stop pass with both logins skipped
-  and 0 credits logged still lowered the Kane balance by 0.73.
+- **Skipping the login replay needs a literal own page** (`viewerOwn`, or the owner's literal targets). A Stop pass
+  with both logins skipped and 0 credits logged still lowered the Kane balance by 0.73.
+- **An escalated boundary keeps blocking the session** (by decision): the agent can't finish until the leak is fixed,
+  a person runs `notyours release`, or the person interrupts the session. Each blocked stop costs no Kane credits,
+  but Claude keeps getting the block text.
+- **The budget and release checks match text.** An agent that writes a script file which unsets
+  `CLAUDECODE`/`CLAUDE_CODE_*` and then calls `budget --set` isn't caught by the guard, and the CLI then sees no agent
+  variables. It's a guardrail for a cooperating agent, not a sandbox.
+- **The demo reuses an existing `./notyours-demo`** (security review): files already there are not overwritten, so a
+  folder planted with a modified `server.js` would run it. Run the demo in a folder you control, or pass `--dir`.
+- **`allowScripts` quiets the install-script warnings for `npm ci` in a clone.** `npx github:` installs may still
+  show them, because npm decides from its own temporary root project.
 - **Kane's guest recording can get stuck at a login redirect** (`stuck.ap_stuck`). On the natural app,
   `share-link-guest` proved HELD, but its guest visit was stuck both in the probe and in `lock`'s own recording, so it
   can't be locked (docs/natural-app/EXPERIMENT3.md). The demo's guest boundary locks fine.

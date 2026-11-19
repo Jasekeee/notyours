@@ -20,8 +20,9 @@ notyours does exactly that, in real browsers:
   open a link).
 - **A canary-token oracle** decides. A token looks like `NY-ALICE-K7Q2MZX4P3RA`, so a match can't be
   a coincidence and nothing depends on an AI judging the page.
-- **The ratchet** turns every proven boundary into a recorded Kane test. Replays cost no authoring
-  (a passing replay is 0 credits; a replay Kane marks failed costs a few credits of triage) and take
+- **The ratchet** turns every proven boundary into a recorded Kane test. Replays cost no authoring runs. On
+  kane-cli 0.10.0 a passing replay costs about 0–1 credit per boundary (measured: four boundaries GREEN for 3.4
+  credits); a replay Kane marks failed costs a few credits of triage, and on 0.10.6 replays cost more. They take
   about 40–50 s per boundary including the oracle's own checks, so they run every time your agent stops.
 
 ## Install
@@ -44,9 +45,18 @@ You also need Google Chrome and an authenticated [kane-cli](https://www.testmuai
 
 ## Judges' quick start
 
-You need Node 22+, Google Chrome, and an authenticated [kane-cli](https://www.testmuai.com/kane-cli/)
-(`kane-cli login`). `npx github:Jasekeee/notyours doctor` checks all of it, including the kane-cli version, and tells you how
-to fix anything that isn't ready.
+You need Node 22+, Google Chrome, and [kane-cli](https://www.testmuai.com/kane-cli/) **0.10.0**, logged in. Every
+number below was measured on 0.10.0:
+
+```sh
+brew install lambdatest/kane/kane-cli        # macOS: installs 0.10.0
+npm i -g @testmuai/kane-cli@0.10.0           # anywhere else (pin it: plain `npm i -g @testmuai/kane-cli` installs 0.10.6)
+kane-cli login
+npx github:Jasekeee/notyours doctor          # checks Node, Chrome, the kane-cli version and login, credits, port 3077
+```
+
+On 0.10.6 notyours still works, but runs take about twice as long and passing replays cost credits
+([docs/KANE_COMPAT.md](docs/KANE_COMPAT.md)). `doctor` tells you how to fix anything that isn't ready.
 
 **(a) No credits: the sample report.** A redacted result of the full demo: 2 leaks, 2 held. It has no screenshots,
 emails, account ids or links. GitHub shows `.html` files as source, so download it and open it in your browser:
@@ -56,15 +66,16 @@ curl -sLO https://raw.githubusercontent.com/Jasekeee/notyours/main/docs/sample-r
 ```
 
 **(b) One real leak: `npx github:Jasekeee/notyours demo --quick`.** B1 only: Bob opens Alice's note.
-~4 min, ~45 Kane credits (4 authoring runs: both personas' first login, then B1). Expect `LEAK_VISIBLE` with both
-positive controls passing.
+~4 min, ~50–60 Kane credits (4 authoring runs: both personas' first login, then B1; measured 61 off the account
+balance, 48.8 in the authoring log). Expect `LEAK_VISIBLE` with both positive controls passing. It works in
+`./notyours-demo` (the report path is printed first) and prints a line per Kane run, with a heartbeat every 30 s.
 
 **(c) The full demo: `npx github:Jasekeee/notyours demo`.** B1–B4. ~10–11 min, ~120–165 Kane credits (measured
 2026-11-19 on a clean machine setup: 10 min 49 s, 163 credits). Expect B1 LEAK, B2 HELD, B3 LEAK (a
 free user gets the Pro export through the API), B4 HELD.
 
 Both modes print the expected time and credits before they start. Times are measured on kane-cli 0.10.0. On
-**0.10.6, expect about 2.5× longer**, with replays that cost a few credits ([docs/KANE_COMPAT.md](docs/KANE_COMPAT.md)).
+**0.10.6, expect about 2× longer**, with replays that cost a few credits ([docs/KANE_COMPAT.md](docs/KANE_COMPAT.md)).
 
 **(d) The loop with Claude Code.** Make a demo copy, install the hooks, and let Claude Code drive notyours:
 
@@ -76,18 +87,30 @@ claude "Run npx github:Jasekeee/notyours run, fix every leak it reports in the s
         rerun until all boundaries hold, then npx github:Jasekeee/notyours lock. Then add a 'duplicate note' button."
 ```
 
-Once the boundaries are locked, every edit Claude makes to their code is replayed when it stops. A leak blocks the
-stop with the evidence, Claude fixes the access check, and the next replay is GREEN. Recorded runs are in
-[docs/loop-run-1/](docs/loop-run-1/)–[3](docs/loop-run-3/). Authoring runs are capped per project per day (20 by
-default); see below.
+Once the boundaries are locked, every edit Claude makes to their code is replayed when it stops. A leak (or a check
+that couldn't run) blocks the stop with the evidence, Claude fixes the access check, and the next replay is GREEN.
+After 3 failed attempts the boundary is escalated to you (`ESCALATION.md`) and the stop stays blocked until it's
+fixed or you run `notyours release`. Recorded runs are in [docs/loop-run-1/](docs/loop-run-1/)–[3](docs/loop-run-3/).
+Authoring runs are capped per project per day (20 by default); see below.
+
+**(e) The loop without Claude Code: a scripted replay (about 2 minutes after setup).** From a clone:
+
+```sh
+git clone https://github.com/Jasekeee/notyours.git && cd notyours && npm ci && npm run build
+bash scripts/judge-loop.sh          # work folder ./notyours-loop
+```
+
+The first run sets up once: the quick demo, then B1 fixed, proven and locked (about 8 minutes and 2 more authoring
+runs on top of the quick demo). Then the loop: the old buggy route comes back (a simulated regression), and `replay`
+exits **1 with LEAK**; the fix goes back in, and `replay` exits **0, GREEN**. Run it again for just the 2-minute loop.
 
 **Honest notes**
 - **Jotter's bugs are seeded on purpose.** Each is labelled `// SEEDED BUG #n` in `demo/routes/`. Jotter's own
   tests, which assert those bugs, stay in this repo and are never copied into a demo.
 - **Why the demo authors instead of replaying:** Kane recordings only replay with the TestMu account ids of the
   machine that recorded them, so notyours never commits them (`.notyours/tests/` is gitignored; recorded logins also
-  hold the typed password). Every fresh demo records its personas' logins and boundaries once. Rerun with
-  `--dir <folder>` to replay them.
+  hold the typed password). Every fresh demo records its personas' logins and boundaries once. Running it again
+  from the same folder reuses `./notyours-demo` (or pass `--dir <folder>`), so the logins replay.
 - **The report** opens with a headline like **"Bob saw Alice's data"**, then one card per boundary: the verdict,
   who tried what, the positive controls, where the token showed up (highlighted), screenshots of hit pages, and
   the credits each one used.
@@ -194,8 +217,8 @@ This merges three hooks and a few `permissions.deny` rules (for the secrets and 
 The hooks **fail closed**. Each one runs `.notyours/bin/notyours-hook`, a small launcher that finds the CLI
 (the project's `node_modules`, the CLI you installed from, PATH, then `npx github:`). If it can't find or start one,
 the hook blocks (exit 2) with "notyours guard unavailable — run `npx github:Jasekeee/notyours install-hooks` (or
-doctor)". The Stop hook still lets a second stop in a row through, so a session can't get stuck. `doctor` checks
-that every installed hook resolves. The hooks:
+doctor)". When the CLI can't start at all, the launcher lets a second stop in a row through, so the session doesn't
+get stuck on a broken install. `doctor` checks that every installed hook resolves. The hooks:
 
 - **guard** (PreToolUse) makes the oracle read-only for the agent. It can't edit locked boundaries,
   Kane recordings (`.testmuai/`), run results or `config.yaml`. It can't read
@@ -205,9 +228,13 @@ that every installed hook resolves. The hooks:
 - **post-tool** (PostToolUse): when the agent edits a file in a boundary's `surface`, that boundary
   is marked for re-checking.
 - **stop** (Stop): before the agent finishes, changed locked boundaries are replayed (no authoring).
-  A leak blocks the stop and hands the agent the evidence and the code to fix. The hook
-  itself never authors; unlocked boundaries are proved with `notyours run` (the agent may run it, within the
-  daily budget below).
+  A leak blocks the stop and hands the agent the evidence and the code to fix. A check that couldn't run blocks too:
+  a HARNESS result (a positive control failed), a replay that errors, or a stale app server. Trying to stop twice
+  doesn't get around it. After 3 failed attempts the boundary is **escalated**: `ESCALATION.md` explains it, and
+  the stop stays blocked (without new Kane runs until its code changes) until it is fixed or a person releases it:
+  `npx github:Jasekeee/notyours release` (refused from a coding agent, and denied by the guard). The hook itself
+  never authors; unlocked boundaries are proved with `notyours run` (the agent may run it, within the daily budget
+  below).
   - **It never judges an old server.** With `app: { start: "node server.js", port: 3000 }` in `.notyours/config.yaml`
     it restarts your app before replaying. Without it, if the server is older than your code, it doesn't replay; it
     stops with YELLOW (exit 2) and asks for a restart.
@@ -226,12 +253,13 @@ passwords, for your identities.
 |---|---|
 | First run of a boundary (authoring) | ~5–30 per Kane run (measured on the demo; varies 2× for the same task) |
 | Each persona's first login on a machine | one authoring run (~10–17), then replayed for 0 |
-| `replay`, the stop hook | 0 for a replay that passes; a few credits when Kane marks a replay failed (its triage) |
+| `replay`, the stop hook | about 0–1 per boundary for a replay that passes (kane-cli 0.10.0); a few credits when Kane marks a replay failed (its triage) |
 | `doctor`, `map`, `report`, `run --dry-run` | 0 |
 
 notyours refuses to start authoring runs when your balance is below `creditFloor` (default 300,
-in `.notyours/config.yaml`), and logs every Kane run's `credits_consumed` (`.notyours/credits.log`,
-`.notyours/runs/credits.jsonl`).
+in `.notyours/config.yaml`), and logs every Kane run's credits: `.notyours/credits.log` (key `credits`) and
+`.notyours/runs/credits.jsonl` (`credits` for replays, `credits_consumed` for boundary runs). The account balance
+can drop a little more than the logs show (measured: 61 vs 48.8 for the quick demo).
 
 ### Coding agents and the daily budget
 
@@ -246,9 +274,11 @@ npx github:Jasekeee/notyours budget          # today's authoring runs vs the cap
 npx github:Jasekeee/notyours budget --set 40 # raise it (a person only)
 ```
 
-`budget --set` refuses to run from a coding agent's shell (Claude Code sets `CLAUDECODE=1` and gives the
-agent no TTY), so an agent can't raise its own cap. CI can opt in with `NOTYOURS_ALLOW_AGENT_AUTHORING=1`.
-The guard never lets the agent set that variable, or edit `budget.json` or the credit logs it is counted from.
+`budget --set` refuses to run from a coding agent's shell: inside Claude Code (`CLAUDECODE` or any `CLAUDE_CODE_*`
+variable is set, whatever its value) with no TTY. The guard also denies `budget --set` and any attempt to set or
+unset those variables in the agent's Bash. CI can opt in with `NOTYOURS_ALLOW_AGENT_AUTHORING=1`. The guard never
+lets the agent set that variable, or edit `budget.json` or the credit logs it is counted from. The guard matches
+text, so it's a guardrail for a cooperating agent, not a sandbox.
 
 ## Known limitations
 
