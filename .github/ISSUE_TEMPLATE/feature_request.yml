@@ -1,0 +1,31 @@
+name: Feature request
+description: An idea for notyours (new probe kind, a new app framework, a clearer install path)
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        notyours is small on purpose. It proves that one user's data does not reach another user. Ideas that widen
+        that focus are welcome; ideas that make it a general pentest tool are not (see the README).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What can't you do today, or what is hard? Describe the situation, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: checkboxes
+    id: cost
+    attributes:
+      label: Cost
+      options:
+        - label: This adds a runtime dependency (we would need to discuss it first).
+        - label: This would make a test spend Kane credits (not allowed; tests are mock-driven).

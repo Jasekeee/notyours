@@ -1,0 +1,62 @@
+name: Bug report
+description: Something notyours does wrong (a wrong verdict, a crash, an install problem)
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security problem?** Do not file it here. Use the Security tab (see SECURITY.md).
+
+        **Before you paste output:** remove real emails, passwords, tokens, TestMu account IDs and Kane share links.
+        The `.notyours/secrets.json` file and Kane recordings must never be pasted.
+  - type: input
+    id: version
+    attributes:
+      label: notyours version
+      description: Output of `npx github:Jasekeee/notyours --version` (or the git tag you installed)
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Node, OS and Chrome
+      placeholder: "Node 22.x, macOS 15, Google Chrome 1xx"
+    validations:
+      required: true
+  - type: input
+    id: kane
+    attributes:
+      label: kane-cli version
+      description: Output of `kane-cli --version`, or "not installed"
+      placeholder: "0.10.0"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest command sequence, and whether it used a local app or a demo
+      placeholder: |
+        1. npx github:Jasekeee/notyours demo --quick
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output (redacted)
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed emails, passwords, tokens, account IDs and share links from the output above.
+          required: true
+        - label: I searched existing issues first.
+          required: true
