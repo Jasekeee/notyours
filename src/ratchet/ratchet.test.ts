@@ -228,6 +228,20 @@ describe('replay', () => {
   });
   const engine = (r: ProbeResult): Engine => ({ runBoundary: async (b) => ({ ...r, boundaryId: b.id }) });
 
+  it("replays the owner's recording before the viewer's (the owner views her record first)", async () => {
+    const events: string[] = [];
+    class OrderedKane extends FakeKane {
+      override async replay(req: Parameters<FakeKane['replay']>[0]) {
+        events.push(`start ${req.identity}`);
+        await new Promise((r) => setTimeout(r, 40));
+        events.push(`end ${req.identity}`);
+        return super.replay(req);
+      }
+    }
+    await new RealRatchet({ projectDir: project, kane: new OrderedKane(), oracle: engineOracle(engine(mockHeldResult)) }).replay(mockIdentities);
+    expect(events).toEqual(['start alice', 'end alice', 'start bob', 'end bob']);
+  });
+
   it('replays up to 2 boundaries at once, but never two that share a persona', async () => {
     const disjoint = { ...lockedBoundary, id: 'other-pair', owner: 'guest', viewer: 'free_user' };
     const shares = { ...lockedBoundary, id: 'shares-alice' };

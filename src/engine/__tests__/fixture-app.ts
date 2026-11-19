@@ -23,6 +23,8 @@ export interface FixtureApp {
   addNote(ownerEmail: string, title: string, body: string): Note;
   /** Session cookie value for a user (tests log Chromes in without a Kane run). */
   sessionFor(email: string): string;
+  /** Every request in arrival order: '<email or anon> <METHOD> <path>' (tests check visit order). */
+  requests: string[];
   close(): Promise<void>;
 }
 
@@ -53,6 +55,8 @@ export async function startFixture(port = 0): Promise<FixtureApp> {
   };
 
   const app = express();
+  const requests: string[] = [];
+  app.use((req, _res, next) => { requests.push(`${me(req)?.email ?? 'anon'} ${req.method} ${req.path}`); next(); });
   app.use(express.urlencoded({ extended: false }));
 
   app.get('/', (req, res) => page(res, 'Home', '<h1>Fixture Notes</h1><p>A tiny notes app.</p>', 200, me(req)));
@@ -156,6 +160,7 @@ export async function startFixture(port = 0): Promise<FixtureApp> {
     addUser: (email, password, plan = 'free') => { users.set(email, { email, password, plan }); },
     addNote: (owner, title, body) => { const n = { id: nid(), owner, title, body }; notes.set(n.id, n); return n; },
     sessionFor: (email) => newSession(email),
+    requests,
     close: () => new Promise((r) => { server.closeAllConnections(); server.close(() => r()); }),
   };
 }

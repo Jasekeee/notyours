@@ -261,6 +261,19 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
       expect(objectives.length).toBe(before);
     }, 60_000);
 
+    it("judge(): the owner's control visit to the note comes before the viewer's request for it", async () => {
+      const n = app.addNote(alice().email!, 'Order', `Order body ${alice().token}`);
+      const own = app.addNote(byId(ids, 'bob').email!, 'Order', `Order body ${byId(ids, 'bob').token}`);
+      const replays = [{ objective: 'replay', identity: 'alice', status: 'passed' as const, exitCode: 0, finalState: { item_url: `${app.url}/notes/${n.id}` }, creditsConsumed: 0, durationS: 0.5 }];
+      const from = app.requests.length;
+      await engine.judge(boundary({ id: 'ordered', targets: { ui: ['{{item_url}}/safe'], api: [] }, viewerOwn: { ui: [`${app.url}/notes/${own.id}`], api: [] } }), ids, cfg, replays);
+      const log = app.requests.slice(from).filter((l) => l.includes(`/notes/${n.id}`));
+      const firstAlice = log.findIndex((l) => l.startsWith(`${alice().email} `));
+      const firstBob = log.findIndex((l) => l.startsWith(`${byId(ids, 'bob').email} `));
+      expect(firstAlice).toBeGreaterThanOrEqual(0);
+      expect(firstBob).toBeGreaterThan(firstAlice);
+    }, 60_000);
+
     it('runBoundary on a locked boundary is judge-only: no authoring', async () => {
       const before = objectives.length;
       const r = await engine.runBoundary(boundary({ id: 'locked-b', locked: true, targets: { ui: [`${app.url}/notes`], api: [] } }), ids, cfg);

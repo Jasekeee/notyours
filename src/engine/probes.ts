@@ -207,8 +207,12 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
       for (const [i, u] of t.api.entries()) out.push(await cap.visit(u, `${prefix}:api${i}`, 'api', cfg.maxAttempts));
       return out;
     };
-    // The viewer's leak visits and the owner's control visits run in different Chromes: do them in parallel.
-    const [leakVisits, ownerVisits] = await Promise.all([visitAll(vcap, leakTargets, 'leak'), visitAll(ocap, ownerTargets, 'octl')]);
+    // The viewer's leak visits and the owner's control visits run in different Chromes: in parallel when
+    // proving. On a replay (judge mode) the owner's control visits come first, as in real life: the owner
+    // views her record, then someone else requests it.
+    const [leakVisits, ownerVisits] = judgeOnly
+      ? await (async () => { const o = await visitAll(ocap, ownerTargets, 'octl'); return [await visitAll(vcap, leakTargets, 'leak'), o] as const; })()
+      : await Promise.all([visitAll(vcap, leakTargets, 'leak'), visitAll(ocap, ownerTargets, 'octl')]);
     let viewerCtlVisits: Visit[] = [];
     let viewerOk: boolean;
     if (b.viewerOwn && b.kind === 'guest') notes.push('viewerOwn is ignored for guest boundaries (a guest has no own page)');

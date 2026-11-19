@@ -61,7 +61,10 @@ function harnessBroken(b: Boundary, runs: KaneRun[], ts: string): ProbeResult {
   };
 }
 
-/** Replays one locked boundary: owner and viewer in parallel, each in their own Chrome, then the oracle. */
+/**
+ * Replays one locked boundary: the owner's recording first, then the viewer's (as in real life: the owner views
+ * her record, then someone else requests it), each in their own Chrome, then the oracle.
+ */
 export async function replayBoundary(b: Boundary, ids: Identity[], deps: ReplayDeps): Promise<ProbeResult> {
   const ts = (deps.now ?? (() => new Date()))().toISOString();
   const people = [b.owner, b.viewer].map((id) => ids.find((i) => i.id === id));
@@ -70,16 +73,17 @@ export async function replayBoundary(b: Boundary, ids: Identity[], deps: ReplayD
     return harnessBroken(b, [], ts);
   }
 
-  const outcomes: ReplayOutcome[] = await Promise.all(
-    (people as Identity[]).map((i) =>
-      deps.kane.replay({
+  const outcomes: ReplayOutcome[] = [];
+  for (const i of people as Identity[]) {
+    outcomes.push(
+      await deps.kane.replay({
         testPath: testFile(deps.paths, b.id, i.id),
         identity: i.id,
         cdpEndpoint: cdpEndpoint(i.cdpPort),
         cwd: deps.paths.root,
       }),
-    ),
-  );
+    );
+  }
   for (const o of outcomes) {
     logCredits(deps.paths, {
       ts,
