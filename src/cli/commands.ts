@@ -10,6 +10,7 @@ import { runWizard, summaryLines, type WizardDeps } from './wizard.js';
 import { detectProject } from './detect.js';
 import { isUp, startApp } from './app-process.js';
 import { appPort, readAppSettings } from '../hooks/app-freshness.js';
+import { approveStart, isStartApproved } from './app-approval.js';
 import { computeStatus, renderStatus } from './status.js';
 import { launchChrome } from '../engine/chrome.js';
 import { runKane } from '../engine/kane.js';
@@ -200,6 +201,13 @@ export async function author(p: Project, boundaries: Boundary[]): Promise<ProbeR
 export async function withApp<T>(root: string, cfg: Config, fn: () => Promise<T>): Promise<T> {
   const app = readAppSettings(notyoursPaths(root));
   if (!app.start || (await isUp(cfg.baseUrl))) return fn();
+  // config.yaml is committed and can come from a clone or an agent's shell: run only what the person approved here.
+  if (!isStartApproved(root, app, cfg.baseUrl)) {
+    throw new UserError(
+      `app.start in .notyours/config.yaml (${app.start}) has not been approved on this machine, so notyours will not run it.`,
+      'run `notyours init` in a terminal to review and approve it, or start the app yourself and rerun this command.',
+    );
+  }
   const port = appPort(app, cfg.baseUrl);
   const handle = await startApp(app.start, root, port, cfg.baseUrl).catch((e: Error) => {
     throw new UserError(`The app did not start with app.start (${app.start}): ${e.message}`, `run \`${app.start}\` in another terminal, then rerun this command.`);
@@ -348,12 +356,22 @@ export const actions: Actions = {
 
   async init(o) {
     const root = enter(o);
+    // What notyours runs and where it probes is a person's decision: a coding agent's shell can't set it.
+    const agent = inCodingAgent(process.env) && process.stdin.isTTY !== true && process.env[AGENT_OVERRIDE_ENV] !== '1';
+    if (agent && (o.start !== undefined || o.url !== undefined || o.port !== undefined)) {
+      throw new UserError(
+        '--url, --start and --port change what notyours runs and where it probes, which is a person\'s decision, so a coding agent can\'t set them.',
+        'run `notyours init --url ... --start ...` yourself in a terminal.',
+      );
+    }
     if (o.iOwnThis && o.url) await confirmOwnership([o.url, ...o.allowHost.map((h) => `http://${h}`)]);
     ensureGitignore(root); // before any secret is written
     const r = await runWizard(
       { root, url: o.url, start: o.start, port: o.port, users: o.users, yes: o.yes, hooks: o.hooks, allowHost: o.allowHost, iOwnThis: o.iOwnThis },
       wizardDeps(root),
     );
+    // A person (at a terminal, or --yes in CI) approves the start command the wizard wrote. An agent's run approves nothing.
+    if (!agent && r.app.start) approveStart(root, r.app.start, r.app.port);
     if (isJsonMode()) emitJson({ ok: true, ...r });
     else for (const line of summaryLines(r)) log(line);
     return 0;

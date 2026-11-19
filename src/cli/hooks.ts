@@ -82,6 +82,8 @@ const READONLY_PATHS = [
   `${NY_DIR}/escalated.json`,
   // The daily authoring budget and the logs it is counted from: an agent must not raise or reset its own cap.
   `${NY_DIR}/budget.json`,
+  // The person's approval of app.start: an agent must not approve the command it wants run.
+  `${NY_DIR}/app-approved.json`,
   `${NY_DIR}/credits.log`,
   `${NY_DIR}/tests`,
   // The fail-closed hook launcher: editing it could switch every hook off.
@@ -166,6 +168,9 @@ export function guard(input: HookInput, root: string): GuardResult {
     if (/(?:^|[\s;&|(])(?:claudecode|claude_code_\w+)=|\bunset\b[^;&|\n]*\b(?:claudecode|claude_code_)|\benv\b[^;&|\n]*(?:-u\s*|--unset[=\s]\s*)(?:claudecode|claude_code_)/.test(cmd)) {
       return deny('changing CLAUDECODE / CLAUDE_CODE_* is not allowed: notyours uses them to tell a coding agent from a person.');
     }
+    if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--start|--url|--port)\b/.test(cmd)) {
+      return deny('--start, --url and --port change what notyours runs and where it probes: a person\'s decision. Ask the user to run it in a terminal.');
+    }
     if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
     }
@@ -246,6 +251,7 @@ export const PERMISSION_DENY = [
   'Edit(./.notyours/attempts.json)',
   'Edit(./.notyours/escalated.json)',
   'Edit(./.notyours/budget.json)',
+  'Edit(./.notyours/app-approved.json)',
   'Edit(./.notyours/credits.log)',
   'Edit(./.notyours/tests/**)',
   'Edit(./.notyours/bin/**)',

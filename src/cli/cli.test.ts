@@ -635,9 +635,11 @@ describe('hooks', () => {
 
   it('guard: coding agents MAY run notyours authoring commands (the daily budget bounds the credits)', () => {
     for (const c of ['npx notyours run b1', 'npx notyours lock', 'npx notyours lock --reauthor b1', 'npx notyours demo --quick',
-      'npx notyours init --url http://127.0.0.1:3077', 'npx notyours install-hooks', 'npx notyours replay b1', 'npx notyours budget']) {
+      'npx notyours init', 'npx notyours init --yes --no-hooks', 'npx notyours init --users u.yaml', 'npx notyours install-hooks', 'npx notyours replay b1', 'npx notyours budget']) {
       expect([c, g('Bash', { command: c }).allow]).toEqual([c, true]);
     }
+    // Changing the URL, start command or port is a person's decision (app-approval.test.ts covers the rest).
+    expect(g('Bash', { command: 'npx notyours init --url http://127.0.0.1:3077' }).allow).toBe(false);
   });
 
   it('guard: the agent cannot raise or reset its own budget (budget.json, credits logs, the override env var)', () => {
@@ -727,12 +729,14 @@ describe('hooks', () => {
     ]));
     fs.writeFileSync(path.join(r4, 'users.yaml'), 'users:\n  - { id: alice, role: owner, plan: pro, email: a@x.test }\n');
     const { actions } = await import('./commands.js');
-    const was = process.env.CLAUDECODE;
-    delete process.env.CLAUDECODE; // the suite may itself run inside Claude Code; this test is about init, not the agent check
+    // The suite may itself run inside Claude Code: clear the agent markers, this test is about init, not the agent check.
+    const agentVars = Object.keys(process.env).filter((k) => k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_'));
+    const saved = Object.fromEntries(agentVars.map((k) => [k, process.env[k]!]));
+    for (const k of agentVars) delete process.env[k];
     try {
-      await actions.init({ cwd: r4, url: 'http://127.0.0.1:3077', users: path.join(r4, 'users.yaml'), allowHost: [], iOwnThis: false } as never);
+      await actions.init({ cwd: r4, url: 'http://127.0.0.1:3077', users: path.join(r4, 'users.yaml'), allowHost: [], iOwnThis: false, yes: true, hooks: false } as never);
     } finally {
-      if (was !== undefined) process.env.CLAUDECODE = was;
+      Object.assign(process.env, saved);
     }
     const ids = JSON.parse(fs.readFileSync(path.join(r4, '.notyours/secrets.json'), 'utf8')).identities as Identity[];
     expect(ids[0]!.token).toBe('NY-ALICE-JOTTERSEED2A');
