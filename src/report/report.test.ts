@@ -84,6 +84,11 @@ describe('createReport().write', () => {
     expect(json.summary).toMatchObject({ total: 4, leaks: 2, held: 1, harness: 1 });
     expect(json.runTimeS).toBe(161);
     expect(json.results[0]).toMatchObject({ boundaryId: 'notes-cross-user', group: 'LEAK', owner: 'alice', viewer: 'bob' });
+    // AUD-02: no Test Manager links (TestMu ids) and no local session paths in report.json either.
+    const raw = fs.readFileSync(path.join(outDir, 'report.json'), 'utf8');
+    expect(raw).not.toContain('testUrl');
+    expect(raw).not.toContain('sessionDir');
+    expect(raw).not.toContain('kane.example.test');
   });
 
   it('is self-contained: inline CSS, base64 images, no external resources', () => {
@@ -103,7 +108,10 @@ describe('createReport().write', () => {
     expect(html).toContain('Bob tried to open data Alice created.');
     expect(html).toContain('<li class="ctl bad">');
     expect(html).toContain('<mark class="tok">NY-ALICE-AAAAAAAAAAAA</mark>');
-    expect(html).toContain('href="https://kane.example.test/tests/alice-1"');
+    // AUD-02: never a Test Manager link (TestMu project/test-case/share ids) in a report that gets filmed or shared.
+    expect(html).not.toContain('kane.example.test');
+    expect(html).not.toMatch(/<a href="https?:/);
+    expect(html).toContain('Alice: passed');
     expect(html).toContain('Screenshot not found');
     expect(html).toContain('Total Kane credits <b>60</b>');
     expect(html).toContain('Run time <b>2m 41s</b>');

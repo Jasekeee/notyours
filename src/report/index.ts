@@ -52,6 +52,8 @@ export class HtmlReport implements Report {
         const p = parties(r, b);
         return {
           ...r,
+          // Same rule as the HTML: no Test Manager links (TestMu ids) and no local session paths (AUD-02).
+          kaneRuns: r.kaneRuns.map(({ testUrl: _t, sessionDir: _s, ...k }) => k),
           group: verdictGroup(r.verdict),
           owner: p.owner,
           viewer: p.viewer,

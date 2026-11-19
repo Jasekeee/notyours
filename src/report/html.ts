@@ -104,12 +104,10 @@ function card(r: ProbeResult, o: RenderOptions): string {
         : `<figure class="shot missing"><div>Screenshot not found</div><figcaption>${esc(path.basename(ref))}</figcaption></figure>`,
     )
     .join('');
+  // No links: a Kane run's Test Manager URL carries the TestMu project, test-case and share ids (AUD-02). A report
+  // gets filmed and shared, so it shows only who ran, the result, credits and time.
   const runs = r.kaneRuns
-    .map((k) => {
-      const href = safeHref(k.testUrl);
-      const label = `${displayName(k.identity)}: ${k.status}, ${fmtCredits(k.creditsConsumed)} credits, ${fmtDuration(k.durationS)}`;
-      return `<li>${href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>` : esc(label)}</li>`;
-    })
+    .map((k) => `<li>${esc(`${displayName(k.identity)}: ${k.status}, ${fmtCredits(k.creditsConsumed)} credits, ${fmtDuration(k.durationS)}`)}</li>`)
     .join('');
   const surface = b?.surface.length ? `<p class="surface">Code to check: ${b.surface.map((s) => `<code>${esc(s)}</code>`).join(' ')}</p>` : '';
   const viewerLabel = p.kind === 'plan-gate' ? `${displayName(p.viewer)} can use their own session` : `${displayName(p.viewer)} sees their own token`;
