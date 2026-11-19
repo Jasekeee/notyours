@@ -100,9 +100,10 @@ git clone https://github.com/Jasekeee/notyours.git && cd notyours && npm ci && n
 bash scripts/judge-loop.sh          # work folder ./notyours-loop
 ```
 
-The first run sets up once: the quick demo, then B1 fixed, proven and locked (about 8 minutes and 2 more authoring
-runs on top of the quick demo). Then the loop: the old buggy route comes back (a simulated regression), and `replay`
-exits **1 with LEAK**; the fix goes back in, and `replay` exits **0, GREEN**. Run it again for just the 2-minute loop.
+The first run sets up once: the quick demo, then B1 fixed, proven and locked (2 more authoring runs). Then the loop:
+the old buggy route comes back (a simulated regression), and `replay` exits **1 with LEAK**; the fix goes back in, and
+`replay` exits **0, GREEN**. Measured on a fresh clone (kane-cli 0.10.0): quick demo 4 min 48 s and 61.7 credits,
+setup 2 min 17 s, the loop **1 min 55 s**; setup + loop 19.7 credits. Run it again for just the 2-minute loop.
 
 **Honest notes**
 - **Jotter's bugs are seeded on purpose.** Each is labelled `// SEEDED BUG #n` in `demo/routes/`. Jotter's own

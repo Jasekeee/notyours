@@ -53,6 +53,16 @@ The floor is Kane, not notyours. The demo's boundaries all include Alice, so the
 path. It helps projects whose boundaries use different personas. Stopped after 18 of the 90 timeboxed minutes:
 the rest would have been Kane time.
 
+## Judge path after the audit fixes (2026-11-19, fresh clone of `fix/audit`, empty npm cache, kane-cli 0.10.0)
+| Step | Time | Kane credits (balance) | Result |
+|---|---|---|---|
+| `npm ci` | 49 s | 0 | no install-script warnings |
+| `npm run build` | <1 s | 0 | |
+| `node dist/cli/index.js doctor` | 4 s | 0 | all green |
+| `demo --quick` (empty folder) | 4 min 48 s | **61.69** | B1 **LEAK_VISIBLE**, both controls; a progress line per Kane run plus a 30 s heartbeat; report in `./notyours-demo`; no Test Manager links |
+| `bash scripts/judge-loop.sh ./notyours-demo` | 4 min 15 s (setup 2 min 17 s, **loop 1 min 55 s**) | **19.66** | regression → `replay` exit **1, LEAK**; fix → exit **0, GREEN** |
+| `npm test` ×3 (flake check) | 153 s each | 0 | 341/341 passed all three times |
+
 ## Judge path (measured on a clean copy, kane-cli 0.10.0)
 | Step | Time |
 |---|---|
