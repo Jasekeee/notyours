@@ -2,7 +2,7 @@
 
 ## What works (verified with real Kane and real Claude Code)
 - **Integration:** A–D merged in order, CC-1 applied, `NOTYOURS_REAL` removed (the CLI always uses the real engine and
-  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 314
+  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 311
   tests, including the 25 demo tests.
 - **Oracle on Jotter (authoring):** B1 LEAK_VISIBLE, B2 HELD, B3 LEAK_PAYLOAD (free Bob got the Pro export), B4 HELD,
   all with both positive controls. HARNESS_BROKEN correctly refused to call a broken harness HELD 3 times while bugs
@@ -108,9 +108,9 @@ Claude Code usage for the four headless sessions.
   CLI crashes, the hook **exits 2** with "notyours guard unavailable — run `npx github:Jasekeee/notyours
   install-hooks` (or doctor)". The one exception keeps Stop's loop protection: with `stop_hook_active` it prints the
   note and lets that second stop through. The guard keeps `.notyours/bin` read-only. `doctor` checks that every
-  installed hook resolves and prints a FIX line if not. Tests: `src/cli/hook-launcher.test.ts`. Remaining gap: the
-  npx fallback takes 5–9 s per hook call (slow, but it blocks rather than passes). The unused library installer in
-  `src/hooks/install.ts` still builds direct `<cli> hook <event>` commands; the CLI doesn't use it.
+  installed hook resolves and prints a FIX line if not. Tests: `src/cli/hook-launcher.test.ts`. The npx fallback
+  takes 5–9 s per hook call (slow, but it blocks rather than passes). The old direct-command installer
+  (`src/hooks/install.ts`) was removed.
 - **The guard is a guardrail, not a sandbox.** It decides by text-matching Bash commands, so a determined agent with
   shell access can still find spellings it doesn't anticipate. The backstops are Claude Code's `permissions.deny`
   rules and reviewing `.notyours/` in `git diff`. Credits don't depend on the guard: the daily budget is enforced

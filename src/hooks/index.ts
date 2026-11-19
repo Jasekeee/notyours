@@ -4,9 +4,9 @@ import { guardHook } from './guard.js';
 import { postToolHook } from './post-tool.js';
 import { stopHook } from './stop.js';
 import { parseHookInput, type HookResult } from './types.js';
-import type { HookName } from './install.js';
 
-export { installHooks, mergeHooks, hookCommand, HOOK_SPECS, type HookName } from './install.js';
+/** The hooks `notyours hook <name>` runs. (Installing them: src/cli/hooks.ts installHooks + the fail-closed launcher.) */
+export type HookName = 'post-tool' | 'guard' | 'stop';
 export { guardHook, GUARD_MESSAGE, bashTouchesNotyours } from './guard.js';
 export { postToolHook, matchBoundaries } from './post-tool.js';
 export { stopHook, formatLeakReport, LAST_LINE, MAX_REPORT_LINES, type StopDeps } from './stop.js';
