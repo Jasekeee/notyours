@@ -1,6 +1,7 @@
 # notyours: rules for every agent
 
 ## Rules
+- **Code frozen at v0.1.5. Only fix bugs that break the demo recording; everything else goes to Known limitations.**
 - Node >=22, TypeScript, ESM (`.js` extensions in relative imports). Never use sudo.
 - **No new dependencies.** Everything is installed. If you truly need one, write it up in CONTRACT_CHANGE.md and stop.
 - **Frozen contracts:** `src/types.ts` and `src/schemas.ts` must not be edited. Propose changes in CONTRACT_CHANGE.md.

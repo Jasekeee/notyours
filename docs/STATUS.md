@@ -62,6 +62,8 @@ the rest would have been Kane time.
 | `demo --quick` (empty folder) | 4 min 48 s | **61.69** | B1 **LEAK_VISIBLE**, both controls; a progress line per Kane run plus a 30 s heartbeat; report in `./notyours-demo`; no Test Manager links |
 | `bash scripts/judge-loop.sh ./notyours-demo` | 4 min 15 s (setup 2 min 17 s, **loop 1 min 55 s**) | **19.66** | regression → `replay` exit **1, LEAK**; fix → exit **0, GREEN** |
 | `npm test` ×3 (flake check) | 153 s each | 0 | 341/341 passed all three times |
+| **v0.1.5**, fresh clone of the tag: `npm ci` / `doctor` | 90 s / 3 s | 0 | no install-script warnings; all green |
+| **v0.1.5** `demo --quick` (recorded logins reused) | 2 min 13 s | **32.68** (26.2 logged) | B1 **LEAK_VISIBLE**, 2 authoring runs |
 
 ## Judge path (measured on a clean copy, kane-cli 0.10.0)
 | Step | Time |
