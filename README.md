@@ -26,7 +26,8 @@ notyours does exactly that, in real browsers:
 
 ## Install
 
-Requires Node 22+. notyours isn't on npm; run it straight from GitHub (npx builds it on first use, ~30 s):
+Requires Node 22+. notyours isn't on npm; run it straight from GitHub. The first `npx` run downloads and builds it
+(about 1–2 min with an empty npm cache, and it prints almost nothing meanwhile). If npx asks `Ok to proceed?`, answer `y`.
 
 ```sh
 npx github:Jasekeee/notyours demo
@@ -47,14 +48,19 @@ You need Node 22+, Google Chrome, and an authenticated [kane-cli](https://www.te
 (`kane-cli login`). `npx github:Jasekeee/notyours doctor` checks all of it, including the kane-cli version, and tells you how
 to fix anything that isn't ready.
 
-**(a) No credits: the sample report.** Open [`docs/sample-report/report.html`](docs/sample-report/report.html),
-a redacted result of the full demo: 2 leaks, 2 held. It has no screenshots, emails, account ids or links.
+**(a) No credits: the sample report.** A redacted result of the full demo: 2 leaks, 2 held. It has no screenshots,
+emails, account ids or links. GitHub shows `.html` files as source, so download it and open it in your browser:
+
+```sh
+curl -sLO https://raw.githubusercontent.com/Jasekeee/notyours/main/docs/sample-report/report.html && open report.html   # Linux: xdg-open
+```
 
 **(b) One real leak: `npx github:Jasekeee/notyours demo --quick`.** B1 only: Bob opens Alice's note.
 ~4 min, ~45 Kane credits (4 authoring runs: both personas' first login, then B1). Expect `LEAK_VISIBLE` with both
 positive controls passing.
 
-**(c) The full demo: `npx github:Jasekeee/notyours demo`.** B1–B4. ~10 min, ~120 Kane credits. Expect B1 LEAK, B2 HELD, B3 LEAK (a
+**(c) The full demo: `npx github:Jasekeee/notyours demo`.** B1–B4. ~10–11 min, ~120–165 Kane credits (measured
+2026-11-19 on a clean machine setup: 10 min 49 s, 163 credits). Expect B1 LEAK, B2 HELD, B3 LEAK (a
 free user gets the Pro export through the API), B4 HELD.
 
 Both modes print the expected time and credits before they start. Times are measured on kane-cli 0.10.0. On
