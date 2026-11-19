@@ -130,16 +130,40 @@ export class Capture {
   async visit(target: string, tag: string, kind: 'ui' | 'api', maxAttempts = 1): Promise<Visit> {
     const { method, url } = kind === 'api' ? parseTarget(target) : { method: 'GET' as Method, url: target };
     const page = await this.browser.newPage();
+    // The oracle's own fetch() calls (non-GET targets, file downloads) run in the app's page; a strict CSP
+    // (default-src 'none', as the natural app sends) would block them. Only the oracle's tabs, never Kane's.
+    await page.setBypassCSP(true);
     // Fresh 200s with bodies: a warm cache (Kane already loaded these URLs) yields 304s with no body.
     await page.setCacheEnabled(false);
     if (method === 'GET') this.watch(page, tag);
     let status = 0;
     let error: string | undefined;
+    let downloaded = false;
     for (let attempt = 1; attempt <= Math.max(1, maxAttempts); attempt++) {
       try {
         if (method === 'GET') {
-          const resp = await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
-          status = resp?.status() ?? 0;
+          try {
+            const resp = await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
+            status = resp?.status() ?? 0;
+          } catch (e) {
+            // A file download (Content-Disposition: attachment, e.g. an "export .txt") aborts the navigation and
+            // Chrome withholds its body. Fetch it from the persona's own page (its cookies) and judge the body as text.
+            if (!/ERR_ABORTED/.test(e instanceof Error ? e.message : String(e))) throw e;
+            // The origin page is only the fetch's context, not the target: keep its responses out of the judgement
+            // (a free user's own notes list would otherwise count as a plan-gate leak).
+            const ignore = `ignore:${tag}`;
+            this.tags.set(page, ignore);
+            await page.goto(new URL(url).origin + '/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+            const r = await page.evaluate(async (u: string) => {
+              const res = await fetch(u, { credentials: 'include' });
+              return { status: res.status, body: await res.text() };
+            }, url);
+            await this.flush();
+            for (let i = this.records.length - 1; i >= 0; i--) if (this.records[i]!.tag === ignore) this.records.splice(i, 1);
+            status = r.status;
+            downloaded = true;
+            this.records.push({ url, status, tag, tokens: scanText(r.body.slice(0, MAX_BODY), url) });
+          }
         } else {
           // The origin page itself is not the target: tag the tab only once it has loaded.
           await page.goto(new URL(url).origin + '/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
@@ -159,8 +183,13 @@ export class Capture {
     }
     await new Promise((r) => setTimeout(r, 750)); // late fetches (SPAs)
     await this.flush();
-    const dom = kind === 'ui' ? await scanDom(page, url) : [];
-    return { url: target, tag, kind, status, ...(error ? { error } : {}), dom, page };
+    if (downloaded) this.tags.set(page, `ignore:${tag}`);
+    await this.flush();
+    for (let i = this.records.length - 1; i >= 0; i--) if (this.records[i]!.tag === `ignore:${tag}`) this.records.splice(i, 1);
+    // A download is judged by its body (a record under this visit's tag), so it counts as an api visit: the tab
+    // shows the origin page, whose DOM is not the target.
+    const dom = kind === 'ui' && !downloaded ? await scanDom(page, url) : [];
+    return { url: target, tag, kind: downloaded ? 'api' : kind, status, ...(error ? { error } : {}), dom, page };
   }
 
   async detach(): Promise<void> {

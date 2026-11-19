@@ -57,6 +57,8 @@ export async function startFixture(port = 0): Promise<FixtureApp> {
   const app = express();
   const requests: string[] = [];
   app.use((req, _res, next) => { requests.push(`${me(req)?.email ?? 'anon'} ${req.method} ${req.path}`); next(); });
+  // A strict CSP like the natural app's (default-src 'none' also blocks fetch()), except on the SPA-style preview page.
+  app.use((req, res, next) => { if (!req.path.endsWith('/preview')) res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'"); next(); });
   app.use(express.urlencoded({ extended: false }));
 
   app.get('/', (req, res) => page(res, 'Home', '<h1>Fixture Notes</h1><p>A tiny notes app.</p>', 200, me(req)));
@@ -137,6 +139,16 @@ export async function startFixture(port = 0): Promise<FixtureApp> {
   };
   app.get('/export', (req, res) => { const u = needLogin(req, res); if (u) exportPage(u, true, res); });
   app.get('/export-leaky', (req, res) => { const u = needLogin(req, res); if (u) exportPage(u, false, res); });
+  // A file download (like the natural app's /export.txt): text/plain attachment of the caller's notes. Pro-gated + leaky twin.
+  const exportFile = (gated: boolean) => (req: Request, res: Response) => {
+    const u = needLogin(req, res);
+    if (!u) return;
+    if (gated && u.plan !== 'pro') { res.status(403).type('text').send('Pro required'); return; }
+    const mine = [...notes.values()].filter((n) => n.owner === u.email).map((n) => `# ${n.title}\n${n.body}\n`).join('\n');
+    res.set({ 'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': 'attachment; filename="notes.txt"' }).send(mine || '(no notes)');
+  };
+  app.get('/export.txt', exportFile(true));
+  app.get('/export-leaky.txt', exportFile(false));
 
   // POST-only export API (like the demo's): pro-gated, plus a leaky twin. Other methods get 405.
   const exportApi = (gated: boolean) => (req: Request, res: Response) => {

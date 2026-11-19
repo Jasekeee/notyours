@@ -228,6 +228,25 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
       expect(leaky.verdict).toBe('LEAK_PAYLOAD');
     }, 60_000);
 
+    it('a file-download target (Content-Disposition: attachment) is fetched and judged: gated -> HELD, leaky -> LEAK_PAYLOAD', async () => {
+      noteUrl('pro_user', `Pro dl ${byId(ids, 'pro_user').token}`);
+      const freeOwn = noteUrl('free_user', `Free dl ${byId(ids, 'free_user').token}`);
+      const dl = (id: string, path: string, where: 'ui' | 'api') => boundary({
+        id, kind: 'plan-gate', owner: 'pro_user', viewer: 'free_user',
+        create: { objective: 'Verify the export link is visible', store: [] },
+        proAction: { objective: 'Export my notes' },
+        targets: where === 'ui' ? { ui: [`{{base_url}}${path}`], api: [] } : { ui: [], api: [`{{base_url}}${path}`] },
+        viewerOwn: { ui: [freeOwn], api: [] },
+      });
+      for (const where of ['ui', 'api'] as const) {
+        const gated = await engine.runBoundary(dl(`dl-gated-${where}`, '/export.txt', where), ids, cfg);
+        expect(gated.verdict, where).toBe('HELD');
+        expect(gated.controls, where).toEqual({ ownerSeesOwnToken: true, viewerSeesOwnToken: true }); // the pro owner's download was read
+        const leaky = await engine.runBoundary(dl(`dl-leaky-${where}`, '/export-leaky.txt', where), ids, cfg);
+        expect(leaky.verdict, where).toBe('LEAK_PAYLOAD');
+      }
+    }, 120_000);
+
     it('viewerOwn page the viewer cannot see (not signed in) -> HARNESS_BROKEN', async () => {
       seededUrl = noteUrl('alice', `Alice seed ${alice().token}`);
       const daveOwn = noteUrl('dave', `Dave seed ${byId(ids, 'dave').token}`);
