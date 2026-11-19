@@ -61,6 +61,9 @@ expect: denied
 surface: ['src/routes/notes.ts', 'src/middleware/auth.ts']
 ```
 
+This proves a fresh note each run. A boundary you will `lock` needs fixed URLs instead (an existing record, plus a
+`viewerOwn` page for the viewer): on kane-cli 0.10.0 a replay doesn't return stored values like `{{note_url}}`.
+
 ## Rules
 
 - Only write files under `.notyours/boundaries/`. Do not change app code in this command.

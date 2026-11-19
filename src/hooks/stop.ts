@@ -138,6 +138,8 @@ interface AppOutcome {
   stale?: string[];
   /** Escalated boundaries: attempts exhausted, still blocking until a person releases them. */
   escalatedMsgs?: string[];
+  /** The check itself couldn't run (invalid or duplicate boundaries): blocks, fail closed. */
+  failures?: string[];
 }
 
 /** The Stop pass for one app folder (the folder holding .notyours/); `projectDir` is only used for display paths. */
@@ -146,16 +148,33 @@ async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, no
   const dirty = readDirty(p);
   const dirtyIds = Object.keys(dirty);
   const none: AppOutcome = { blocks: [], escalated: [], humanNotes: [] };
-  if (!dirtyIds.length) return none;
 
+  // Fail closed (AUD-2 P0): a boundary file that doesn't parse, or two boundaries with the same id (an unlocked copy
+  // would shadow the locked one), means the locked boundaries can't be trusted to be checked. Block until fixed.
   let boundaries: Boundary[];
   let identities: Identity[];
+  const where = shown(projectDir, appDir);
   try {
-    boundaries = loadBoundaries(p).map((s) => s.boundary);
+    const stored = loadBoundaries(p);
+    const firstFile = new Map<string, string>();
+    const dups: string[] = [];
+    for (const s of stored) {
+      const f = shown(projectDir, s.file);
+      const prev = firstFile.get(s.boundary.id);
+      if (prev !== undefined) dups.push(`"${s.boundary.id}" in ${prev} and ${f}`);
+      else firstFile.set(s.boundary.id, f);
+    }
+    if (dups.length) {
+      return { ...none, failures: [`notyours: COULD NOT CHECK ${where}: duplicate boundary id ${dups.join('; ')}.`,
+        '  Two boundaries with one id would let the unlocked copy hide the locked one. Remove the copy you added, then stop again.'] };
+    }
+    boundaries = stored.map((s) => s.boundary);
     identities = deps.identities ?? loadIdentities(p);
   } catch (e) {
-    return { ...none, humanNotes: [`notyours: could not check changed boundaries in ${shown(projectDir, appDir)}: ${(e as Error).message}`] };
+    return { ...none, failures: [`notyours: COULD NOT CHECK ${where}: ${(e as Error).message.replace(/^notyours: /, '')}`,
+      '  The locked boundaries can\'t be replayed while a boundary file is invalid. Fix or remove the file (an unlocked boundary you wrote), then stop again.'] };
   }
+  if (!dirtyIds.length) return none;
   const cfg = loadConfigOr(p);
   // dirty.json and surface globs are relative to the app folder; the agent works from the project root.
   const prefix = path.relative(projectDir, appDir);
@@ -311,7 +330,9 @@ function dirtyApps(projectDir: string, now: Date): string[] {
   return findAppDirs(projectDir).filter((d) => {
     try {
       markSurfaceChanges(d, loadBoundaries(notyoursPaths(d)).map((s) => s.boundary), now);
-    } catch { /* a scan problem must not block the stop; PostToolUse marks still apply */ }
+    } catch {
+      return true; // boundaries that can't be read can't be checked: look at this app (fails closed)
+    }
     return Object.keys(readDirty(notyoursPaths(d))).length > 0;
   });
 }
@@ -331,12 +352,13 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
   const humanNotes = outcomes.flatMap((o) => o.humanNotes);
   const stale = outcomes.flatMap((o) => o.stale ?? []);
   const escalatedMsgs = outcomes.flatMap((o) => o.escalatedMsgs ?? []);
+  const failures = outcomes.flatMap((o) => (o.failures?.length ? [o.failures.join('\n')] : []));
 
   // Fail closed (AUD-11): a leak, a check that couldn't run (HARNESS, replay error, stale app) and an escalation all
   // exit 2. stop_hook_active is deliberately not an exit: trying to stop twice must not skip the check. After
   // maxAttempts a boundary is escalated: it keeps blocking, but without new Kane runs unless its code changes, and
   // the block text tells the agent to stop retrying and hand it to the user (`notyours release` is a person's call).
-  const parts = [...stale, ...(blocks.length ? [formatLeakReport(blocks, escalated)] : []), ...escalatedMsgs];
+  const parts = [...failures, ...stale, ...(blocks.length ? [formatLeakReport(blocks, escalated)] : []), ...escalatedMsgs];
   if (humanNotes.length && parts.length) parts.push(humanNotes.join('\n'));
   if (parts.length) return { exitCode: 2, stderr: `${parts.join('\n\n').trimEnd()}\n` };
   return humanNotes.length ? tellHuman(humanNotes.join('\n')) : ok();

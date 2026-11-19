@@ -3,14 +3,14 @@ import type { Identity } from '../types.js';
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CommanderError } from 'commander';
 import { ConfigSchema, IdentitySchema } from '../schemas.js';
 import { mockBoundary, mockConfig } from '../mocks/fixtures.js';
 import { buildProgram, type Actions } from './program.js';
 import { checkHost } from './hosts.js';
 import { runInit, parseUsersFile, readPublicIdentities } from './init.js';
-import { assertHostsAllowed, assertHuman, boundaryUrls, ensureCredits, exitCodeFor, logHook, runHook } from './commands.js';
+import { assertHostsAllowed, assertHuman, boundaryUrls, ensureCredits, exitCodeFor, hookFailureExit, logHook, runHook } from './commands.js';
 import { checkNode, runDoctor } from './doctor.js';
 import type { Exec } from './system.js';
 import { guard, mergeHookSettings } from './hooks.js';
@@ -24,6 +24,7 @@ import { UserError, readIdentities } from './workspace.js';
 import { isOwnedHost, ownedStorePath, recordOwnedHosts, setOwnedStorePathForTests } from './owned.js';
 import { mockHeldResult, mockLeakResult } from '../mocks/fixtures.js';
 
+const __dirname_cli = path.dirname(new URL(import.meta.url).pathname);
 const tmp = (p = 'ny-cli-') => fs.mkdtempSync(path.join(os.tmpdir(), p));
 // Never touch the real ~/.config/notyours from tests.
 const TEST_STORE = path.join(tmp('ny-home-'), 'owned-hosts.json');
@@ -314,6 +315,39 @@ describe('allowHosts', () => {
 // ---------- credits, exit codes, doctor ----------
 
 describe('daily authoring budget', () => {
+  it('init keeps Kane recordings and raw run results out of git (TestMu ids, passwords, Test Manager links)', async () => {
+    const { ensureGitignore } = await import('./commands.js');
+    const r = tmp('ny-gitignore-');
+    fs.mkdirSync(path.join(r, '.git'));
+    fs.writeFileSync(path.join(r, '.gitignore'), 'node_modules\n.notyours/runs/\n');
+    ensureGitignore(r);
+    ensureGitignore(r); // idempotent
+    const lines = fs.readFileSync(path.join(r, '.gitignore'), 'utf8').split('\n');
+    for (const l of ['.notyours/tests/', '.testmuai/tests/', '.notyours/runs/', '.notyours/secrets.json', '.notyours/profiles/', '.testmuai/evidence/']) {
+      expect(lines.filter((x) => x === l), l).toHaveLength(1);
+    }
+    expect(lines[0]).toBe('node_modules'); // the user's own lines stay
+  });
+
+  it('a crashing hook: guard and stop fail closed (exit 2), post-tool fails open (AUD-2 P0)', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(hookFailureExit('stop')).toBe(2);
+      expect(hookFailureExit('guard')).toBe(2);
+      expect(hookFailureExit('post-tool')).toBe(0);
+    } finally { err.mockRestore(); }
+  });
+
+  it('a crashing Stop hook process exits 2 (end to end through the CLI entry)', async () => {
+    const r = tmp('ny-crash-');
+    runInit(r, { url: 'http://localhost:3000' });
+    const { execa } = await import('execa');
+    const cli = path.resolve(__dirname_cli, '../../node_modules/.bin/tsx');
+    const out = await execa(cli, [path.resolve(__dirname_cli, 'index.ts'), 'hook', 'stop'], { input: '{not json', reject: false, env: { ...process.env, CLAUDE_PROJECT_DIR: r } });
+    expect(out.exitCode).toBe(2);
+    expect(out.stderr).toContain('fails closed');
+  }, 60_000);
+
   it('`notyours release` lifts escalations (a person only); the guard denies it to the agent', async () => {
     const r = tmp('ny-release-');
     runInit(r, { url: 'http://localhost:3000' });

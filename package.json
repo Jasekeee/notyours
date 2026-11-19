@@ -1,6 +1,6 @@
 {
   "name": "notyours",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Prove your users' data stays theirs: Kane CLI personas + a canary-token oracle",
   "scripts": {
     "build": "tsup",

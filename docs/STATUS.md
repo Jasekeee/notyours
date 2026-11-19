@@ -2,7 +2,7 @@
 
 ## What works (verified with real Kane and real Claude Code)
 - **Integration:** A–D merged in order, CC-1 applied, `NOTYOURS_REAL` removed (the CLI always uses the real engine and
-  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 341
+  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 346
   tests, including the 25 demo tests.
 - **Oracle on Jotter (authoring):** B1 LEAK_VISIBLE, B2 HELD, B3 LEAK_PAYLOAD (free Bob got the Pro export), B4 HELD,
   all with both positive controls. HARNESS_BROKEN correctly refused to call a broken harness HELD 3 times while bugs
@@ -176,6 +176,17 @@ The audit itself stays private; ids below are its finding numbers. Code fixes co
 - **Not done here:** AUD-23 (the budget check isn't atomic) stays documented below. AUD-25, 28 and 29 were
   deferred by the owner. AUD-04, 08 and 26 concern the submission drafts, which wait for the video and posts.
 
+## Fixed after the second independent review (2026-11-19, v0.1.5)
+- **The Stop hook could be switched off from a boundary file (P0).** An invalid boundary file, or an unlocked copy
+  reusing a locked boundary's id, made the Stop hook exit 0 (and the copy emptied `dirty.json`). A crash inside the
+  Stop hook also exited 0. Now all three block (exit 2) with a message saying what to fix. A broken boundary file is
+  checked even when nothing is marked dirty. Tests reproduce each bypass and failed before.
+- **`init` gitignores Kane recordings** (`.notyours/tests/`, `.testmuai/tests/`: TestMu account ids, typed login
+  passwords) along with the raw runs (`.notyours/runs/`: Test Manager links, session dirs, local screenshot paths).
+- README: replay triggers only on `surface` files; locked boundaries need fixed URLs; the demo's token is planted by
+  the seed script; the recorded loops predate v0.1.4; Kane's pass/fail never changes a verdict. The rest of the
+  review's P1 items are listed as known limitations and roadmap in the README.
+
 ## Known limitations
 From the automated security review. By decision, only real secret or credential leaks are fixed; the rest is logged here.
 - Bash-guard parser differentials: comment `#` handling, `rg --pre` / `git` aliases running a program, option values
@@ -215,8 +226,9 @@ From the automated security review. By decision, only real secret or credential 
   variables. It's a guardrail for a cooperating agent, not a sandbox.
 - **The demo reuses an existing `./notyours-demo`** (security review): files already there are not overwritten, so a
   folder planted with a modified `server.js` would run it. Run the demo in a folder you control, or pass `--dir`.
-- **`allowScripts` quiets the install-script warnings for `npm ci` in a clone.** `npx github:` installs may still
-  show them, because npm decides from its own temporary root project.
+- **First `npx github:` install prints almost nothing for 1–3 minutes** (measured 81 s and, by the reviewer, 2 min
+  46 s with an empty npm cache). Since `allowScripts` (v0.1.4), neither `npm ci` in a clone nor the `npx github:`
+  install shows the install-script warnings (both checked 2026-11-19).
 - **Kane's guest recording can get stuck at a login redirect** (`stuck.ap_stuck`). On the natural app,
   `share-link-guest` proved HELD, but its guest visit was stuck both in the probe and in `lock`'s own recording, so it
   can't be locked (docs/natural-app/EXPERIMENT3.md). The demo's guest boundary locks fine.

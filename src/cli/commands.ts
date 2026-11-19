@@ -177,13 +177,21 @@ export async function replayLocked(p: Project, ids: string[]): Promise<ProbeResu
   return wanted;
 }
 
-function ensureGitignore(root: string): void {
-  const lines = ['.notyours/secrets.json', '.notyours/profiles/', '.notyours/runs/', '.notyours/app.log', '.testmuai/evidence/'];
+/**
+ * What `init` keeps out of git. Kane recordings (.notyours/tests/, .testmuai/tests/) hold TestMu account ids (org_id,
+ * user_id, project_id) and recorded logins hold typed passwords; runs/ holds raw results with Test Manager links,
+ * session dirs and local screenshot paths.
+ */
+export const GITIGNORE_LINES = ['.notyours/secrets.json', '.notyours/profiles/', '.notyours/runs/', '.notyours/tests/',
+  '.notyours/app.log', '.testmuai/tests/', '.testmuai/evidence/'];
+
+export function ensureGitignore(root: string): void {
+  const lines = GITIGNORE_LINES;
   const file = path.join(root, '.gitignore');
   if (!fs.existsSync(file) && !fs.existsSync(path.join(root, '.git'))) return;
   const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
   const missing = lines.filter((l) => !current.split(/\r?\n/).includes(l));
-  if (missing.length) safeAppendFile(root, file, `${current && !current.endsWith('\n') ? '\n' : ''}# notyours (secrets, browser profiles, runs, Kane evidence)\n${missing.join('\n')}\n`);
+  if (missing.length) safeAppendFile(root, file, `${current && !current.endsWith('\n') ? '\n' : ''}# notyours (secrets, browser profiles, raw runs, Kane recordings and evidence)\n${missing.join('\n')}\n`);
 }
 
 /**
@@ -415,7 +423,7 @@ export const actions: Actions = {
   },
 
   async hook(event, o) {
-    // Hooks must never break the agent's session: any internal error fails open with a note on stderr.
+    // A hook that crashes: the guard and the Stop hook fail closed (see hookFailureExit); post-tool fails open.
     try {
       const root = path.resolve(process.env.CLAUDE_PROJECT_DIR ?? o.cwd);
       const raw = await readStdin();
@@ -430,14 +438,8 @@ export const actions: Actions = {
       return r.exitCode;
     } catch (e) {
       console.error(`notyours hook ${event}: ${(e as Error).message}`);
-      // The guard fails closed: if it cannot decide, the tool call is blocked. post-tool and stop fail open
-      // (they must never trap the agent's session).
-      if (event === 'guard') {
-        console.error('notyours guard: blocking this tool call because the guard itself failed (fails closed).');
-        return 2;
-      }
+      return hookFailureExit(event);
     }
-    return 0;
   },
 };
 
@@ -467,6 +469,18 @@ export function logHook(root: string, event: HookEvent, input: HookInput, r: Hoo
  * post-tool / stop: the ratchet's hooks (dirty set with file + glob evidence; Stop replays the dirty locked
  * boundaries for 0 credits, exits 2 with a leak report, escalates to the human after 3 attempts).
  */
+/**
+ * When a hook itself crashes. The guard and the Stop hook fail closed (exit 2: the tool call or the stop is
+ * blocked, with the error on stderr); post-tool only records edits, and the Stop pass's surface scan catches them.
+ */
+export function hookFailureExit(event: HookEvent): number {
+  if (event === 'post-tool') return 0;
+  console.error(event === 'guard'
+    ? 'notyours guard: blocking this tool call because the guard itself failed (fails closed).'
+    : 'notyours stop: blocking the stop because the check itself failed (fails closed). Fix the error above, then stop again.');
+  return 2;
+}
+
 export async function runHook(event: HookEvent, input: HookInput, root: string): Promise<HookResult> {
   if (event === 'guard') {
     const out = guardOutput(guard(input, root));

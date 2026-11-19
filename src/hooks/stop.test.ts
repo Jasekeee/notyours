@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import YAML from 'yaml';
 import { mockHeldResult, mockIdentities, mockLeakResult } from '../mocks/fixtures.js';
 import { RealRatchet } from '../ratchet/ratchet.js';
 import { notyoursPaths } from '../ratchet/paths.js';
@@ -359,5 +360,32 @@ describe('stop hook: stale app server', () => {
     expect(r.stderr).toMatch(/pid 4242\) started at .*, but src\/app\/api\/notes\/route\.ts changed at/);
     expect(engine.calls).toEqual([]);
     void p;
+  });
+});
+
+describe('stop hook: no way to switch it off from a boundary file (AUD-2 P0)', () => {
+  const bdir = () => { const d = notyoursPaths(project).boundariesDir; mkdirSync(d, { recursive: true }); return d; };
+
+  it('an invalid boundary file blocks (it used to exit 0 with a note), with or without dirty boundaries', async () => {
+    writeFileSync(path.join(bdir(), 'zz-broken.yaml'), 'id: broken\nkind: not-a-kind\n');
+    const engine = new SequenceEngine([]);
+    // Nothing marked dirty yet: the surface scan can't read the boundaries, so the app is still checked.
+    const clean = await stopHook(input('stop-first', project), deps(engine));
+    expect(clean.exitCode).toBe(2);
+    expect(clean.stderr).toContain('COULD NOT CHECK');
+    expect(clean.stderr).toContain('zz-broken.yaml');
+    dirtyNotes();
+    const withDirty = await stopHook(input('stop-first', project), deps(engine));
+    expect(withDirty.exitCode).toBe(2);
+    expect(engine.calls).toEqual([]); // nothing was replayed against a boundary set that can't be trusted
+  });
+
+  it('an unlocked copy reusing a locked boundary id blocks (it used to exit 0 and empty dirty.json)', async () => {
+    writeFileSync(path.join(bdir(), 'zz-copy.yaml'), YAML.stringify({ ...lockedBoundary, locked: false }));
+    dirtyNotes();
+    const r = await stopHook(input('stop-first', project), deps(new SequenceEngine([mockHeldResult])));
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain(`duplicate boundary id "${lockedBoundary.id}"`);
+    expect(readDirty(notyoursPaths(project))).toHaveProperty(lockedBoundary.id); // still pending
   });
 });

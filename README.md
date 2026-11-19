@@ -87,10 +87,13 @@ claude "Run npx github:Jasekeee/notyours run, fix every leak it reports in the s
         rerun until all boundaries hold, then npx github:Jasekeee/notyours lock. Then add a 'duplicate note' button."
 ```
 
-Once the boundaries are locked, every edit Claude makes to their code is replayed when it stops. A leak (or a check
+Once the boundaries are locked, an edit to any file listed in a locked boundary's `surface` makes the Stop hook
+replay that boundary when Claude stops. Edits elsewhere don't trigger it: list every file the check depends on
+(route, auth middleware, query). A leak (or a check
 that couldn't run) blocks the stop with the evidence, Claude fixes the access check, and the next replay is GREEN.
 After 3 failed attempts the boundary is escalated to you (`ESCALATION.md`) and the stop stays blocked until it's
-fixed or you run `notyours release`. Recorded runs are in [docs/loop-run-1/](docs/loop-run-1/)–[3](docs/loop-run-3/).
+fixed or you run `notyours release`. Recorded runs are in [docs/loop-run-1/](docs/loop-run-1/)–[3](docs/loop-run-3/);
+they are from 2026-11-18, before v0.1.4, so their Stop hook didn't yet block on HARNESS or escalate.
 Authoring runs are capped per project per day (20 by default); see below.
 
 **(e) The loop without Claude Code: a scripted replay (about 2 minutes after setup).** From a clone:
@@ -106,6 +109,11 @@ the old buggy route comes back (a simulated regression), and `replay` exits **1 
 setup 2 min 17 s, the loop **1 min 55 s**; setup + loop 19.7 credits. Run it again for just the 2-minute loop.
 
 **Honest notes**
+- **In the demo, the seed script plants Alice's token** (`demo/seed.js` writes note 1001 with fixed URLs, so replays
+  keep working). Kane signs in as each persona and confirms the note, then Bob opens it. On your own app, Kane
+  creates the record itself.
+- **Kane drives; the token decides.** Kane's own pass/fail is reported but never changes a verdict. On a replay, the
+  oracle opens every target itself in the persona's browser and judges what comes back.
 - **Jotter's bugs are seeded on purpose.** Each is labelled `// SEEDED BUG #n` in `demo/routes/`. Jotter's own
   tests, which assert those bugs, stay in this repo and are never copied into a demo.
 - **Why the demo authors instead of replaying:** Kane recordings only replay with the TestMu account ids of the
@@ -171,6 +179,10 @@ targets:
 expect: denied
 surface: ['src/routes/notes.ts']   # code handed to your agent if this leaks
 ```
+
+This example proves a fresh note each run. To **lock** a boundary (replay it on every stop), give it fixed URLs
+instead, for example `/notes/1001` and a `viewerOwn` page, as the demo's boundaries do. On kane-cli 0.10.0 a replay
+doesn't return the values a run stored (`{{note_url}}`), so a locked boundary built on them replays as HARNESS.
 
 ## Verdict rules
 
@@ -299,7 +311,21 @@ The full list, with measurements, is in [docs/STATUS.md](docs/STATUS.md). In sho
 - **Replays aren't instant.** A 1-boundary Stop takes ~55 s on kane-cli 0.10.0 (Kane and Chrome time). On 0.10.6,
   replays are slower and cost a few credits.
 - **The guard is a guardrail, not a sandbox.** It blocks a cooperating agent's edits to `.notyours/` and the hook
-  config. Credits are protected by the daily budget, which the CLI enforces itself.
+  config. Credits are protected by the daily budget, which the CLI enforces itself. An agent that writes a script
+  file can still unset the agent variables before calling `budget --set`.
+- **The Stop hook replays only what changed under a locked boundary's `surface`.** A regression in a file you didn't
+  list (for example shared auth middleware) isn't replayed until a listed file changes.
+- **Locked boundaries need fixed URLs** (see the example above): create-time values don't survive a replay on
+  kane-cli 0.10.0.
+- **Positive controls are per boundary, not per target.** One page where the owner sees its token proves the setup
+  for all targets. The DOM is scanned per text node, so a token split across two elements isn't seen.
+- **Some Kane steps get stuck**, for example a guest visit at a login redirect. That boundary then can't be locked.
+- **Reports are for you, not for publishing as-is:** `report.json` lists local screenshot paths, and the raw
+  `results.json` next to it holds Test Manager links and session folders. `init` keeps `.notyours/runs/`,
+  `.notyours/tests/` and `.testmuai/tests/` out of git.
+
+**Roadmap** (not built): per-target positive controls; whole-text DOM matching; a replay that re-derives stored values;
+replaying boundaries when shared files change.
 
 ## Development
 
