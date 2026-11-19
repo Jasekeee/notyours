@@ -1,13 +1,26 @@
 {
   "name": "notyours",
-  "version": "0.1.5",
-  "description": "Prove your users' data stays theirs: Kane CLI personas + a canary-token oracle",
+  "version": "0.2.0",
+  "description": "Prove your users' data stays theirs: cross-user leak tests for your own app, driven by Kane CLI personas and a canary-token oracle",
+  "keywords": [
+    "security",
+    "access-control",
+    "idor",
+    "authorization",
+    "canary-token",
+    "end-to-end-testing",
+    "kane-cli",
+    "claude-code",
+    "coding-agent",
+    "regression-testing"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/cli/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "repository": {
     "type": "git",
