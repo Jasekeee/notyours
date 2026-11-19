@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { approveStart, isStartApproved } from './app-approval.js';
+import { approvalsDir } from '../hooks/app-approval.js';
 import { withApp } from './commands.js';
 import { guard } from './hooks.js';
 import type { Config } from '../types.js';
@@ -76,5 +77,13 @@ describe('an approval can only come from this machine\'s person, not from the pr
     approveStart(a, 'node server.js', 4778);
     expect(isStartApproved(a, { start: 'node server.js', port: 4778 }, 'http://127.0.0.1:4778')).toBe(true);
     expect(isStartApproved(b, { start: 'node server.js', port: 4778 }, 'http://127.0.0.1:4778')).toBe(false);
+  });
+});
+
+describe('the agent cannot write the approvals', () => {
+  it('the guard refuses an Edit of the approvals folder', () => {
+    const root = project('node server.js', 4779);
+    const r = guard({ tool_name: 'Edit', tool_input: { file_path: path.join(approvalsDir(), 'app-approvals.json') } }, root);
+    expect(r.allow).toBe(false);
   });
 });

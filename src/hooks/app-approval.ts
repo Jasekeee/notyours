@@ -2,21 +2,37 @@
 // clone or an agent's shell, so `app.start` runs only when this machine's user has an approval for exactly this
 // project (by its real path) with exactly this start command and port.
 //
-// The approval lives in the user's config folder (~/.config/notyours/app-approvals.json, mode 0600), NOT in the
-// project: anything that can write inside the project (a clone, an agent's Edit) can't plant one. A file named
-// app-approved.json inside .notyours/ is ignored. Both the CLI (`init`, `withApp`) and the Stop hook's app restart
+// The approval lives in the account's config folder (<passwd home>/.config/notyours/app-approvals.json, mode 0600),
+// NOT in the project and NOT under any environment variable: HOME, XDG_CONFIG_HOME and NOTYOURS_* can't move it, so a
+// command line or an agent's shell can't redirect it. Anything that can write inside the project can't plant one.
+// The guard refuses agent writes to this folder. Both the CLI (`init`, `withApp`) and the Stop hook's app restart
 // use this one check.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-/** The folder holding approvals. NOTYOURS_CONFIG_HOME overrides it (tests, CI); XDG_CONFIG_HOME is honoured too. */
-export function approvalsDir(): string {
-  if (process.env.NOTYOURS_CONFIG_HOME) return process.env.NOTYOURS_CONFIG_HOME;
-  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'notyours');
+let testOverride: string | undefined;
+
+/** Tests only: in-process, so nothing on the command line or in the environment can move the store. */
+export function setApprovalsPathForTests(file: string | undefined): void {
+  testOverride = file;
 }
 
-const approvalsFile = (): string => path.join(approvalsDir(), 'app-approvals.json');
+/** The account's home from the passwd database: unlike os.homedir() it ignores $HOME / $USERPROFILE. */
+function accountHome(): string {
+  try {
+    return os.userInfo().homedir;
+  } catch {
+    return os.homedir();
+  }
+}
+
+/** The folder that holds the approvals (the guard refuses agent writes here). */
+export function approvalsDir(): string {
+  return path.join(accountHome(), '.config', 'notyours');
+}
+
+const approvalsFile = (): string => testOverride ?? path.join(approvalsDir(), 'app-approvals.json');
 
 interface ApprovalRecord { start: string; port: number; approvedAt: string }
 type Store = Record<string, ApprovalRecord>;
@@ -41,8 +57,7 @@ function readStore(): Store {
 
 /** Records that the person approved running `start` on `port` for the project at `root`. */
 export function approveStart(root: string, start: string, port: number): void {
-  const dir = approvalsDir();
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(path.dirname(approvalsFile()), { recursive: true, mode: 0o700 });
   const store = readStore();
   store[projectKey(root)] = { start, port, approvedAt: new Date().toISOString() };
   const file = approvalsFile();
