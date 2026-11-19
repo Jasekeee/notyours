@@ -64,5 +64,20 @@ describe('session pool', () => {
     await third.get(alice);
     await third.closeAll();
     expect(authored).toHaveLength(1);
+
+    // Already signed in (its own page shows its token): no login replay at all (none failed, 0 credits).
+    const checked: string[][] = [];
+    const fourth = sessionPool({ ...opts, kane: failing, rerecordOnFailure: false, ownPages: { alice: ['http://127.0.0.1:1/notes/6'] },
+      isSignedIn: async (_i, _h, urls) => { checked.push(urls); return true; } }, { headful: false });
+    const before = replayed.length;
+    await fourth.get(alice);
+    await fourth.closeAll();
+    expect(checked).toEqual([['http://127.0.0.1:1/notes/6']]);
+    expect(replayed.length).toBe(before);
+    // Not signed in: the recorded login replays as before.
+    const fifth = sessionPool({ ...opts, ownPages: { alice: ['http://127.0.0.1:1/notes/6'] }, isSignedIn: async () => false }, { headful: false });
+    await fifth.get(alice);
+    await fifth.closeAll();
+    expect(replayed.length).toBe(before + 1);
   }, 60_000);
 });

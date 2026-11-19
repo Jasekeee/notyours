@@ -6,6 +6,7 @@ import YAML from 'yaml';
 import { MOCK_TS, mockHeldResult, mockIdentities, mockLeakResult, mockKaneRun } from '../mocks/fixtures.js';
 import type { Boundary, Engine, ProbeResult } from '../types.js';
 import { createRatchet, MockRatchet, RealRatchet } from './index.js';
+import { ownPagesFor } from './ratchet.js';
 import { KaneCli, redactKaneText, parseAuthorRun, parseBalance, parseReplay } from './kane.js';
 import { planLock, probeRunsPassed, resolveTemplate } from './lock.js';
 import { writeBudget } from '../shared/budget.js';
@@ -227,6 +228,17 @@ describe('replay', () => {
     project = tempProject([lockedBoundary, { ...lockedBoundary, id: 'not-locked', locked: false }]);
   });
   const engine = (r: ProbeResult): Engine => ({ runBoundary: async (b) => ({ ...r, boundaryId: b.id }) });
+
+  it('ownPagesFor: literal own pages per persona (viewerOwn for the viewer, targets for the owner)', () => {
+    const bs = [
+      { ...lockedBoundary, targets: { ui: ['http://127.0.0.1:3000/notes/6', '{{note_url}}'], api: [] }, viewerOwn: { ui: ['http://127.0.0.1:3000/notes/5'], api: [] } },
+      { ...lockedBoundary, id: 'g', kind: 'guest' as const, viewer: 'guest', viewerOwn: { ui: ['http://127.0.0.1:3000/x'], api: [] } },
+    ];
+    expect(ownPagesFor(bs)).toEqual({
+      alice: ['http://127.0.0.1:3000/notes/6', ...(lockedBoundary.targets.ui.filter((u) => !u.includes('{{')))],
+      bob: ['http://127.0.0.1:3000/notes/5'],
+    });
+  });
 
   it("replays the owner's recording before the viewer's (the owner views her record first)", async () => {
     const events: string[] = [];

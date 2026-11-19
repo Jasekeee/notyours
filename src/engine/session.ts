@@ -24,6 +24,36 @@ export interface SessionOptions {
    * not cost a recording every time; the oracle's positive controls report the lost session instead.
    */
   rerecordOnFailure?: boolean;
+  /**
+   * Pages where each persona sees its OWN token (identity id -> URLs), e.g. a locked boundary's viewerOwn page.
+   * When one of them already shows the token, the persona is signed in (session cookie still valid) and the login
+   * replay is skipped: replaying a login while signed in fails (many apps redirect /login away) and costs triage.
+   */
+  ownPages?: Record<string, string[]>;
+  /** Test seam: does the persona's Chrome already show its token on one of `urls`? Default: puppeteer-core. */
+  isSignedIn?: (identity: Identity, handle: ChromeHandle, urls: string[]) => Promise<boolean>;
+}
+
+/** Opens each URL in the persona's own Chrome (new tab) and looks for its token in the page text. */
+export async function showsOwnToken(identity: Identity, handle: ChromeHandle, urls: string[]): Promise<boolean> {
+  if (!identity.token || !urls.length) return false;
+  const { default: puppeteer } = await import('puppeteer-core');
+  const browser = await puppeteer.connect({ browserURL: handle.endpoint, defaultViewport: null });
+  try {
+    for (const url of urls.slice(0, 2)) {
+      const page = await browser.newPage();
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+        const text = await page.evaluate(() => document.body?.innerText ?? '');
+        if (text.includes(identity.token)) return true;
+      } catch { /* not reachable / not signed in: try the next one */ } finally {
+        await page.close().catch(() => undefined);
+      }
+    }
+    return false;
+  } finally {
+    await browser.disconnect();
+  }
 }
 
 export const loginTestName = (identityId: string) => `login_${identityId}`;
@@ -74,6 +104,14 @@ export async function logIn(identity: Identity, handle: ChromeHandle, opts: Sess
   // in .notyours/tests (public dev-default passwords only) is used as a fallback.
   const testsDir = loginRecordingDir(identity);
   const recorded = [join(testsDir, `${name}_test.md`), join(opts.stateDir, 'tests', `${name}_test.md`)].find((f) => existsSync(f));
+
+  // Already signed in (its own page shows its token)? Then there is nothing to replay.
+  const own = (opts.ownPages?.[identity.id] ?? []).filter((u) => /^https?:\/\//.test(u) && !u.includes('{{'));
+  if (recorded && own.length && (await (opts.isSignedIn ?? showsOwnToken)(identity, handle, own).catch(() => false))) {
+    log(`notyours: ${identity.id} is already signed in (its own page shows its token); skipping the login replay`);
+    logCredits(opts.stateDir, { kind: 'replay', identity: identity.id, status: 'skipped', credits: 0, durationS: 0, objective: `login replay ${name} (already signed in)` });
+    return;
+  }
 
   if (recorded) {
     const kane = opts.kane ?? new KaneCli();

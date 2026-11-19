@@ -38,11 +38,11 @@ export class RealRatchet implements Ratchet {
    * Runs `fn` with one logged-in Chrome per identity (kane-cli and the oracle both connect over CDP),
    * then closes them. The engine oracle shares the same pool. Injected oracles (tests) skip Chrome.
    */
-  private async withChromes<T>(fn: (pool: ChromePool | undefined, oracle: Oracle) => Promise<T>): Promise<T> {
+  private async withChromes<T>(fn: (pool: ChromePool | undefined, oracle: Oracle) => Promise<T>, ownPages?: Record<string, string[]>): Promise<T> {
     const launch = this.opts.chromes ?? (this.opts.kane === undefined && this.opts.oracle === undefined);
     if (!launch) return fn(undefined, this.opts.oracle ?? engineOracle(createEngine({ stateDir: this.paths.dir, cwd: this.paths.root })));
     const cfg = this.config();
-    const pool = sessionPool({ cfg, stateDir: this.paths.dir, cwd: this.paths.root, kane: this.kane, rerecordOnFailure: false });
+    const pool = sessionPool({ cfg, stateDir: this.paths.dir, cwd: this.paths.root, kane: this.kane, rerecordOnFailure: false, ...(ownPages ? { ownPages } : {}) });
     const oracle = engineOracle(createEngine({ pool, stateDir: this.paths.dir, cwd: this.paths.root }));
     try {
       return await fn(pool, oracle);
@@ -102,7 +102,7 @@ export class RealRatchet implements Ratchet {
       }
       await Promise.all(running.map((r) => r.done));
       return out;
-    });
+    }, ownPagesFor(bs));
   }
 
   private async replayOne(b: Boundary, ids: Identity[], pool: ChromePool | undefined, oracle: Oracle): Promise<ProbeResult> {
@@ -121,4 +121,22 @@ export class RealRatchet implements Ratchet {
       return { boundaryId: b.id, verdict: 'HARNESS_BROKEN', controls: { ownerSeesOwnToken: false, viewerSeesOwnToken: false }, hits: [], screenshots: [], kaneRuns: [], ts: new Date().toISOString() };
     }
   }
+}
+
+/**
+ * Pages where each persona sees its own token, from the boundaries' literal URLs: the viewer's `viewerOwn` pages, and
+ * the owner's targets (the owner can see its own record there). The session pool uses them to skip the login replay
+ * of a persona that is still signed in.
+ */
+export function ownPagesFor(bs: Boundary[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  const add = (id: string, urls: string[]) => {
+    const lit = urls.filter((u) => /^https?:\/\//.test(u) && !u.includes('{{'));
+    if (lit.length) out[id] = [...new Set([...(out[id] ?? []), ...lit])];
+  };
+  for (const b of bs) {
+    if (b.kind !== 'guest' && b.viewerOwn) add(b.viewer, b.viewerOwn.ui);
+    add(b.owner, b.targets.ui);
+  }
+  return out;
 }
