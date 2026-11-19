@@ -20,14 +20,18 @@ export function approveStart(root: string, start: string, port: number): void {
   safeWriteFile(root, path.join(nyPaths(root).dir, APPROVAL_FILE), `${JSON.stringify({ fingerprint: startFingerprint(start, port), approvedAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 });
 }
 
-/** True only when the app.start in config.yaml is the one the person approved here. */
-export function isStartApproved(root: string, app: AppSettings, baseUrl: string): boolean {
-  if (!app.start) return false;
+/** True only when exactly this start command and port were approved here. */
+export function isApprovedFor(root: string, start: string, port: number): boolean {
   const file = path.join(nyPaths(root).dir, APPROVAL_FILE);
   try {
     const approved = (JSON.parse(fs.readFileSync(file, 'utf8')) as { fingerprint?: string }).fingerprint;
-    return approved === startFingerprint(app.start, appPort(app, baseUrl));
+    return approved === startFingerprint(start, port);
   } catch {
     return false;
   }
+}
+
+/** True only when the app.start in config.yaml is the one the person approved here. */
+export function isStartApproved(root: string, app: AppSettings, baseUrl: string): boolean {
+  return !!app.start && isApprovedFor(root, app.start, appPort(app, baseUrl));
 }

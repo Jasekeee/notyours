@@ -42,6 +42,11 @@ export interface WizardOptions {
   users?: string;
   /** Take the defaults without asking (agents, CI). */
   yes: boolean;
+  /**
+   * May the wizard start the app with this command on this port? A coding agent's run may only start a command a
+   * person already approved on this machine. Default: yes (a person is running it).
+   */
+  mayStartApp?: (start: string, port: number) => boolean;
   /** Offer / install the Claude Code hooks and slash commands. */
   hooks: boolean;
   allowHost: string[];
@@ -169,6 +174,12 @@ export async function runWizard(opts: WizardOptions, deps: WizardDeps): Promise<
       // Sign-ups need the app answering. Start it with app.start if it isn't.
       if (!(await deps.isUp(url))) {
         if (!start) throw new UserError(`Nothing answers at ${url}, and there is no start command.`, 'start your app, or pass --start "<command>" so notyours can start it.');
+        if (opts.mayStartApp && !opts.mayStartApp(start, port)) {
+          throw new UserError(
+            `Nothing answers at ${url}, and the start command "${start}" has not been approved on this machine, so notyours will not run it.`,
+            'start the app yourself, or run `notyours init` in a terminal to review and approve the command.',
+          );
+        }
         const s = step(`start the app (${start})`);
         try {
           app = await deps.startApp(start, root, port, url);

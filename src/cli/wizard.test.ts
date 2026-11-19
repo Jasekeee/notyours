@@ -123,6 +123,14 @@ describe('notyours init wizard', () => {
     expect(signed).toEqual([]);
   });
 
+  it('an agent-run wizard never starts an unapproved start command (startApp is not called)', async () => {
+    const root = expressApp(tmp());
+    const { deps } = fakeDeps({ isUp: vi.fn(async () => false) });
+    const err = (await runWizard(opts(root, { mayStartApp: () => false }), deps).catch((e: unknown) => e)) as UserError;
+    expect(err.message).toMatch(/not been approved on this machine/);
+    expect(deps.startApp).not.toHaveBeenCalled();
+  });
+
   it('a failed sign-up stops the run; the personas that did sign up are remembered', async () => {
     const root = expressApp(tmp());
     let calls = 0;

@@ -10,7 +10,7 @@ import { runWizard, summaryLines, type WizardDeps } from './wizard.js';
 import { detectProject } from './detect.js';
 import { isUp, startApp } from './app-process.js';
 import { appPort, readAppSettings } from '../hooks/app-freshness.js';
-import { approveStart, isStartApproved } from './app-approval.js';
+import { approveStart, isApprovedFor, isStartApproved } from './app-approval.js';
 import { computeStatus, renderStatus } from './status.js';
 import { launchChrome } from '../engine/chrome.js';
 import { runKane } from '../engine/kane.js';
@@ -367,7 +367,7 @@ export const actions: Actions = {
     if (o.iOwnThis && o.url) await confirmOwnership([o.url, ...o.allowHost.map((h) => `http://${h}`)]);
     ensureGitignore(root); // before any secret is written
     const r = await runWizard(
-      { root, url: o.url, start: o.start, port: o.port, users: o.users, yes: o.yes, hooks: o.hooks, allowHost: o.allowHost, iOwnThis: o.iOwnThis },
+      { root, url: o.url, start: o.start, port: o.port, users: o.users, yes: o.yes, hooks: o.hooks, allowHost: o.allowHost, iOwnThis: o.iOwnThis, mayStartApp: agent ? (s, p) => isApprovedFor(root, s, p) : undefined },
       wizardDeps(root),
     );
     // A person (at a terminal, or --yes in CI) approves the start command the wizard wrote. An agent's run approves nothing.
