@@ -114,6 +114,27 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
     expect(r.screenshots.some((s) => s.endsWith('payload-bob-leak-ui0.png'))).toBe(true);
   }, 60_000);
 
+  it('AUD-12: a leak in an application/xml body is caught (all content types are scanned)', async () => {
+    const r = await engine.runBoundary(boundary({ id: 'xml', targets: { ui: ['{{item_url}}/safe'], api: ['{{item_url}}/xml'] } }), ids, cfg);
+    expect(r.verdict).toBe('LEAK_PAYLOAD');
+    expect(r.hits.some((h) => h.url.endsWith('/xml') && h.token === alice().token)).toBe(true);
+  }, 60_000);
+
+  it('AUD-12: a leak body over the 2 MB scan cap is never HELD', async () => {
+    const r = await engine.runBoundary(boundary({ id: 'big', targets: { ui: ['{{item_url}}/safe'], api: ['{{item_url}}/big'] } }), ids, cfg);
+    expect(r.verdict).toBe('HARNESS_BROKEN');
+    expect(r.hits).toEqual([]); // the token sits past the cap, so nothing was found, and that must not read as HELD
+  }, 60_000);
+
+  it("AUD-13: a viewer's 404 on an api target the owner never reached with 2xx is not a denial -> HARNESS", async () => {
+    const r = await engine.runBoundary(boundary({
+      id: 'viewer-404', kind: 'plan-gate', owner: 'pro_user', viewer: 'free_user', proAction: { objective: 'Export my notes' },
+      targets: { ui: [], api: ['{{item_url}}/pro-raw'] },
+    }), ids, cfg);
+    expect(r.controls.ownerSeesOwnToken).toBe(true); // the pro owner's own raw call answered 200
+    expect(r.verdict).toBe('HARNESS_BROKEN');
+  }, 60_000);
+
   it('URL echo is not a leak: a 404 that repeats the requested path -> HELD', async () => {
     const r = await engine.runBoundary(boundary({ id: 'echo', targets: { ui: ['{{item_url}}/safe', '{{base_url}}/missing/{{token}}'], api: [] } }), ids, cfg);
     expect(r.hits).toEqual([]);

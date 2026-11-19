@@ -4,6 +4,8 @@ import { TOKEN_SCAN_RE } from '../schemas.js';
 import type { Hit, Verdict } from '../types.js';
 
 const MAX_BODY = 2 * 1024 * 1024;
+/** Response types that can't carry another user's data: not scanned (their size or read errors don't matter). */
+const SKIPPED_RESOURCES = new Set(['image', 'media', 'font', 'stylesheet', 'script', 'manifest', 'texttrack']);
 const SNIPPET = 80;
 
 /** One token occurrence, with whether it is just the requested URL echoed back. */
@@ -19,6 +21,8 @@ export interface NetRecord {
   /** 'kane' for responses seen during the Kane run; otherwise the visit tag. */
   tag: string;
   tokens: TokenOcc[];
+  /** Set when the body could not be judged (over the size cap, or unreadable). Never silently dropped. */
+  unreadable?: string;
 }
 
 export interface Visit {
@@ -109,12 +113,28 @@ export class Capture {
   private async record(r: HTTPResponse, tag: string): Promise<void> {
     const status = r.status();
     if (status >= 300 && status < 400 && status !== 304) return; // 304: Chrome may still hand us the cached body
+    const req = r.request();
+    // Static assets can't carry another user's record; preflights have no body. Everything else is scanned,
+    // whatever its content type (application/xml, octet-stream, …).
+    if (req.method() === 'OPTIONS' || SKIPPED_RESOURCES.has(req.resourceType())) return;
     const headers = r.headers();
-    if (!/text\/|json|html/i.test(headers['content-type'] ?? '')) return;
-    if (Number(headers['content-length'] ?? 0) > MAX_BODY) return;
+    const url = r.url();
+    if (Number(headers['content-length'] ?? 0) > MAX_BODY) {
+      this.records.push({ url, status, tag, tokens: [], unreadable: `body over ${MAX_BODY / 1024 / 1024} MB` });
+      return;
+    }
     let body: string;
-    try { body = (await r.text()).slice(0, MAX_BODY); } catch { return; }
-    this.records.push({ url: r.url(), status, tag, tokens: scanText(body, r.url()) });
+    try {
+      body = await r.text();
+    } catch (e) {
+      this.records.push({ url, status, tag, tokens: [], unreadable: `body could not be read (${(e instanceof Error ? e.message : String(e)).slice(0, 60)})` });
+      return;
+    }
+    if (body.length > MAX_BODY) {
+      this.records.push({ url, status, tag, tokens: scanText(body.slice(0, MAX_BODY), url), unreadable: `body over ${MAX_BODY / 1024 / 1024} MB (only the first part was scanned)` });
+      return;
+    }
+    this.records.push({ url, status, tag, tokens: scanText(body, url) });
   }
 
   /** Wait for in-flight body reads. */
@@ -159,7 +179,11 @@ export class Capture {
               return { status: res.status, body: await res.text() };
             }, url);
             await this.flush();
-            for (let i = this.records.length - 1; i >= 0; i--) if (this.records[i]!.tag === ignore) this.records.splice(i, 1);
+            // Also drop the aborted download's own (unreadable) response: its body is the one fetched below.
+            for (let i = this.records.length - 1; i >= 0; i--) {
+              const rec = this.records[i]!;
+              if (rec.tag === ignore || (rec.tag === tag && rec.url === url && rec.unreadable)) this.records.splice(i, 1);
+            }
             status = r.status;
             downloaded = true;
             this.records.push({ url, status, tag, tokens: scanText(r.body.slice(0, MAX_BODY), url) });
@@ -240,6 +264,8 @@ export function seesToken(token: string, visits: Visit[], records: NetRecord[]):
 export interface Judgement {
   verdict: Verdict;
   hits: Hit[];
+  /** Why a no-hit result couldn't count as HELD (errored/5xx visits, unreadable leak bodies). */
+  broken?: string[];
 }
 
 /**
@@ -265,10 +291,17 @@ export function judge(
   for (const r of records) {
     for (const o of r.tokens) if (!o.echo && leakTokens.has(o.token)) add({ token: o.token, where: 'network', url: r.url, snippet: o.snippet });
   }
+  // No hit is only evidence of "held" if every judged observation actually happened: a leak visit that errored,
+  // got no response (status 0) or a 5xx, or a leak response whose body couldn't be read, proves nothing (AUD-03/12).
+  const broken = [
+    ...visits.filter((v) => v.error || v.status === 0 || v.status >= 500).map((v) => `${v.url}: ${v.error ?? `status ${v.status}`}`),
+    ...records.filter((r) => r.unreadable && r.tag.startsWith('leak:')).map((r) => `${r.url}: ${r.unreadable}`),
+  ];
   let verdict: Verdict;
   if (hits.some((h) => h.where === 'dom')) verdict = 'LEAK_VISIBLE';
   else if (hits.length) verdict = 'LEAK_PAYLOAD';
+  else if (broken.length) verdict = 'HARNESS_BROKEN';
   else if (controls.ownerSeesOwnToken && controls.viewerSeesOwnToken) verdict = 'HELD';
   else verdict = 'HARNESS_BROKEN';
-  return { verdict, hits };
+  return { verdict, hits, ...(broken.length ? { broken } : {}) };
 }

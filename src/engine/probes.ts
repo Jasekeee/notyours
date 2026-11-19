@@ -265,9 +265,12 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
     const judged = judge(leakTokens, judgedVisits, judgedRecords, { ownerSeesOwnToken, viewerSeesOwnToken: viewerOk });
     const { hits } = judged;
     let { verdict } = judged;
+    for (const why of judged.broken ?? []) notes.push(`not judged: ${why} (never counted as HELD)`);
     // A 404/405 on an api target means the call never reached the endpoint (wrong method or path): never HELD.
+    // A viewer's 404 counts as a denial only when the owner's own call to the same URL succeeded (AUD-13).
+    const ownerOk = new Set(ownerVisits.filter((v) => v.status >= 200 && v.status < 300).map((v) => parseTarget(v.url).url));
     const misfired = [...ownerVisits.filter((v) => v.kind === 'api' && (v.status === 404 || v.status === 405)),
-      ...leakVisits.filter((v) => v.kind === 'api' && v.status === 405)];
+      ...leakVisits.filter((v) => v.kind === 'api' && (v.status === 405 || (v.status === 404 && !ownerOk.has(parseTarget(v.url).url))))];
     for (const v of misfired) notes.push(`api target "${v.url}" answered ${v.status}: wrong method or path? (never counted as HELD)`);
     if (verdict === 'HELD' && misfired.length) verdict = 'HARNESS_BROKEN';
 

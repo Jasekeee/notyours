@@ -125,6 +125,25 @@ export async function startFixture(port = 0): Promise<FixtureApp> {
         document.getElementById('out').textContent = d.owner === d.me ? d.title + ': ' + d.body : 'You do not have access to this note.';
       });</script>`, 200, u);
   });
+  // Oracle edge cases (AUD-12/13): an XML API with no owner check; a body over the 2 MB scan cap with the note at
+  // the end; and a "raw" API that answers 404 for free users' notes (a wrong path for them) and 200 for pro notes.
+  app.get('/notes/:id/xml', (req, res) => {
+    if (!me(req)) return res.status(401).type('application/xml').send('<error>login required</error>');
+    const n = notes.get(req.params.id);
+    if (!n) return res.status(404).type('application/xml').send('<error>not found</error>');
+    res.type('application/xml').send(`<note><title>${esc(n.title)}</title><body>${esc(n.body)}</body></note>`);
+  });
+  app.get('/notes/:id/big', (req, res) => {
+    const n = notes.get(req.params.id);
+    if (!me(req) || !n) return res.status(404).type('text').send('not found');
+    res.type('text').send(`${'x'.repeat(2 * 1024 * 1024 + 4096)}\n${n.body}`);
+  });
+  app.get('/notes/:id/pro-raw', (req, res) => {
+    const u = me(req); const n = notes.get(req.params.id);
+    if (!u || !n || users.get(n.owner)?.plan !== 'pro') return res.status(404).json({ error: 'not found' });
+    res.json({ body: n.body });
+  });
+
   app.get('/api/notes/:id', (req, res) => {
     const u = me(req); if (!u) return res.status(401).json({ error: 'login required' });
     const n = notes.get(req.params.id);

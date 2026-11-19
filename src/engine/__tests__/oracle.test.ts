@@ -50,6 +50,22 @@ describe('oracle', () => {
   const rec = (tokens: NetRecord['tokens']): NetRecord => ({ url: 'http://h/api', status: 200, tag: 'kane', tokens });
   const ok = { ownerSeesOwnToken: true, viewerSeesOwnToken: true };
 
+  it('AUD-03/12: an errored, unanswered or 5xx leak visit, or an unreadable leak body, is never HELD (LEAK still wins)', () => {
+    const leak = new Set([T]);
+    const bad = (v: Partial<Visit>): Visit => ({ ...visit([]), ...v });
+    expect(judge(leak, [bad({ status: 0, error: 'Navigation timeout of 30000 ms exceeded' })], [], ok)).toMatchObject({ verdict: 'HARNESS_BROKEN', broken: [expect.stringContaining('Navigation timeout')] });
+    expect(judge(leak, [bad({ status: 0 })], [], ok).verdict).toBe('HARNESS_BROKEN');
+    expect(judge(leak, [bad({ status: 500 })], [], ok).verdict).toBe('HARNESS_BROKEN');
+    expect(judge(leak, [bad({ status: 503, kind: 'api' })], [], ok).verdict).toBe('HARNESS_BROKEN');
+    expect(judge(leak, [bad({ status: 403 })], [], ok).verdict).toBe('HELD'); // a 4xx is a real answer: the denial
+    const unreadable = (tag: string): NetRecord => ({ url: 'http://h/api/notes', status: 200, tag, tokens: [], unreadable: 'body over 2 MB' });
+    expect(judge(leak, [visit([])], [unreadable('leak:api0')], ok).verdict).toBe('HARNESS_BROKEN');
+    expect(judge(leak, [visit([])], [unreadable('kane')], ok).verdict).toBe('HELD'); // Kane's own navigation: bodies get evicted
+    // A hit still decides, even next to a broken visit.
+    expect(judge(leak, [bad({ status: 500 }), visit([{ token: T, snippet: 's', echo: false }])], [], ok).verdict).toBe('LEAK_VISIBLE');
+    expect(judge(leak, [bad({ status: 0 })], [rec([{ token: T, snippet: 's', echo: false }])], ok).verdict).toBe('LEAK_PAYLOAD');
+  });
+
   it('verdict rules', () => {
     const leak = new Set([T]);
     expect(judge(leak, [visit([{ token: T, snippet: 's', echo: false }])], [rec([{ token: T, snippet: 's', echo: false }])], ok).verdict).toBe('LEAK_VISIBLE');
