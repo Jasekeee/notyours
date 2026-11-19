@@ -17,6 +17,11 @@ npm run typecheck && npm test
 
 Kane CLI is **not** needed to contribute. The test suite uses a fake `kane-cli` and a local fixture app.
 
+Browser tests run locally and in the E2E workflow. `npm test` runs everything and needs Google Chrome. CI on every push
+runs typecheck, build and `npm run test:unit` (no browser). The five browser test files (`npm run test:browser`,
+serial) run in `.github/workflows/e2e.yml`, by hand or nightly. Run `npm run test:browser` yourself when you
+touch `src/engine/`, `src/cli/` or anything that drives Chrome.
+
 ## What to check before a pull request
 
 1. `npm run typecheck` passes.
