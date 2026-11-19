@@ -77,16 +77,21 @@ gh repo edit Jasekeee/notyours \
 # 3. Turn on private vulnerability reporting (needed for SECURITY.md and the issue form link). Check the response.
 gh api -X PUT repos/Jasekeee/notyours/private-vulnerability-reporting
 
-# 4. Release v0.2.0 at the merged main commit (creates the tag). Notes are the 0.2.0 section of CHANGELOG.md.
+# 4. Release v0.2.0 at the merged main commit (creates the tag). Notes are the 0.2.0 section of CHANGELOG.md,
+#    read at run time, so they match the file after the onboarding and site work merges.
 gh release create v0.2.0 --target main \
   --title "notyours 0.2.0" \
-  --notes-file /tmp/notyours-v0.2.0-notes.md
+  --notes "$(awk '/^## \[0\.2\.0\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md)"
 ```
 
-Notes for step 4: `/tmp/notyours-v0.2.0-notes.md` is a copy of the 0.2.0 section. Regenerate it after the
-onboarding and site work merges, so the notes match the tag.
+Run steps 1 and 4 only after `feat/release` is merged into `main`. Step 1 publishes what `main` contains.
 
 ## Sprint status
 
 - Branch `feat/release`: this commit series. Not merged.
 - Tags, `main` and the other branches were not changed.
+- Re-checked 2026-11-19: `npm run build` exit 0; `npm pack` gives 37 entries (92 KB packed) with `dist/` and `demo/`; source maps are excluded (`!dist/**/*.map`); no
+  `/Users/`, `/home/`, `/var/folders`, `LT_` tokens, `sk-` keys, `ghp_` tokens or private keys in the tarball.
+  Hits on `user_id`, `org_id` and `testmuai` are SQL column names and source text only. The demo's
+  `identities.json` holds fake fixture tokens (`NY-…JOTTERSEED…`) and `.test` emails, shipped on purpose.
+  CHANGELOG entries match the commits in each tag range (v0.1.0 to v0.1.5, first commit 2026-11-18).
