@@ -144,6 +144,14 @@ From the automated security review. By decision, only real secret or credential 
 - `planLock` writes plan-gate `viewerOwn` URLs into the recorded objective after filling in stored values; a
   templated host in `viewerOwn` isn't re-checked against `allowHosts` at that point (literal URLs are checked by the
   CLI host gate).
+- **The Stop hook can judge a stale app process.** It replays whatever answers on `baseUrl`. If the agent edits the
+  code but the server isn't restarted (no `node --watch`/nodemon), the hook reports GREEN for the old code. Seen in
+  docs/natural-app/EXPERIMENT2.md. A fix: compare the surface files' mtimes with the app's start time and report
+  "restart the app" instead of GREEN; until then, run the app with `node --watch`.
+- **Replays don't return stored values (kane-cli 0.10.0).** A locked boundary whose targets come from its create run
+  (`{{note_url}}`) replays as HARNESS. Locked boundaries need fixed URLs (as the demo's are).
+- **Login replays fail when the persona is still signed in** and the app redirects `/login` away. The verdict stays
+  right (the session works), but each Stop pays a few credits of Kane triage for the failed login replays.
 - **File downloads can't be judged.** A GET target that answers with `Content-Disposition: attachment` (e.g. an
   "export .txt") makes Chrome abort the navigation (`net::ERR_ABORTED`) and withhold the body, so the oracle sees no
   token. The result is HARNESS, never a false HELD. Found on the natural app's Pro export (docs/natural-app/RESULT.md).
