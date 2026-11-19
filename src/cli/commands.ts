@@ -169,7 +169,7 @@ export async function replayLocked(p: Project, ids: string[]): Promise<ProbeResu
 }
 
 function ensureGitignore(root: string): void {
-  const lines = ['.notyours/secrets.json', '.notyours/profiles/', '.notyours/runs/', '.testmuai/evidence/'];
+  const lines = ['.notyours/secrets.json', '.notyours/profiles/', '.notyours/runs/', '.notyours/app.log', '.testmuai/evidence/'];
   const file = path.join(root, '.gitignore');
   if (!fs.existsSync(file) && !fs.existsSync(path.join(root, '.git'))) return;
   const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
