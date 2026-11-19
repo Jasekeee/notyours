@@ -99,3 +99,28 @@ told to.
    still works, so the verdict is right, but each failure costs a few credits of Kane triage on every Stop.
 4. **A probe run that "fails" blocks the 0-run lock.** That happened with a sweep that included a gated URL, and a
    guest visit that Kane reported as stuck. Locking those means re-recording them, which costs authoring runs.
+
+## Afterwards (2026-11-19, after the fix-day changes)
+
+**Experiment 1's plan-gate, re-run.** `notyours run export-plan-gate`, same boundary file as in experiment 1. The
+personas were logged out first, so the run replayed their recorded logins and recorded none. Result: **HELD**, both
+positive controls true. In experiment 1 it was HARNESS, because the oracle couldn't read the `/export.txt` download.
+5 authoring runs, 220 s, 63.6 credits logged / 74.32 off the balance. Details: [RESULT.md](RESULT.md).
+
+**Setup for experiment 3** (in `~/code/natural-app-run`):
+- **Sonnet's cache change saved and reverted.** The uncommitted change is saved as
+  [exp2-sonnet-cache.patch](exp2-sonnet-cache.patch) (`server.js`, 95 lines of diff). Then `server.js` was restored
+  to the baseline (no diff against `f55f744`), and the app was restarted with `app.start` (`PORT=4001 node server.js`,
+  new pid).
+- **Re-proven with fixed URLs:** `export-plan-gate` (Alice's note 4, Bob's note 5 as his own page), `bob-sweep`
+  (Alice's note 2, Bob's note 5; `/export.txt` was dropped here because `export-plan-gate` covers it), and
+  `share-link-guest` (Alice's shared note 7 and its live link). All three were **HELD**: 8 authoring runs, 370 s,
+  70.78 credits.
+- **Locked: 3 of 4.** `notes-cross-user` (from before), plus `export-plan-gate` and `bob-sweep`, which reused their
+  probe recordings for 0 runs. **`share-link-guest` is not locked.** Its guest visit got stuck at the login redirect
+  (`stuck.ap_stuck`) both in the probe and in `lock`'s own recording (2 runs, 19.98 credits). `lock` refuses
+  recordings that failed, and authoring runs aren't retried. It stays proven HELD but unlocked, so the Stop hook
+  reports it as "changed but not locked".
+- **Replay of the 3 locked boundaries: GREEN.** All HELD, 125 s, 2.74 credits off the balance (0 logged). Both
+  login replays were skipped (already signed in), and every recorded test replayed `passed`.
+- **Authoring runs today in this folder:** 35 of 40.
