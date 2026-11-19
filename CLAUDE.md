@@ -1,7 +1,12 @@
 # notyours: rules for every agent
 
 ## Rules
-- **Code frozen at v0.1.5. Only fix bugs that break the demo recording; everything else goes to Known limitations.**
+- **Craft sprint (current): the v0.1.5 code freeze is lifted for ONE sprint.** Goal: "would a developer install this tonight?" → 8+/10.
+  v0.1.5 (tag) stays as the fallback. Work lands on feat/onboarding, feat/release, feat/site, each in its own worktree.
+  When the sprint ends, re-freeze and record the outcome in this file.
+- **No fake metrics, users, testimonials, logos or funding claims anywhere** (code, README, docs, site, UI copy).
+- **Every number must come from the repo's measurements** (committed results, tests, benchmarks). If there is no measurement, don't state the number.
+- **Do not mention the hackathon** in README, docs or the site.
 - Node >=22, TypeScript, ESM (`.js` extensions in relative imports). Never use sudo.
 - **No new dependencies.** Everything is installed. If you truly need one, write it up in CONTRACT_CHANGE.md and stop.
 - **Frozen contracts:** `src/types.ts` and `src/schemas.ts` must not be edited. Propose changes in CONTRACT_CHANGE.md.
@@ -36,6 +41,8 @@ The installed kane-cli skill is useful for flags and NDJSON parsing, but this pr
 - `src/mocks/fixtures.ts`: shared fake identities/boundary/config/results. `src/shared/`: `makeToken`, `findTokens`, `redactIdentity`.
 - Branches: feat/engine (src/engine), feat/demo (demo/), feat/ratchet (src/ratchet), feat/cli (src/cli).
   Stay in your own folder. Ask before editing anything else (src/report, src/hooks, src/map, shared files).
+- Craft sprint branches (worktrees next to the repo, all from main): feat/onboarding (../notyours-ux),
+  feat/release (../notyours-rel), feat/site (../notyours-site). Stay inside the paths your task names.
 
 ## Known issues
 - `npm audit`: 0 vulnerabilities (checked 2026-11-19; earlier there were 7 high findings from one picomatch ReDoS
