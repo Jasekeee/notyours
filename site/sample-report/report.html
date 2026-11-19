@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2 leaks across 2 pairs of users | notyours</title>
+<link rel="icon" href="data:,">
+<style>
+:root{--page:#EDF0F4;--sheet:#FFFFFF;--ink:#132033;--muted:#55627A;--rule:#D5DBE4;--leak:#C1121F;--held:#17734A;--harness:#B26B00;--canary:#FFE14D}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--page);color:var(--ink);font:400 19px/1.5 "Avenir Next","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+code,pre,.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
+main{max-width:1100px;margin:0 auto;padding:56px 32px 40px}
+.top{padding:8px 0 40px}
+.top .app{font-weight:600;color:var(--muted);margin:0 0 20px;font-size:18px}
+.top h1{font-size:clamp(40px,7vw,76px);line-height:1.02;letter-spacing:-.025em;font-weight:800;margin:0 0 18px;text-wrap:balance}
+.top.leak h1{color:var(--leak)}.top.held h1{color:var(--held)}.top.harness h1{color:var(--harness)}
+.top .sub{font-size:24px;color:var(--ink);margin:0;max-width:52ch}
+.tally{display:flex;flex-wrap:wrap;gap:12px;margin:32px 0 0;padding:0;list-style:none}
+.tally li{background:var(--sheet);border-radius:10px;padding:12px 20px;font-size:20px;font-weight:600;border-left:6px solid var(--rule)}
+.tally li b{font-size:30px;margin-right:8px;font-variant-numeric:tabular-nums}
+.tally .leak{border-color:var(--leak)}.tally .held{border-color:var(--held)}.tally .harness{border-color:var(--harness)}
+.card{background:var(--sheet);border-radius:4px 14px 14px 4px;border-left:12px solid var(--rule);padding:30px 36px 32px;margin:0 0 28px}
+.card.leak{border-left-color:var(--leak)}.card.held{border-left-color:var(--held)}.card.harness{border-left-color:var(--harness)}
+.card-head{display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px}
+.card-head h2{font-size:32px;line-height:1.1;margin:0;font-weight:700;letter-spacing:-.01em;word-break:break-word}
+.kind{color:var(--muted);font-size:17px}
+.badge{display:inline-flex;align-items:baseline;gap:8px;color:#fff;font-weight:800;font-size:22px;letter-spacing:.04em;padding:6px 14px;border-radius:6px}
+.badge small{font-size:15px;font-weight:600;letter-spacing:0;opacity:.92}
+.badge.leak{background:var(--leak)}.badge.held{background:var(--held)}.badge.harness{background:var(--harness)}
+.who{font-size:26px;font-weight:600;margin:20px 0 4px;line-height:1.3}
+.why{font-size:20px;color:var(--muted);margin:0 0 8px;max-width:64ch}
+h3{font-size:16px;font-weight:700;color:var(--muted);margin:26px 0 10px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:8px 40px}
+ul{margin:0;padding:0;list-style:none}
+.controls li{font-size:20px;display:flex;align-items:center;gap:12px;padding:4px 0}
+.ctl .mark{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;font-weight:800;color:#fff;flex:none}
+.ctl.ok .mark{background:var(--held)}.ctl.bad .mark{background:var(--harness)}
+.runs li{font-size:17px;padding:2px 0}
+.runs a{color:var(--ink);text-decoration-color:var(--rule);text-underline-offset:3px}
+.runs a:hover{text-decoration-color:var(--ink)}
+.cr{margin:8px 0 0;font-weight:700;font-size:18px}
+.hit{margin:0 0 14px}
+.hit-where{font-size:17px;margin:0 0 6px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
+.hit-kind{font-weight:700}
+.url{color:var(--muted);font-size:15px;word-break:break-all}
+.snippet{margin:0;background:var(--ink);color:#E6EBF2;border-radius:10px;padding:16px 20px;font-size:17px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+mark.tok{background:var(--canary);color:var(--ink);font-weight:700;padding:1px 6px;border-radius:4px}
+.shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.shot{margin:0}
+.shot img{display:block;width:100%;border:1px solid var(--rule);border-radius:8px}
+.shot figcaption{font-size:14px;color:var(--muted);margin-top:6px}
+.shot.missing div{display:grid;place-items:center;height:140px;border:1px dashed var(--rule);border-radius:8px;color:var(--muted);font-size:15px}
+.surface{margin:22px 0 0;font-size:17px;color:var(--muted)}
+.surface code{color:var(--ink);background:var(--page);padding:2px 8px;border-radius:4px;font-size:15px}
+.foot{display:flex;flex-wrap:wrap;gap:8px 36px;color:var(--muted);font-size:18px;padding:12px 0 0;border-top:1px solid var(--rule);margin-top:36px}
+.foot b{color:var(--ink);font-variant-numeric:tabular-nums}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+a:focus-visible{outline:3px solid var(--ink);outline-offset:3px;border-radius:2px}
+@media (max-width:700px){main{padding:28px 16px}.card{padding:22px 18px}.cols{grid-template-columns:1fr}.top .sub{font-size:20px}.who{font-size:22px}}
+@media print{body{background:#fff}.card{break-inside:avoid;border:1px solid var(--rule)}}
+</style>
+</head>
+<body>
+<main>
+<header class="top leak">
+  <p class="app">notyours isolation report</p>
+  <h1>2 leaks across 2 pairs of users</h1>
+  <p class="sub">2 boundaries leaked out of 4. Bob saw Alice&#39;s data (1); Bob got a Pro feature for free (1).</p>
+  <ul class="tally">
+    <li class="leak"><b>2</b>leaks</li>
+    <li class="held"><b>2</b>held</li>
+    <li class="harness"><b>0</b>harness</li>
+  </ul>
+</header>
+<article class="card leak" id="b-b1-notes-cross-user">
+  <header class="card-head">
+    <span class="badge leak">LEAK<small>visible</small></span>
+    <h2>b1-notes-cross-user</h2>
+    <span class="kind">cross-user</span>
+  </header>
+  <p class="who">Bob tried to open data Alice created.</p>
+  <p class="why">Alice&#39;s canary token appeared on Bob&#39;s screen.</p>
+  <div class="cols">
+    <section><h3>Controls</h3><ul class="controls">
+      <li class="ctl ok"><span class="mark" aria-hidden="true">✓</span>Alice sees their own token<span class="sr"> passed</span></li>
+      <li class="ctl ok"><span class="mark" aria-hidden="true">✓</span>Bob sees their own token<span class="sr"> passed</span></li>
+    </ul></section>
+    <section><h3>Kane runs</h3><ul class="runs"><li>Alice: passed, 0 credits, 2.0s</li><li>Bob: passed, 0 credits, 50s</li></ul><p class="cr">0 credits</p></section>
+  </div>
+  <section><h3>Where the token showed up (3)</h3><ul class="hits"><li class="hit">
+  <div class="hit-where"><span class="hit-kind">On screen</span> <code class="url">http://127.0.0.1:3077/notes/1001</code></div>
+  <pre class="snippet">Passport no. <mark class="tok">NY-ALICE-JOTTERSEED2A</mark></pre>
+</li><li class="hit">
+  <div class="hit-where"><span class="hit-kind">In a network response</span> <code class="url">http://127.0.0.1:3077/notes/1001</code></div>
+  <pre class="snippet">p class=&quot;meta&quot;&gt;[email] · Nov 2, 2026&lt;/p&gt; &lt;p class=&quot;body&quot;&gt;Passport no. <mark class="tok">NY-ALICE-JOTTERSEED2A</mark>&lt;/p&gt; &lt;/article&gt; &lt;/main&gt; &lt;/body&gt; &lt;/html&gt;</pre>
+</li><li class="hit">
+  <div class="hit-where"><span class="hit-kind">In a network response</span> <code class="url">http://127.0.0.1:3077/api/notes/1001</code></div>
+  <pre class="snippet">wner_email&quot;:&quot;[email]&quot;,&quot;title&quot;:&quot;Travel documents&quot;,&quot;body&quot;:&quot;Passport no. <mark class="tok">NY-ALICE-JOTTERSEED2A</mark>&quot;,&quot;created_at&quot;:&quot;2026-11-02T09:14:00.000Z&quot;}</pre>
+</li></ul></section>
+  
+  <p class="surface">Code to check: <code>routes/notes.js</code></p>
+</article>
+<article class="card leak" id="b-b3-export-plan-gate">
+  <header class="card-head">
+    <span class="badge leak">LEAK<small>in payload</small></span>
+    <h2>b3-export-plan-gate</h2>
+    <span class="kind">plan-gate</span>
+  </header>
+  <p class="who">Bob (free plan) tried a Pro-only action.</p>
+  <p class="why">The Pro-only result (with Bob&#39;s own data) reached Bob&#39;s browser in a network response, even though the page didn&#39;t show it.</p>
+  <div class="cols">
+    <section><h3>Controls</h3><ul class="controls">
+      <li class="ctl ok"><span class="mark" aria-hidden="true">✓</span>Alice sees their own token<span class="sr"> passed</span></li>
+      <li class="ctl ok"><span class="mark" aria-hidden="true">✓</span>Bob can use their own session<span class="sr"> passed</span></li>
+    </ul></section>
+    <section><h3>Kane runs</h3><ul class="runs"><li>Alice: passed, 0 credits, 2.0s</li><li>Bob: failed, 2.6 credits, 28s</li></ul><p class="cr">2.6 credits</p></section>
+  </div>
+  <section><h3>Where the token showed up</h3><ul class="hits"><li class="hit">
+  <div class="hit-where"><span class="hit-kind">In a network response</span> <code class="url">http://127.0.0.1:3077/api/export</code></div>
+  <pre class="snippet">rted 2026-11-18T13:55:06.886Z # Reminder (note 1002, 2026-11-03T18:40:00.000Z) <mark class="tok">NY-BOB-JOTTERSEED2B</mark> </pre>
+</li></ul></section>
+  
+  <p class="surface">Code to check: <code>routes/pro.js</code></p>
+</article>
+<article class="card held" id="b-b2-notes-guest">
+  <header class="card-head">
+    <span class="badge held">HELD</span>
+    <h2>b2-notes-guest</h2>
+    <span class="kind">guest</span>
+  </header>
+  <p class="who">A signed-out guest tried to open data Alice created.</p>
+  <p class="why">Guest never received Alice&#39;s token, and both positive controls passed.</p>
+  <div class="cols">
+    <section><h3>Controls</h3><ul class="controls">
+      <li class="ctl ok"><span class="mark" aria-hidden="true">✓</span>Alice sees their own token<span class="sr"> passed</span></li>
+      <li class="ctl ok"><span class="mark" aria-hidden="true">✓</span>Guest sees their own token<span class="sr"> passed</span></li>
+    </ul></section>
+    <section><h3>Kane runs</h3><ul class="runs"><li>Alice: passed, 0 credits, 2.0s</li><li>Guest: passed, 0 credits, 2.0s</li></ul><p class="cr">0 credits</p></section>
+  </div>
+  
+  
+  <p class="surface">Code to check: <code>routes/notes.js</code></p>
+</article>
+<article class="card held" id="b-b4-bob-sweep">
+  <header class="card-head">
+    <span class="badge held">HELD</span>
+    <h2>b4-bob-sweep</h2>
+    <span class="kind">sweep</span>
+  </header>
+  <p class="who">Bob swept every page, looking for anything Alice created.</p>
+  <p class="why">Bob never received Alice&#39;s token, and both positive controls passed.</p>
+  <div class="cols">
+    <section><h3>Controls</h3><ul class="controls">
+      <li class="ctl ok"><span class="mark" aria-hidden="true">✓</span>Alice sees their own token<span class="sr"> passed</span></li>
+      <li class="ctl ok"><span class="mark" aria-hidden="true">✓</span>Bob sees their own token<span class="sr"> passed</span></li>
+    </ul></section>
+    <section><h3>Kane runs</h3><ul class="runs"><li>Alice: passed, 0 credits, 2.0s</li><li>Bob: passed, 0 credits, 11s</li></ul><p class="cr">0 credits</p></section>
+  </div>
+  
+  
+  <p class="surface">Code to check: <code>routes/notes.js</code> <code>routes/account.js</code></p>
+</article>
+<footer class="foot">
+  <span>Run time <b>1m 43s</b></span>
+  <span>Total Kane credits <b>2.6</b></span>
+  <span>Generated <b>2026-11-18 14:09:08Z</b></span>
+</footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>notyours: prove your users' data stays theirs</title>
+<meta name="description" content="notyours runs your app on localhost, signs in as several users in real browsers, and checks that one user's data never reaches another user's screen or network traffic.">
+<meta property="og:title" content="notyours: prove your users' data stays theirs">
+<meta property="og:description" content="Isolation tests for your own app, in real browsers. A canary token decides, not an AI.">
+<meta property="og:image" content="https://raw.githubusercontent.com/Jasekeee/notyours/main/assets/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --fg: #1c1b19;
+    --muted: #5d5a53;
+    --line: #e4e1d9;
+    --card: #ffffff;
+    --accent: #1f5f4a;
+    --leak: #a33a2b;
+    --held: #1f5f4a;
+    --code-bg: #f1efe9;
+    --max: 880px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614;
+      --fg: #ecebe6;
+      --muted: #a8a59c;
+      --line: #34332f;
+      --card: #1d1d1a;
+      --accent: #7fc3a6;
+      --leak: #e8836f;
+      --held: #7fc3a6;
+      --code-bg: #232320;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614;
+    --fg: #ecebe6;
+    --muted: #a8a59c;
+    --line: #34332f;
+    --card: #1d1d1a;
+    --accent: #7fc3a6;
+    --leak: #e8836f;
+    --held: #7fc3a6;
+    --code-bg: #232320;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: var(--max); margin: 0 auto; padding: 0 16px; }
+  section { padding: 40px 0; border-top: 1px solid var(--line); }
+  h1 { font-size: clamp(30px, 6vw, 46px); line-height: 1.15; margin: 56px 0 12px; letter-spacing: -0.02em; }
+  h2 { font-size: 24px; margin: 0 0 14px; }
+  h3 { font-size: 18px; margin: 22px 0 8px; }
+  p { margin: 0 0 14px; }
+  .lead { font-size: 20px; color: var(--muted); max-width: 46em; }
+  .muted { color: var(--muted); font-size: 15px; }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  pre {
+    background: var(--code-bg);
+    padding: 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 0 0 14px;
+    white-space: pre;
+  }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin: 26px 0 6px; }
+  .btn {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    text-decoration: none;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .btn.primary { background: var(--accent); color: var(--bg); }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 14px; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); }
+  .leak { color: var(--leak); font-weight: 600; }
+  .held { color: var(--held); font-weight: 600; }
+  .grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .report-frame {
+    width: 100%;
+    height: 640px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--card);
+  }
+  footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 15px; }
+  ul { padding-left: 20px; margin: 0 0 14px; }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>Prove your users' data stays theirs.</h1>
+  <p class="lead">notyours runs your app on localhost, signs in as several users in separate real browsers, and checks
+  whether one user's data ever reaches another user's screen or network traffic. A canary token decides. No AI judges the page.</p>
+  <div class="cta">
+    <a class="btn primary" href="#report">See a real result</a>
+    <a class="btn" href="https://github.com/Jasekeee/notyours">View on GitHub</a>
+  </div>
+</header>
+
+<section id="install">
+  <h2>Install and run the demo</h2>
+  <p>Needs Node 22+, Google Chrome, and <a href="https://www.testmuai.com/kane-cli/">kane-cli</a> 0.10.0, logged in.
+  notyours isn't on npm yet, so run it from GitHub:</p>
+<pre><code>npx github:Jasekeee/notyours doctor        # checks Node, Chrome, kane-cli and login
+npx github:Jasekeee/notyours demo --quick  # one real leak in the bundled demo app, about 5 minutes</code></pre>
+  <p class="muted">Measured on kane-cli 0.10.0: the quick demo took 4 m 48 s and 61.69 Kane credits. Full steps and
+  the credit model are in the <a href="https://github.com/Jasekeee/notyours#readme">README</a>.</p>
+</section>
+
+<section id="report">
+  <h2>A real result, without running anything</h2>
+  <p>This is the redacted report from a full demo run. It has no screenshots, emails, account ids or links.
+  Two boundaries leaked, two held.</p>
+  <iframe class="report-frame" src="sample-report/report.html" title="Sample notyours report"></iframe>
+  <p class="muted"><a href="sample-report/report.html">Open the report on its own</a>.</p>
+</section>
+
+<section id="why">
+  <h2>Why</h2>
+  <p>OWASP ranks Broken Access Control first in its <a href="https://owasp.org/Top10/2021/A00_2021_Introduction/index.html">Top 10:2021</a>.
+  The usual causes are small: a query without <code>where owner_id = ?</code>, a list endpoint that returns every row,
+  a paid page that hides its button but still serves the data.</p>
+  <p>Unit tests rarely catch these, because they run one user at a time. notyours signs in as several users at once and
+  checks what each one can actually see.</p>
+</section>
+
+<section id="how">
+  <h2>How it works</h2>
+<pre><code>  map       static scan of Express / Next.js routes  ─▶  draft boundaries
+     │
+  agent     your coding agent reads the code, writes real boundaries
+     │
+  run       Kane as Alice ─▶ creates a record containing NY-ALICE-…
+            Kane as Bob   ─▶ visits the targets      ◀── live DOM + network capture
+     │
+  oracle    did NY-ALICE-… reach Bob?  ─▶  LEAK · HELD · HARNESS
+     │
+  lock      record it; every later check is a 0-credit replay
+     │
+  report    report.html + report.json  ─▶  leaks go back to your coding agent</code></pre>
+  <p>Kane CLI drives one Chrome per user. Each owner's record carries a token such as <code>NY-ALICE-K7Q2MZX4P3RA</code>.
+  If that token shows up in another user's page or network responses, it's a leak.</p>
+</section>
+
+<section id="verdicts">
+  <h2>Verdicts</h2>
+  <table>
+    <thead><tr><th>Verdict</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="leak">LEAK (visible)</td><td>The owner's token appeared in the viewer's rendered page.</td></tr>
+      <tr><td class="leak">LEAK (in payload)</td><td>The token reached the viewer's browser in a network response, even though the page didn't show it.</td></tr>
+      <tr><td class="held">HELD</td><td>The viewer never received the token, and both positive controls passed.</td></tr>
+      <tr><td>HARNESS</td><td>A positive control failed, so the probe proves nothing. Never counted as a pass.</td></tr>
+    </tbody>
+  </table>
+  <p>The token decides. Kane's own pass/fail is never used as a verdict. <code>run</code> and <code>replay</code> exit 1 on a leak,
+  so they work as a CI gate.</p>
+</section>
+
+<section id="catches">
+  <h2>What it catches, and what it doesn't</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Measured on the demo app</h3>
+      <ul>
+        <li>Bob opens Alice's note: <span class="leak">LEAK</span></li>
+        <li>Guest opens notes: <span class="held">HELD</span></li>
+        <li>Free user gets the Pro export: <span class="leak">LEAK</span></li>
+        <li>Bob sweeps the note list: <span class="held">HELD</span></li>
+      </ul>
+      <p class="muted">Three seeded bugs in a small demo app, kane-cli 0.10.0.</p>
+    </div>
+    <div class="card">
+      <h3>Not covered</h3>
+      <ul>
+        <li>Anything you didn't write a boundary for</li>
+        <li>CAPTCHA, OAuth-only and SMS logins</li>
+        <li>Tokens inside images and PDFs</li>
+        <li>Database policies (it tests what the running app returns)</li>
+        <li>Hosts other than localhost, unless you allow them</li>
+      </ul>
+    </div>
+  </div>
+  <p>Full list with measurements: <a href="https://github.com/Jasekeee/notyours/blob/main/docs/STATUS.md#known-limitations">Known limitations</a>.</p>
+</section>
+
+<section id="faq">
+  <h2>FAQ</h2>
+  <h3>Does it need an AI API key?</h3>
+  <p>No. Kane drives the browsers. The verdict comes from the canary token.</p>
+  <h3>Is it a penetration test?</h3>
+  <p>No. It checks isolation boundaries you declare, against your own app, with test accounts you control.</p>
+  <h3>Can a coding agent edit the tests to make them pass?</h3>
+  <p>The guard hook blocks edits to locked boundaries, recordings, results and config. It's a guardrail for a cooperating
+  agent, not a sandbox.</p>
+</section>
+
+<footer>
+  <p>notyours is MIT licensed. <a href="https://github.com/Jasekeee/notyours">Source on GitHub</a>.</p>
+</footer>
+
+</main>
+</body>
+</html>
