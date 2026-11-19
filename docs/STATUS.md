@@ -2,7 +2,7 @@
 
 ## What works (verified with real Kane and real Claude Code)
 - **Integration:** A–D merged in order, CC-1 applied, `NOTYOURS_REAL` removed (the CLI always uses the real engine and
-  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 311
+  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 329
   tests, including the 25 demo tests.
 - **Oracle on Jotter (authoring):** B1 LEAK_VISIBLE, B2 HELD, B3 LEAK_PAYLOAD (free Bob got the Pro export), B4 HELD,
   all with both positive controls. HARNESS_BROKEN correctly refused to call a broken harness HELD 3 times while bugs
@@ -120,6 +120,21 @@ Claude Code usage for the four headless sessions.
 - **Test suite:** one timing test flaked under parallel Chrome load (fixed: best of 3). One unexplained "1 failed file"
   run early on didn't reproduce in 6 later runs.
 
+## Fixed on fix day (2026-11-19, from the natural-app experiments)
+- **Stale app server (false GREEN).** The Stop hook no longer judges an old process. With `app.start`/`app.port` in
+  `.notyours/config.yaml` it restarts the app and waits for the port before replaying (live: new pid, HELD). Without
+  them, it compares the listening process's start time with the newest surface file. If the code is newer, it doesn't
+  replay; it reports YELLOW "your app server is older than your code — restart it or set app.start" and exits 2 (live:
+  0 s, 0 credits). This counts in `attempts.json`, so after `maxAttempts` stops the agent may stop.
+- **Already signed in.** Before replaying a recorded login, the persona's own page is checked for its token; if it's
+  there, the replay is skipped. 1-boundary Stop pass on the natural app, before → after: **102 s, 2.13 credits,
+  2 failed login replays → 62 s, 0.73 credits (0 logged), 0 failed replays** (both skipped), HELD both times.
+- **File downloads.** A GET target that aborts as a download (`Content-Disposition: attachment`) is fetched in the
+  persona's tab with `fetch(url, {credentials: 'include'})` and judged as text; the origin page it runs from is kept
+  out of the judgement. The oracle's tabs now also bypass the app's CSP: the natural app's `default-src 'none'`
+  blocked those `fetch()` calls, and it would have broken POST targets on any strict-CSP app as well. Natural-app Pro
+  export, judge-only (0 credits): **HELD, both controls true** (was HARNESS).
+
 ## Known limitations
 From the automated security review. By decision, only real secret or credential leaks are fixed; the rest is logged here.
 - Bash-guard parser differentials: comment `#` handling, `rg --pre` / `git` aliases running a program, option values
@@ -144,18 +159,14 @@ From the automated security review. By decision, only real secret or credential 
 - `planLock` writes plan-gate `viewerOwn` URLs into the recorded objective after filling in stored values; a
   templated host in `viewerOwn` isn't re-checked against `allowHosts` at that point (literal URLs are checked by the
   CLI host gate).
-- **The Stop hook can judge a stale app process.** It replays whatever answers on `baseUrl`. If the agent edits the
-  code but the server isn't restarted (no `node --watch`/nodemon), the hook reports GREEN for the old code. Seen in
-  docs/natural-app/EXPERIMENT2.md. A fix: compare the surface files' mtimes with the app's start time and report
-  "restart the app" instead of GREEN; until then, run the app with `node --watch`.
 - **Replays don't return stored values (kane-cli 0.10.0).** A locked boundary whose targets come from its create run
   (`{{note_url}}`) replays as HARNESS. Locked boundaries need fixed URLs (as the demo's are).
-- **Login replays fail when the persona is still signed in** and the app redirects `/login` away. The verdict stays
-  right (the session works), but each Stop pays a few credits of Kane triage for the failed login replays.
-- **File downloads can't be judged.** A GET target that answers with `Content-Disposition: attachment` (e.g. an
-  "export .txt") makes Chrome abort the navigation (`net::ERR_ABORTED`) and withhold the body, so the oracle sees no
-  token. The result is HARNESS, never a false HELD. Found on the natural app's Pro export (docs/natural-app/RESULT.md).
-  The fix would be to read GET downloads with an in-page `fetch()`, as non-GET targets already are.
+- **`app.start` runs a shell command from `.notyours/config.yaml` on every Stop pass that replays.** A cloned repo's
+  committed config could therefore start arbitrary commands. The guard keeps the file read-only for the agent, but
+  not for whoever wrote the repo. The restart also stops whatever process listens on `app.port`.
+- **Skipping the login replay needs a literal own page** (`viewerOwn`, or the owner's literal targets) and only
+  happens on replays; authoring runs (`notyours run`) still replay the login. A Stop pass with both logins skipped
+  and 0 credits logged still lowered the Kane balance by 0.73.
 - `run --dry-run` underestimates long objectives and plan-gates: the natural-app run was estimated at ~120 credits
   and used 259 (15 authoring runs).
 - The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and

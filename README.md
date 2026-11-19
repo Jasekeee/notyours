@@ -158,6 +158,8 @@ surface: ['src/routes/notes.ts']   # code handed to your agent if this leaks
 | **HARNESS** | A positive control failed, so the probe proves nothing. This is never counted as a pass. |
 
 The token decides. Kane's own pass/fail and page-title judgements are never used as a verdict.
+**File downloads** (`Content-Disposition: attachment`, e.g. an export `.txt`) are fetched in the persona's browser
+and judged as text.
 `run` and `replay` exit 1 when anything leaked or couldn't be judged, so they work as a CI gate.
 
 ## Positive controls
@@ -206,6 +208,11 @@ that every installed hook resolves. The hooks:
   A leak blocks the stop and hands the agent the evidence and the code to fix. The hook
   itself never authors; unlocked boundaries are proved with `notyours run` (the agent may run it, within the
   daily budget below).
+  - **It never judges an old server.** With `app: { start: "node server.js", port: 3000 }` in `.notyours/config.yaml`
+    it restarts your app before replaying. Without it, if the server is older than your code, it doesn't replay; it
+    stops with YELLOW (exit 2) and asks for a restart.
+  - **Personas that are still signed in skip the login replay.** When a persona's own page already shows its
+    token, there's no failed replay, and the Stop pass costs about 0 credits.
 
 The guard is a guardrail for a cooperating agent, not a sandbox. It also keeps the hook config
 (`.claude/settings*.json`) read-only, and in Bash it only allows read-only commands (ls, cat, grep,
