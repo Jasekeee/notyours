@@ -7,7 +7,7 @@ import { mockHeldResult, mockIdentities, mockLeakResult } from '../mocks/fixture
 import { RealRatchet } from '../ratchet/ratchet.js';
 import { notyoursPaths } from '../ratchet/paths.js';
 import { engineOracle } from '../ratchet/replay.js';
-import { readAttempts, readDirty, writeAttempts, writeDirty } from '../ratchet/store.js';
+import { readAttempts, readDirty, readEscalated, writeAttempts, writeDirty, writeEscalated } from '../ratchet/store.js';
 import { FakeKane, lockedBoundary, tempProject } from '../ratchet/testkit.js';
 import type { Boundary, Config, Engine, Identity, ProbeResult } from '../types.js';
 import { appIndexFile, findAppDirs, scanAppDirs } from './appdir.js';
@@ -106,7 +106,7 @@ describe('stop hook', () => {
     expect(readAttempts(notyoursPaths(project))).toEqual({});
   });
 
-  it('escalates on the 3rd RED: writes ESCALATION.md, exits 0, tells the human', async () => {
+  it('escalates on the 3rd RED: writes ESCALATION.md and KEEPS blocking (AUD-11), without new Kane runs', async () => {
     const engine = new SequenceEngine([leak, leak, leak]);
     const p = notyoursPaths(project);
     dirtyNotes();
@@ -115,15 +115,52 @@ describe('stop hook', () => {
     expect(existsSync(p.escalation)).toBe(false);
 
     const third = await stopHook(input('stop-continuation', project), deps(engine));
-    expect(third.exitCode).toBe(0);
-    expect(JSON.parse(third.stdout!).systemMessage).toContain('ESCALATION.md');
+    expect(third.exitCode).toBe(2); // not silently released
+    expect(third.stderr).toContain('ESCALATED, still blocking');
+    expect(third.stderr).toContain('npx github:Jasekeee/notyours release notes-cross-user');
+    expect(third.stderr).toContain('Stop retrying and tell the user');
     const esc = readFileSync(p.escalation, 'utf8');
     expect(esc).toContain("bob saw alice's data");
     expect(esc).toContain('**Attempts:** 3');
     expect(esc).toContain('.notyours/runs/r1/bob-notes.png');
+    expect(esc).toContain('notyours release');
     expect(esc).not.toContain('fake-pw-');
     expect(readAttempts(p)).toEqual({ 'notes-cross-user': 3 });
-    expect(readDirty(p)).toEqual({}); // the human owns it now
+    expect(readDirty(p)).toHaveProperty('notes-cross-user'); // still pending, not dropped
+    expect(readEscalated(p)['notes-cross-user']?.reason).toMatch(/still leaking/);
+
+    // 4th stop, code unchanged: blocks again at once; the engine (Kane) is not called again (it has no results left).
+    const callsBefore = engine.calls.length;
+    const fourth = await stopHook(input('stop-continuation', project), deps(engine));
+    expect(fourth.exitCode).toBe(2);
+    expect(fourth.stderr).toContain('ESCALATED, still blocking');
+    expect(engine.calls.length).toBe(callsBefore);
+  });
+
+  it('an edit under an escalated boundary replays it again; GREEN clears the escalation', async () => {
+    const p = notyoursPaths(project);
+    mkdirSync(path.join(project, 'src/app/api/notes'), { recursive: true });
+    const f = path.join(project, 'src/app/api/notes/route.ts');
+    writeFileSync(f, 'v1\n');
+    utimesSync(f, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+    dirtyNotes();
+    writeAttempts(p, { 'notes-cross-user': 3 });
+    writeEscalated(p, { 'notes-cross-user': { ts: new Date(Date.now() - 30_000).toISOString(), reason: 'still leaking (LEAK_VISIBLE)' } });
+    writeSurfaceBaseline(project, [lockedBoundary]);
+    writeFileSync(f, 'v2: fixed\n'); // the agent fixed it after the escalation
+    const engine = new SequenceEngine([mockHeldResult]);
+    const r = await stopHook(input('stop-continuation', project), deps(engine));
+    expect(engine.calls.map((b) => b.id)).toEqual(['notes-cross-user']);
+    expect(r.exitCode).toBe(0);
+    expect(readEscalated(p)).toEqual({});
+    expect(readDirty(p)).toEqual({});
+  });
+
+  it('stop_hook_active (a continuation we caused) is not a way out: a RED still blocks', async () => {
+    dirtyNotes();
+    const r = await stopHook(input('stop-continuation', project), deps(new SequenceEngine([leak])));
+    expect(input('stop-continuation', project).stop_hook_active).toBe(true);
+    expect(r.exitCode).toBe(2);
   });
 
   it('honours config maxAttempts and pre-existing attempts', async () => {
@@ -131,7 +168,7 @@ describe('stop hook', () => {
     dirtyNotes();
     writeAttempts(notyoursPaths(project), { 'notes-cross-user': 2 });
     const r = await stopHook(input('stop-continuation', project), deps(engine));
-    expect(r.exitCode).toBe(0);
+    expect(r.exitCode).toBe(2);
     expect(existsSync(notyoursPaths(project).escalation)).toBe(true);
   });
 
@@ -152,12 +189,16 @@ describe('stop hook', () => {
     expect(r.stderr).toContain('LEAK in boundary notes-cross-user');
   });
 
-  it('YELLOW when the oracle says HARNESS_BROKEN', async () => {
-    const engine = new SequenceEngine([{ ...mockHeldResult, verdict: 'HARNESS_BROKEN' }]);
+  it('HARNESS_BROKEN on a changed locked boundary blocks too (AUD-11): it is not a pass', async () => {
+    const engine = new SequenceEngine([{ ...mockHeldResult, verdict: 'HARNESS_BROKEN', controls: { ownerSeesOwnToken: true, viewerSeesOwnToken: false } }]);
     dirtyNotes();
     const r = await stopHook(input('stop-first', project), deps(engine));
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain('--reauthor notes-cross-user');
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('COULD NOT CHECK notes-cross-user');
+    expect(r.stderr).toContain('did not see its own token');
+    expect(r.stderr).toContain('--reauthor notes-cross-user');
+    expect(readAttempts(notyoursPaths(project))['notes-cross-user']).toBe(1);
+    expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
   });
 
   it('does not replay unlocked boundaries; tells the human instead', async () => {
@@ -179,12 +220,19 @@ describe('stop hook', () => {
     expect(r.stderr).toContain('[REDACTED]');
   });
 
-  it('a replay crash tells the human and keeps the boundary dirty', async () => {
+  it('a replay crash blocks (fail closed, AUD-11), keeps the boundary dirty, and escalates after maxAttempts', async () => {
     dirtyNotes();
-    const r = await stopHook(input('stop-first', project), { env: {}, replay: async () => { throw new Error('kane-cli not found'); } });
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain('kane-cli not found');
+    const crash: StopDeps = { env: {}, freshness: async () => ({ status: 'fresh' }), replay: async () => { throw new Error('kane-cli not found'); } };
+    const r = await stopHook(input('stop-first', project), crash);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('COULD NOT CHECK notes-cross-user: the replay failed');
+    expect(r.stderr).toContain('kane-cli not found');
     expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
+    await stopHook(input('stop-continuation', project), crash);
+    const third = await stopHook(input('stop-continuation', project), crash);
+    expect(third.exitCode).toBe(2);
+    expect(third.stderr).toContain('ESCALATED, still blocking');
+    expect(readEscalated(notyoursPaths(project))['notes-cross-user']?.reason).toContain('kane-cli not found');
   });
 });
 
@@ -275,15 +323,18 @@ describe('stop hook: stale app server', () => {
     expect(readAttempts(notyoursPaths(project))[STALE_ATTEMPTS_KEY]).toBe(1);
   });
 
-  it('loop safety: after maxAttempts stale stops it lets the agent stop and tells the human', async () => {
+  it('after maxAttempts stale stops it escalates and keeps blocking; a fresh server clears it', async () => {
     dirtyNotes();
     const stale = withFreshness(new SequenceEngine([]), async () => ({ status: 'stale', message: 'stale!' }));
     expect((await stopHook(input('stop-first', project), stale)).exitCode).toBe(2);
     expect((await stopHook(input('stop-first', project), stale)).exitCode).toBe(2);
     const third = await stopHook(input('stop-first', project), stale); // maxAttempts = 3
-    expect(third.exitCode).toBe(0);
-    expect(third.stdout ?? '').toContain('not replayed after 3 stops');
-    expect(readAttempts(notyoursPaths(project))[STALE_ATTEMPTS_KEY]).toBeUndefined();
+    expect(third.exitCode).toBe(2);
+    expect(third.stderr).toContain('ESCALATED, still blocking');
+    expect(readEscalated(notyoursPaths(project))[STALE_ATTEMPTS_KEY]?.ids).toEqual(['notes-cross-user']);
+    const fresh = await stopHook(input('stop-first', project), withFreshness(new SequenceEngine([mockHeldResult]), async () => ({ status: 'fresh' })));
+    expect(fresh.exitCode).toBe(0);
+    expect(readEscalated(notyoursPaths(project))).toEqual({});
   });
 
   it('app.start restarted the app: replays as usual and clears the stale counter', async () => {

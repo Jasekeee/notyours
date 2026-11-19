@@ -60,6 +60,19 @@ export function writeAttempts(p: NotyoursPaths, a: AttemptsState): void {
   writeJsonAtomic(p.attempts, a);
 }
 
+/** Escalations: id -> when and why (ids: the boundaries behind a non-boundary key such as a stale app). */
+export type EscalatedState = Record<string, { ts: string; reason: string; ids?: string[] }>;
+
+export function readEscalated(p: NotyoursPaths): EscalatedState {
+  const v = readJson<unknown>(p.escalated, {});
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as EscalatedState) : {};
+}
+
+export function writeEscalated(p: NotyoursPaths, e: EscalatedState): void {
+  if (!Object.keys(e).length && !existsSync(p.escalated)) return;
+  writeJsonAtomic(p.escalated, e);
+}
+
 export function loadConfig(p: NotyoursPaths): Config {
   return ConfigSchema.parse(YAML.parse(readFileSync(p.config, 'utf8')));
 }

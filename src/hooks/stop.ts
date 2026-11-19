@@ -10,11 +10,14 @@ import {
   loadIdentities,
   readAttempts,
   readDirty,
+  readEscalated,
   writeAttempts,
+  writeEscalated,
+  type EscalatedState,
   writeDirty,
   type DirtyEntry,
 } from '../ratchet/store.js';
-import { checkAppFreshness, type Freshness } from './app-freshness.js';
+import { checkAppFreshness, newestSurfaceFile, type Freshness } from './app-freshness.js';
 import { findAppDirs } from './appdir.js';
 import { markSurfaceChanges } from './surface-scan.js';
 import { ok, projectDirOf, tellHuman, type HookInput, type HookResult } from './types.js';
@@ -133,6 +136,8 @@ interface AppOutcome {
   humanNotes: string[];
   /** YELLOW: not replayed because the app server is older than the code (or could not be restarted). */
   stale?: string[];
+  /** Escalated boundaries: attempts exhausted, still blocking until a person releases them. */
+  escalatedMsgs?: string[];
 }
 
 /** The Stop pass for one app folder (the folder holding .notyours/); `projectDir` is only used for display paths. */
@@ -171,35 +176,65 @@ async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, no
     } else toReplay.push(id);
   }
 
-  // Never judge old code: restart the app (app.start) or check that the running server is newer than its code.
-  if (toReplay.length) {
-    const fresh = await (deps.freshness ?? checkAppFreshness)(appDir, p, cfg.baseUrl, toReplay.map((id) => byId.get(id)!));
-    const att = readAttempts(p);
-    if (fresh.status === 'stale' || fresh.status === 'restart-failed') {
-      writeDirty(p, dirty); // still dirty: replay once the app is restarted
-      const n = (att[STALE_ATTEMPTS_KEY] ?? 0) + 1;
-      if (n >= cfg.maxAttempts) {
-        // Loop safety: after maxAttempts blocked stops, let the agent stop and hand it to the human.
-        delete att[STALE_ATTEMPTS_KEY];
-        writeAttempts(p, att);
-        return { ...none, humanNotes: [...humanNotes, fresh.message, `notyours: ${toReplay.join(', ')} not replayed after ${n} stops; letting the agent stop. Restart the app, then: npx github:Jasekeee/notyours replay`] };
-      }
-      att[STALE_ATTEMPTS_KEY] = n;
-      writeAttempts(p, att);
-      return { ...none, humanNotes, stale: [fresh.message] };
-    }
-    if ('note' in fresh && fresh.note) humanNotes.push(fresh.note);
-    if (att[STALE_ATTEMPTS_KEY] !== undefined) { delete att[STALE_ATTEMPTS_KEY]; writeAttempts(p, att); }
-  }
+  // Escalated boundaries (attempts exhausted) keep blocking until a person runs `notyours release`. If their code
+  // hasn't changed since the escalation, don't spend Kane on them again: block straight away (cheap, 0 credits).
+  const escalatedState = readEscalated(p);
+  const unchangedSinceEscalation = (id: string): boolean => {
+    const e = escalatedState[id];
+    if (!e) return false;
+    const newest = newestSurfaceFile(appDir, [byId.get(id)!]);
+    return !newest || newest.mtimeMs <= Date.parse(e.ts);
+  };
+  const stillEscalated = toReplay.filter(unchangedSinceEscalation);
+  const replayIds = toReplay.filter((id) => !stillEscalated.includes(id));
+  const escalatedMsgs: string[] = stillEscalated.length ? [escalationNotice(stillEscalated, escalatedState, cfg.maxAttempts, shown(projectDir, p.escalation))] : [];
+  const finishWith = (extra: Partial<AppOutcome>): AppOutcome => {
+    writeDirty(p, dirty);
+    writeEscalated(p, escalatedState);
+    return { ...none, humanNotes, ...extra, escalatedMsgs: [...escalatedMsgs, ...(extra.escalatedMsgs ?? [])] };
+  };
+  if (!replayIds.length) return finishWith({});
 
-  let results: ProbeResult[] = [];
-  if (toReplay.length) {
-    try {
-      results = await (deps.replay ?? defaultReplay)(toReplay, { projectDir: appDir, paths: p, identities });
-    } catch (e) {
-      writeDirty(p, dirty);
-      return { ...none, humanNotes: [...humanNotes, `notyours: replay failed, ${toReplay.join(', ')} not checked: ${(e as Error).message}`] };
+  // Never judge old code: restart the app (app.start) or check that the running server is newer than its code.
+  const fresh = await (deps.freshness ?? checkAppFreshness)(appDir, p, cfg.baseUrl, replayIds.map((id) => byId.get(id)!));
+  const att = readAttempts(p);
+  if (fresh.status === 'stale' || fresh.status === 'restart-failed') {
+    // Still dirty: replay once the app is restarted. Counted, and escalated (still blocking) after maxAttempts.
+    const n = (att[STALE_ATTEMPTS_KEY] ?? 0) + 1;
+    att[STALE_ATTEMPTS_KEY] = n;
+    writeAttempts(p, att);
+    if (n >= cfg.maxAttempts) {
+      escalatedState[STALE_ATTEMPTS_KEY] = { ts: now.toISOString(), reason: 'the app server is older than the code (or could not be restarted)', ids: replayIds };
+      return finishWith({ stale: [fresh.message], escalatedMsgs: [escalationNotice([STALE_ATTEMPTS_KEY], escalatedState, cfg.maxAttempts, shown(projectDir, p.escalation))] });
     }
+    return finishWith({ stale: [fresh.message] });
+  }
+  if ('note' in fresh && fresh.note) humanNotes.push(fresh.note);
+  if (att[STALE_ATTEMPTS_KEY] !== undefined) { delete att[STALE_ATTEMPTS_KEY]; writeAttempts(p, att); }
+  delete escalatedState[STALE_ATTEMPTS_KEY];
+
+  let results: ProbeResult[];
+  try {
+    results = await (deps.replay ?? defaultReplay)(replayIds, { projectDir: appDir, paths: p, identities });
+  } catch (e) {
+    // A replay that throws proves nothing: block (fail closed), counted per boundary like any failed check.
+    const why = (e as Error).message;
+    const errBlocks: string[][] = [];
+    const newlyEscalated: string[] = [];
+    for (const id of replayIds) {
+      const n = (att[id] ?? 0) + 1;
+      att[id] = n;
+      if (n >= cfg.maxAttempts) {
+        escalatedState[id] = { ts: now.toISOString(), reason: `the replay failed: ${oneLine(why, 200)}` };
+        newlyEscalated.push(id);
+      } else {
+        errBlocks.push([`notyours: COULD NOT CHECK ${id}: the replay failed, attempt ${n}/${cfg.maxAttempts}`, `  ${oneLine(why, 300)}`,
+          '  This is not a pass. Is the app running on its baseUrl? Then stop again to retry.']);
+      }
+    }
+    writeAttempts(p, att);
+    if (newlyEscalated.length) writeEscalationFile(p, escalatedState, [], cfg.maxAttempts, identities, now);
+    return finishWith({ blocks: errBlocks, escalatedMsgs: newlyEscalated.length ? [escalationNotice(newlyEscalated, escalatedState, cfg.maxAttempts, shown(projectDir, p.escalation))] : [] });
   }
 
   const attempts = readAttempts(p);
@@ -212,29 +247,58 @@ async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, no
     if (light === 'GREEN') {
       delete dirty[b.id];
       delete attempts[b.id];
-    } else if (light === 'YELLOW') {
-      humanNotes.push(`notyours: ${b.id} could not be checked (a Kane step failed or the oracle had no positive control); ${reauthorHint(b.id)}`);
+      delete escalatedState[b.id];
+      continue;
+    }
+    // RED (a leak) and YELLOW (could not be checked: a positive control or a Kane step failed) both block.
+    const n = (attempts[b.id] ?? 0) + 1;
+    attempts[b.id] = n;
+    if (n >= cfg.maxAttempts) {
+      escalate.push({ b: shownB(b), r, d: shownD(dirty[b.id]), attempts: n });
+      escalatedState[b.id] = { ts: now.toISOString(), reason: light === 'RED' ? `still leaking (${r.verdict})` : 'still could not be checked (HARNESS_BROKEN)' };
+    } else if (light === 'RED') {
+      blocks.push(leakBlock(shownB(b), r, shownD(dirty[b.id]), n, cfg.maxAttempts, identities));
     } else {
-      const n = (attempts[b.id] ?? 0) + 1;
-      attempts[b.id] = n;
-      if (n >= cfg.maxAttempts) {
-        escalate.push({ b: shownB(b), r, d: shownD(dirty[b.id]), attempts: n });
-        delete dirty[b.id]; // the human owns it now; stop replaying it on every Stop
-      } else {
-        blocks.push(leakBlock(shownB(b), r, shownD(dirty[b.id]), n, cfg.maxAttempts, identities));
-      }
+      blocks.push(harnessBlock(shownB(b), r, n, cfg.maxAttempts));
     }
   }
-  writeDirty(p, dirty);
   writeAttempts(p, attempts);
-
   if (escalate.length) {
-    writeFileSync(p.escalation, formatEscalation(escalate, cfg.maxAttempts, identities, now));
-    humanNotes.push(
-      `notyours: ${escalate.map((e) => e.b.id).join(', ')} still leaking after ${cfg.maxAttempts} attempts. See ${shown(projectDir, p.escalation)}.`,
-    );
+    writeEscalationFile(p, escalatedState, escalate, cfg.maxAttempts, identities, now);
+    return finishWith({ blocks, escalated: escalate.map((e) => e.b.id), escalatedMsgs: [escalationNotice(escalate.map((e) => e.b.id), escalatedState, cfg.maxAttempts, shown(projectDir, p.escalation))] });
   }
-  return { blocks, escalated: escalate.map((e) => e.b.id), humanNotes };
+  return finishWith({ blocks });
+}
+
+/** YELLOW: a changed locked boundary that couldn't be checked. Not a pass, so it blocks too (AUD-11). */
+export function harnessBlock(b: Boundary, r: ProbeResult, attempt: number, max: number): string[] {
+  const why = !r.controls.ownerSeesOwnToken ? `${b.owner} did not see its own token (create/login/replay problem?)`
+    : !r.controls.viewerSeesOwnToken ? `${b.viewer} did not see its own token (not signed in?)` : 'a Kane step or a target failed';
+  return [
+    `notyours: COULD NOT CHECK ${b.id} (${b.kind}), attempt ${attempt}/${max}: HARNESS_BROKEN, this is not a pass`,
+    `  Why: ${why}`,
+    '  Check that the app runs and the personas can still sign in, then stop again.',
+    `  ${reauthorHint(b.id)}`,
+    `  Repro: npx github:Jasekeee/notyours replay ${b.id}`,
+  ];
+}
+
+/** The block text for escalated boundaries: the agent must stop retrying; only a person can release it. */
+export function escalationNotice(ids: string[], state: EscalatedState, max: number, escalationFile: string): string {
+  const lines = [`notyours: ESCALATED, still blocking: ${ids.map((id) => `${id} (${state[id]?.reason ?? 'attempts exhausted'})`).join('; ')}.`,
+    `  ${max} attempts failed. Stop retrying and tell the user. Details: ${escalationFile}.`,
+    '  A person must fix it, or release the block in their own terminal (a coding agent cannot):',
+    '    npx github:Jasekeee/notyours release' + (ids.length === 1 && !ids[0]!.startsWith('__') ? ` ${ids[0]}` : ''),
+    '  Changing the code under the boundary makes the next stop replay it again (GREEN clears the escalation).'];
+  return lines.join('\n');
+}
+
+function writeEscalationFile(p: NotyoursPaths, state: EscalatedState, items: { b: Boundary; r: ProbeResult; d: DirtyEntry | undefined; attempts: number }[], max: number, ids: Identity[], now: Date): void {
+  const others = Object.entries(state).filter(([id]) => !items.some((i) => i.b.id === id)).map(([id, e]) => `- **${id}**: ${e.reason} (since ${e.ts})`);
+  const body = formatEscalation(items, max, ids, now) + (others.length ? `\n## Also escalated\n\n${others.join('\n')}\n` : '') +
+    '\n## Releasing the block\n\nThe Stop hook keeps blocking until this is fixed (a GREEN replay) or a person releases it in a terminal:\n\n' +
+    '```sh\nnpx github:Jasekeee/notyours release        # all, or: release <boundary-id>\n```\n';
+  writeFileSync(p.escalation, body);
 }
 
 const shown = (projectDir: string, p: string): string => path.relative(projectDir, p) || '.';
@@ -266,13 +330,14 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
   const escalated = outcomes.flatMap((o) => o.escalated);
   const humanNotes = outcomes.flatMap((o) => o.humanNotes);
   const stale = outcomes.flatMap((o) => o.stale ?? []);
+  const escalatedMsgs = outcomes.flatMap((o) => o.escalatedMsgs ?? []);
 
-  // Loop safety (stop_hook_active): this Stop may itself be a continuation we caused. Every block increments
-  // attempts, so a RED boundary blocks at most maxAttempts-1 times in a row, then escalates and lets Claude stop.
-  // That stays under Claude Code's 8-continuation cap. An early exit on stop_hook_active alone would let the agent
-  // skip the check just by trying to stop twice, so the attempts counter is the guard.
-  if (blocks.length) return { exitCode: 2, stderr: [...stale, formatLeakReport(blocks, escalated)].join('\n\n') };
-  // YELLOW (stale app): exit 2 so the agent restarts the server; counted in attempts.json, so it can't loop forever.
-  if (stale.length) return { exitCode: 2, stderr: stale.join('\n\n') };
+  // Fail closed (AUD-11): a leak, a check that couldn't run (HARNESS, replay error, stale app) and an escalation all
+  // exit 2. stop_hook_active is deliberately not an exit: trying to stop twice must not skip the check. After
+  // maxAttempts a boundary is escalated: it keeps blocking, but without new Kane runs unless its code changes, and
+  // the block text tells the agent to stop retrying and hand it to the user (`notyours release` is a person's call).
+  const parts = [...stale, ...(blocks.length ? [formatLeakReport(blocks, escalated)] : []), ...escalatedMsgs];
+  if (humanNotes.length && parts.length) parts.push(humanNotes.join('\n'));
+  if (parts.length) return { exitCode: 2, stderr: `${parts.join('\n\n').trimEnd()}\n` };
   return humanNotes.length ? tellHuman(humanNotes.join('\n')) : ok();
 }

@@ -49,6 +49,8 @@ export interface Actions {
   installHooks(o: InstallHooksOpts): Promise<number>;
   hook(event: HookEvent, o: GlobalOpts): Promise<number>;
   budget(o: BudgetOpts): Promise<number>;
+  /** Lift escalated Stop blocks (a person only). */
+  release(ids: string[], o: GlobalOpts): Promise<number>;
 }
 
 export interface BudgetOpts extends GlobalOpts {
@@ -127,6 +129,12 @@ export function buildProgram(actions: Actions, { onExit = (c) => void (process.e
     .description("show today's authoring Kane runs vs the daily cap; --set N raises it (a person only, not an agent)")
     .option('--set <n>', 'new daily cap on authoring Kane runs (default 20)', (v) => Number(v))
     .action(async (o: { set?: number }, cmd: Command) => done(actions.budget({ ...g(cmd), ...(o.set !== undefined ? { set: o.set } : {}) })));
+
+  program
+    .command('release')
+    .description('lift an escalated Stop-hook block (a person only, not an agent); without ids: all')
+    .argument('[ids...]', 'boundary ids (default: every escalated one)')
+    .action(async (ids: string[], _o: unknown, cmd: Command) => done(actions.release(ids, g(cmd))));
 
   program
     .command('report')

@@ -19,3 +19,6 @@ spike/logs/
 # Kane recordings stay local, never committed: they hold the TestMu org_id/user_id/project_id (kane-cli
 # needs them to replay), and recorded logins hold the typed password.
 **/.notyours/tests/
+
+# `notyours demo` work folder (default ./notyours-demo; it holds recordings and a local database)
+notyours-demo*/

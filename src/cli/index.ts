@@ -19,6 +19,11 @@ const [{ buildProgram }, { actions }, { UserError }, { SymlinkError }, pc] = awa
 ]);
 
 const debug = process.argv.includes('--debug');
+// Kane progress lines for people watching a terminal; never for `hook` (its stderr is what the agent reads).
+if (process.argv[2] !== 'hook') {
+  const { setProgress } = await import('../shared/progress.js');
+  setProgress((line) => console.error(pc.dim(line)));
+}
 try {
   await buildProgram(actions).parseAsync(process.argv);
 } catch (e) {

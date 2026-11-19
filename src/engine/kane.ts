@@ -7,6 +7,7 @@ import { KaneRunSchema } from '../schemas.js';
 import { assertBudget } from '../shared/budget.js';
 import type { Config, Identity, KaneRun, KaneRunStatus } from '../types.js';
 import { cdpEndpoint } from './chrome.js';
+import { objectiveLabel, withProgress } from '../shared/progress.js';
 
 /** Plain strings are non-secret; pass {value, secret:true} for passwords (Kane masks them). */
 export type KaneVars = Record<string, string | { value: string; secret?: boolean }>;
@@ -123,11 +124,11 @@ export const runKane: KaneRunner = async (objective, identity, vars, opts) => {
   let result;
   try {
     writeFileSync(varsFile, JSON.stringify(fileVars), { mode: 0o600 });
-    result = await execa(
+    result = await withProgress(objectiveLabel(identity.id, objective), () => execa(
       kaneBin(),
       ['run', objective, '--agent', '--cdp-endpoint', cdpEndpoint(identity.cdpPort), '--variables-file', varsFile, '--timeout', String(opts.timeoutS ?? 240), ...(opts.name ? ['--name', opts.name] : [])],
       { reject: false, timeout: CHILD_TIMEOUT_MS, cwd: opts.cwd ?? process.cwd(), stdin: 'ignore' },
-    );
+    ));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

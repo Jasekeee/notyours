@@ -37,7 +37,7 @@ export function defaultBasePort(): number {
 export interface CreateOptions {
   stateDir: string;
   basePort?: number;
-  /** Domain for generated sign-up emails. Default example.com (reserved, never delivers). */
+  /** Domain for generated sign-up emails. Default notyours.test: `.test` is reserved (RFC 6761), never delivers, and is never a target. */
   emailDomain?: string;
 }
 
@@ -54,7 +54,7 @@ export function createIdentities(specs: IdentitySpec[], opts: CreateOptions): Id
       role: s.role,
       plan: s.plan,
       ...(guest ? {} : {
-        email: s.email ?? `notyours+${s.id.replace(/_/g, '-')}-${rand().slice(0, 6)}@${opts.emailDomain ?? 'example.com'}`,
+        email: s.email ?? `notyours+${s.id.replace(/_/g, '-')}-${rand().slice(0, 6)}@${opts.emailDomain ?? 'notyours.test'}`,
         password: s.password ?? generatePassword(),
       }),
       token: makeToken(s.id),

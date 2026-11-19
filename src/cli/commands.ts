@@ -16,6 +16,8 @@ import { assertHostsAllowed } from './host-gate.js';
 import { hostOf, isLocalHost } from './hosts.js';
 import { guard, guardOutput, installHooks, type HookInput } from './hooks.js';
 import { postToolHook, stopHook, writeSurfaceBaseline, type HookResult } from '../hooks/index.js';
+import { notyoursPaths } from '../ratchet/paths.js';
+import { readAttempts, readDirty, readEscalated, writeAttempts, writeDirty, writeEscalated } from '../ratchet/store.js';
 import { readPublicIdentities, runInit } from './init.js';
 import type { Actions, GlobalOpts, HookEvent } from './program.js';
 import { safeAppendFile } from './safe-fs.js';
@@ -67,10 +69,14 @@ export const AGENT_OVERRIDE_ENV = 'NOTYOURS_ALLOW_AGENT_AUTHORING';
  * person scripting it) opts in with NOTYOURS_ALLOW_AGENT_AUTHORING=1, which the guard never lets the agent set.
  * Agents MAY run run/lock/demo/init/install-hooks; those are bounded by the cap instead.
  */
-export function assertHuman(command: string, env: NodeJS.ProcessEnv = process.env, tty = process.stdin.isTTY === true): void {
-  if (env.CLAUDECODE !== '1' || tty || env[AGENT_OVERRIDE_ENV] === '1') return;
+/** Inside Claude Code: CLAUDECODE is set (any value, even 0 or empty) or any CLAUDE_CODE_* variable is present. */
+export const inCodingAgent = (env: NodeJS.ProcessEnv): boolean =>
+  env.CLAUDECODE !== undefined || Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_'));
+
+export function assertHuman(command: string, env: NodeJS.ProcessEnv = process.env, tty = process.stdin.isTTY === true, what = 'raises the Kane credit budget'): void {
+  if (!inCodingAgent(env) || tty || env[AGENT_OVERRIDE_ENV] === '1') return;
   throw new UserError(
-    `notyours ${command} raises the Kane credit budget, which is a person's decision, so it won't run from a coding agent. ` +
+    `notyours ${command} ${what}, which is a person's decision, so it won't run from a coding agent. ` +
       `Run it yourself in a terminal (or set ${AGENT_OVERRIDE_ENV}=1 in CI).`,
   );
 }
@@ -367,6 +373,27 @@ export const actions: Actions = {
     log(`${pc.green('✓')} ${path.relative(root, r.launcher)}  fail-closed launcher: no CLI → the hook blocks (exit 2)`);
     log(`${pc.green('✓')} ${path.relative(root, r.commandFile)}  /notyours-map`);
     log(pc.dim('The guard keeps locked boundaries, Kane recordings, results and secrets read-only for the agent.'));
+    return 0;
+  },
+
+  async release(ids, o) {
+    const root = enter(o);
+    assertHuman('release', process.env, process.stdin.isTTY === true, 'lifts an escalated Stop block');
+    const np = notyoursPaths(root);
+    const esc = readEscalated(np);
+    const want = ids.length ? ids : Object.keys(esc);
+    if (!want.length) { log('Nothing is escalated.'); return 0; }
+    const dirty = readDirty(np);
+    const attempts = readAttempts(np);
+    for (const id of want) {
+      for (const b of [id, ...(esc[id]?.ids ?? [])]) { delete dirty[b]; delete attempts[b]; }
+      delete esc[id];
+    }
+    writeDirty(np, dirty);
+    writeAttempts(np, attempts);
+    writeEscalated(np, esc);
+    if (!Object.keys(esc).length) fs.rmSync(np.escalation, { force: true });
+    log(`${pc.green('✓')} released ${want.join(', ')}: the next stop won't block on them (a later edit under their surface replays them again).`);
     return 0;
   },
 

@@ -14,6 +14,8 @@ import { assertHostsAllowed, assertHuman, boundaryUrls, ensureCredits, exitCodeF
 import { checkNode, runDoctor } from './doctor.js';
 import type { Exec } from './system.js';
 import { guard, mergeHookSettings } from './hooks.js';
+import { notyoursPaths } from '../ratchet/paths.js';
+import { readEscalated, writeEscalated } from '../ratchet/store.js';
 import { hookLauncherCommand } from './hook-launcher.js';
 import { matchesGlob } from './glob.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
@@ -51,6 +53,7 @@ function harness() {
     installHooks: rec('installHooks'),
     hook: rec('hook'),
     budget: rec('budget'),
+    release: rec('release'),
   };
   const codes: number[] = [];
   const parse = (...argv: string[]) => buildProgram(actions, { testing: true, onExit: (c) => codes.push(c) }).parseAsync(['node', 'notyours', ...argv]);
@@ -311,18 +314,71 @@ describe('allowHosts', () => {
 // ---------- credits, exit codes, doctor ----------
 
 describe('daily authoring budget', () => {
+  it('`notyours release` lifts escalations (a person only); the guard denies it to the agent', async () => {
+    const r = tmp('ny-release-');
+    runInit(r, { url: 'http://localhost:3000' });
+    const p = notyoursPaths(r);
+    writeEscalated(p, { 'notes-cross-user': { ts: new Date().toISOString(), reason: 'still leaking' } });
+    fs.writeFileSync(path.join(r, '.notyours/dirty.json'), JSON.stringify({ 'notes-cross-user': { files: ['a'], globs: ['a'], ts: new Date().toISOString() } }));
+    fs.writeFileSync(p.escalation, '# escalation\n');
+    const { actions } = await import('./commands.js');
+    const agentKeys = Object.keys(process.env).filter((k) => k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_'));
+    const saved = Object.fromEntries(agentKeys.map((k) => [k, process.env[k]]));
+    try {
+      process.env.CLAUDECODE = '1';
+      await expect(actions.release([], { cwd: r })).rejects.toThrow(/lifts an escalated Stop block.*coding agent/);
+      expect(readEscalated(p)).toHaveProperty('notes-cross-user');
+      for (const k of [...agentKeys, 'CLAUDECODE']) delete process.env[k];
+      expect(await actions.release([], { cwd: r })).toBe(0);
+      expect(readEscalated(p)).toEqual({});
+      expect(fs.existsSync(p.escalation)).toBe(false);
+      expect(JSON.parse(fs.readFileSync(path.join(r, '.notyours/dirty.json'), 'utf8'))).toEqual({});
+    } finally {
+      delete process.env.CLAUDECODE;
+      for (const [k, v] of Object.entries(saved)) if (v !== undefined) process.env[k] = v;
+    }
+    const g = (command: string) => guard({ tool_name: 'Bash', tool_input: { command } }, r).allow;
+    expect(g('npx github:Jasekeee/notyours release')).toBe(false);
+    expect(g('node ~/code/notyours/dist/cli/index.js release notes-cross-user')).toBe(false);
+    expect(guard({ tool_name: 'Edit', tool_input: { file_path: path.join(r, '.notyours/escalated.json') } }, r).allow).toBe(false);
+  });
+
+  it('the guard denies budget --set in Bash and any change to CLAUDECODE / CLAUDE_CODE_* (AUD-01)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ny-guard-budget-'));
+    const g = (command: string) => guard({ tool_name: 'Bash', tool_input: { command } }, root);
+    for (const c of [
+      'npx github:Jasekeee/notyours budget --set 999',
+      'CLAUDECODE=0 npx github:Jasekeee/notyours budget --set 999 </dev/null',
+      'node ~/code/notyours/dist/cli/index.js budget --set=50',
+      'CLAUDECODE= npx notyours run',
+      'export CLAUDECODE=0',
+      'unset CLAUDECODE; npx notyours run',
+      'unset CLAUDE_CODE_ENTRYPOINT',
+      'env -u CLAUDECODE npx notyours run',
+      'env --unset=CLAUDECODE sh',
+      'CLAUDE_CODE_ENTRYPOINT=x npx notyours run',
+    ]) expect(g(c).allow, c).toBe(false);
+    for (const c of ['npx github:Jasekeee/notyours budget', 'npx notyours run --dry-run', 'echo $CLAUDECODE', 'npm test']) expect(g(c).allow, c).toBe(true);
+  });
+
   it('`budget --set` refuses from a Claude Code agent shell (CLAUDECODE=1, no TTY): the agent cannot raise its own cap', () => {
     expect(() => assertHuman('budget --set', { CLAUDECODE: '1' }, false)).toThrow(/won't run from a coding agent/);
     expect(() => assertHuman('budget --set', { CLAUDECODE: '1' }, true)).not.toThrow(); // a person at a terminal
     expect(() => assertHuman('budget --set', { CLAUDECODE: '1', NOTYOURS_ALLOW_AGENT_AUTHORING: '1' }, false)).not.toThrow(); // CI
     expect(() => assertHuman('budget --set', {}, false)).not.toThrow(); // not inside Claude Code
+    // AUD-01: any value of CLAUDECODE (0, empty) or any CLAUDE_CODE_* variable still means "inside Claude Code".
+    for (const env of [{ CLAUDECODE: '0' }, { CLAUDECODE: '' }, { CLAUDECODE: 'false' }, { CLAUDE_CODE_ENTRYPOINT: 'cli' }, { CLAUDE_CODE_SESSION_ID: 'x' }]) {
+      expect(() => assertHuman('budget --set', env, false), JSON.stringify(env)).toThrow(/won't run from a coding agent/);
+    }
   });
 
   it('`notyours budget` shows usage; `--set` writes budget.json (as a person) and parses', async () => {
     const r = tmp('ny-budget-');
     runInit(r, { url: 'http://localhost:3000' });
-    const was = process.env.CLAUDECODE;
-    delete process.env.CLAUDECODE;
+    // A person's shell: no CLAUDECODE and no CLAUDE_CODE_* (this test itself may run inside Claude Code).
+    const agentKeys = Object.keys(process.env).filter((k) => k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_'));
+    const saved = Object.fromEntries(agentKeys.map((k) => [k, process.env[k]]));
+    for (const k of agentKeys) delete process.env[k];
     try {
       const { actions } = await import('./commands.js');
       expect(await actions.budget({ cwd: r, set: 7 } as never)).toBe(0);
@@ -332,7 +388,8 @@ describe('daily authoring budget', () => {
       expect(JSON.parse(fs.readFileSync(path.join(r, '.notyours/budget.json'), 'utf8'))).toEqual({ dailyCap: 7 });
       expect(await actions.budget({ cwd: r } as never)).toBe(0); // showing it is fine for anyone
     } finally {
-      if (was === undefined) delete process.env.CLAUDECODE; else process.env.CLAUDECODE = was;
+      delete process.env.CLAUDECODE;
+      for (const [k, v] of Object.entries(saved)) if (v !== undefined) process.env[k] = v;
     }
     const h = harness();
     await h.parse('budget', '--set', '30');
@@ -369,6 +426,8 @@ describe('kane-cli version', () => {
     expect(checkKaneVersion('0.10.0')).toMatchObject({ status: 'ok', detail: '0.10.0 (tested 0.10.0–0.10.6)' });
     expect(checkKaneVersion('0.10.6')).toMatchObject({ status: 'ok' });
     expect(checkKaneVersion('0.10.6').detail).toMatch(/replays cost a few credits/);
+    expect(checkKaneVersion('0.10.6').detail).toContain('@testmuai/kane-cli@0.10.0'); // AUD-22: pin the README's version
+    expect(checkKaneVersion('0.11.0').detail).toContain('pin: npm i -g @testmuai/kane-cli@0.10.0');
     expect(checkKaneVersion('0.11.0')).toMatchObject({ status: 'warn' });
     expect(checkKaneVersion('0.11.0').detail).toMatch(/outside the tested range.*KANE_COMPAT/);
     expect(checkKaneVersion('0.9.9').status).toBe('warn');
@@ -377,7 +436,7 @@ describe('kane-cli version', () => {
 
   it('demo estimates follow the kane-cli version', async () => {
     const { demoEstimate } = await import('./demo.js');
-    expect(demoEstimate(true, '0.10.0')).toMatch(/quick.*~4 min, ~45 Kane credits/);
+    expect(demoEstimate(true, '0.10.0')).toMatch(/quick.*~4 min, ~50–60 Kane credits/);
     expect(demoEstimate(true, '0.10.6')).toMatch(/quick.*~10 min, ~65 Kane credits/);
     expect(demoEstimate(false, '0.10.6')).toMatch(/full.*~25 min, ~170 Kane credits/);
   });
@@ -585,10 +644,12 @@ describe('hooks', () => {
     expect((await runHook('post-tool', { tool_name: 'Edit', tool_input: { file_path: path.join(root, 'README.md') } }, root)).exitCode).toBe(0);
   });
 
-  it('stop (ratchet hook): unlocked dirty boundaries never trigger Kane; the human is told', async () => {
+  it('stop (ratchet hook): an unlocked dirty boundary is only reported; a locked one that cannot be replayed blocks', async () => {
     const r = await runHook('stop', {}, root);
-    expect(r.exitCode).toBe(0); // nothing locked, so nothing replayed and nothing blocked
-    expect(`${r.stdout ?? ''}${r.stderr ?? ''}`).toMatch(/invoices|notes/);
+    // notes is locked, but there is no kane-cli/Chrome in this test: the replay can't run, which fails closed (AUD-11).
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/COULD NOT CHECK notes/);
+    expect(r.stderr).toMatch(/invoices changed but is not locked yet/); // the human note rides along
   });
 
   it('stop refuses to replay a dirty locked boundary pointing outside allowHosts, also in a nested app folder', async () => {
@@ -600,7 +661,7 @@ describe('hooks', () => {
       fs.writeFileSync(path.join(app, '.notyours/boundaries/evil.yaml'), YAML.stringify({ ...mockBoundary, id: 'evil', locked: true, surface: ['src/**'], targets: { ui: ['https://victim.example.org/notes/1'], api: [] } }));
       fs.writeFileSync(path.join(app, '.notyours/dirty.json'), JSON.stringify({ evil: { files: ['src/a.ts'], globs: ['src/**'], ts: new Date().toISOString() } }));
       const r = await runHook('stop', {}, r2);
-      expect(r.exitCode).toBe(0); // never blocks, never replays
+      expect(r.exitCode).toBe(2); // never replays; a boundary that can't be checked blocks (fail closed)
       expect(`${r.stdout ?? ''}${r.stderr ?? ''}`).toMatch(/victim\.example\.org.*not in allowHosts/);
     }
   });
@@ -697,8 +758,9 @@ describe('demo helpers', () => {
     const { demoEstimate, QUICK_BOUNDARY } = await import('./demo.js');
     expect(QUICK_BOUNDARY).toBe('b1-notes-cross-user');
     const quick = demoEstimate(true);
-    expect(quick).toMatch(/quick.*~4 min.*~45 Kane credits/);
-    expect(quick).toMatch(/full.*~10 min.*~120 Kane credits/);
+    expect(quick).toMatch(/quick.*~4 min.*~50–60 Kane credits/);
+    expect(quick).toMatch(/full.*~11 min.*~120–165 Kane credits/);
+    expect(quick).toContain('raw.githubusercontent.com/Jasekeee/notyours/main/docs/sample-report/report.html');
     const h = harness();
     await h.parse('demo', '--quick', '--no-open');
     expect(h.calls[0]?.[0]).toBe('demo');

@@ -30,16 +30,22 @@ export const QUICK_BOUNDARY = 'b1-notes-cross-user';
 export function demoEstimate(quick: boolean, kaneVersion?: string): string {
   // Measured: kane-cli 0.10.0 (docs/E2E.md) and 0.10.6 (docs/KANE_COMPAT.md; full is extrapolated).
   const slow = kaneReplaysCost(kaneVersion);
-  const [qt, qc, ft, fc] = slow ? ['~10 min', '~65', '~25 min', '~170'] : ['~4 min', '~45', '~10 min', '~120'];
+  // 0.10.0 measured on the account balance (docs/SUBMISSION.md, the audit): quick 61 (48.8 logged), full 163.
+  const [qt, qc, ft, fc] = slow ? ['~10 min', '~65', '~25 min', '~170'] : ['~4 min', '~50–60', '~11 min', '~120–165'];
   const lines = [
     `${quick ? pc.bold('→ quick') : '  quick'}  (B1 only, --quick): ${qt}, ${qc} Kane credits (4 authoring runs: 2 logins + B1)`,
     `${quick ? '  full ' : pc.bold('→ full ')}  (B1–B4):            ${ft}, ${fc} Kane credits (12 authoring runs)`,
     ...(kaneVersion ? [pc.dim(`  (estimates for kane-cli ${kaneVersion}${slow ? '; replays on this version also cost a few credits' : ''})`)] : []),
-    pc.dim('  Rerun with --dir <same dir> to replay recorded logins for 0 credits. No credits at all: docs/sample-report/report.html'),
+    pc.dim('  Run it again from the same folder to reuse ./notyours-demo (recorded logins replay). No credits at all:'),
+    pc.dim(`  ${SAMPLE_REPORT_URL}`),
   ];
   return lines.join('\n');
 }
 const USERS_FILES = ['users.yaml', 'users.yml', 'users.json'];
+/** The redacted sample result, for judges with no Kane credits. */
+export const SAMPLE_REPORT_URL = 'https://raw.githubusercontent.com/Jasekeee/notyours/main/docs/sample-report/report.html';
+/** Default work folder: in the current folder (not the OS temp dir, which gets cleaned), reused on the next run. */
+export const DEFAULT_DEMO_DIR = 'notyours-demo';
 /** Never copied from the package into the work dir: deps, and run state under .notyours/ or .testmuai/. */
 /**
  * Repo-only parts of demo/ that a demo copy (`notyours demo`, and loop dirs made with `demo --dir`) must not get:
@@ -125,13 +131,17 @@ export async function runDemo(o: DemoOpts): Promise<number> {
   if (!(await isPortFree(DEMO_PORT))) throw new UserError(`Port ${DEMO_PORT} is in use; the demo app needs it. Find it: lsof -i :${DEMO_PORT}`);
 
   console.log(demoEstimate(o.quick === true, await kaneVersion()));
-  const work = path.resolve(o.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'notyours-demo-')));
+  const work = path.resolve(o.dir ?? DEFAULT_DEMO_DIR);
+  const reused = fs.existsSync(path.join(work, '.notyours', 'secrets.json'));
+  const rel = path.relative(process.cwd(), work); // before the chdir below
+  const shownWork = rel.startsWith('..') || path.isAbsolute(rel) ? work : `./${rel || '.'}`;
   fs.mkdirSync(work, { recursive: true });
   fs.cpSync(src, work, { recursive: true, force: false, errorOnExist: false, filter: demoCopyFilter(src) });
   const deps = depsDir();
   if (deps && !fs.existsSync(path.join(work, 'node_modules'))) fs.symlinkSync(deps, path.join(work, 'node_modules'), 'junction');
   process.chdir(work); // Kane writes .testmuai/ (incl. evidence packs) into the working directory
-  console.log(`${pc.bold('notyours demo')}  ${pc.dim(work)}`);
+  console.log(`${pc.bold('notyours demo')}  ${shownWork}${reused ? pc.dim('  (reusing it: recorded logins replay)') : ''}`);
+  console.log(pc.dim(`  The report will be written to ${shownWork}/.notyours/runs/<time>/report.html`));
 
   // Identities: kept from a previous run in --dir, else created from the demo's users file.
   const p = nyPaths(work);
@@ -201,7 +211,7 @@ export async function runDemo(o: DemoOpts): Promise<number> {
     if (o.open) openFile(fin.reportPath);
     const s = (Date.now() - t0) / 1000;
     console.log(pc.bold(`Done in ${s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`}.`));
-    if (!o.dir && fresh.length) console.log(pc.dim(`Rerun with --dir ${work} to replay these recordings for 0 credits.`));
+    if (fresh.length) console.log(pc.dim(`Run the same command again here to reuse ${work} (recorded logins replay).`));
     return 0; // the demo app leaks on purpose: leaks are the expected outcome, not a failure
   } finally {
     cleanup();

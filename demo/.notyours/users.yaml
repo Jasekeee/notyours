@@ -1,5 +1,11 @@
 # Demo personas for `notyours demo` / `notyours init --users`. These are the Jotter seed accounts
 # (demo/seed.js). Fixed tokens and ports live in identities.json so recorded tests stay valid.
+#
+# DEMO-ONLY CREDENTIALS, published on purpose. They log into the bundled Jotter app, which listens only on
+# 127.0.0.1 and holds nothing but its own seed data. They are not real accounts, not TestMu credentials, and are
+# not reused anywhere. For your own app, never put passwords here: use `passwordEnv: NAME` in users.yaml
+# (stored only in the gitignored .notyours/secrets.json, mode 0600). To change these, set JOTTER_ALICE_PW /
+# JOTTER_BOB_PW when seeding (see demo/README.md).
 users:
   - id: alice
     role: owner

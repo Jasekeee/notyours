@@ -77,6 +77,8 @@ const READONLY_PATHS = [
   // Hook state and recordings: clearing dirty.json or attempts.json would let the agent skip the Stop replay.
   `${NY_DIR}/dirty.json`,
   `${NY_DIR}/attempts.json`,
+  // Escalations keep blocking until a person releases them: the agent must not clear them.
+  `${NY_DIR}/escalated.json`,
   // The daily authoring budget and the logs it is counted from: an agent must not raise or reset its own cap.
   `${NY_DIR}/budget.json`,
   `${NY_DIR}/credits.log`,
@@ -154,6 +156,14 @@ export function guard(input: HookInput, root: string): GuardResult {
     if (/\.notyours\/?(?=$|[\s'";|&)])/.test(cmd) && /\b(?:grep|rg|ag|find|tar|zip|cp|rsync|cat|less|head|tail|xxd|strings|base64|scp|curl)\b/.test(cmd)) return deny(secretMsg);
     // The person/CI override for raising the budget (see assertHuman in commands.ts) is never the agent's to set.
     if (/notyours_allow_agent_authoring/.test(cmd)) return deny('NOTYOURS_ALLOW_AGENT_AUTHORING is for a person or CI, not the coding agent.');
+    // Raising the daily authoring cap is a person's decision, however notyours is invoked (npx, node dist/…, an alias).
+    if (/\bbudget\b[^|;&\n]*--set\b/.test(cmd)) return deny('`budget --set` raises the Kane credit budget, which is a person\'s decision. Ask the user to run it in a terminal.');
+    // Releasing an escalated Stop block is the human's call too.
+    if (/\b(?:notyours|cli\/index\.js)\b[^|;&\n]*\brelease\b/.test(cmd)) return deny('`notyours release` lifts an escalated Stop block, which is a person\'s decision. Tell the user what is still failing.');
+    // The CLI's agent check reads CLAUDECODE / CLAUDE_CODE_*: setting, clearing or unsetting them is never the agent's call.
+    if (/(?:^|[\s;&|(])(?:claudecode|claude_code_\w+)=|\bunset\b[^;&|\n]*\b(?:claudecode|claude_code_)|\benv\b[^;&|\n]*(?:-u\s*|--unset[=\s]\s*)(?:claudecode|claude_code_)/.test(cmd)) {
+      return deny('changing CLAUDECODE / CLAUDE_CODE_* is not allowed: notyours uses them to tell a coding agent from a person.');
+    }
     if (/\bnotyours\b[^|;&]*\binit\b[^|;&]*(?:--i-own-this|--allow-host)/.test(cmd)) {
       return deny('approving a new host (--allow-host / --i-own-this) is the human\'s decision. Ask the user to run it.');
     }
@@ -232,6 +242,7 @@ export const PERMISSION_DENY = [
   'Edit(./.testmuai/**)',
   'Edit(./.notyours/dirty.json)',
   'Edit(./.notyours/attempts.json)',
+  'Edit(./.notyours/escalated.json)',
   'Edit(./.notyours/budget.json)',
   'Edit(./.notyours/credits.log)',
   'Edit(./.notyours/tests/**)',

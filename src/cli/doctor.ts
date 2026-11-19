@@ -8,7 +8,9 @@ import { HOOK_WRAPPER } from './hook-launcher.js';
 
 export const MIN_NODE_MAJOR = 22;
 export const DEMO_PORT = 3077;
-export const KANE_INSTALL_HINT = 'install kane-cli: https://www.testmuai.com/kane-cli/ (macOS: brew install lambdatest/kane/kane-cli)';
+/** The version every measured number in the README comes from. npm's `latest` (0.10.6) is slower and its replays cost credits. */
+export const KANE_PINNED = '0.10.0';
+export const KANE_INSTALL_HINT = `install kane-cli ${KANE_PINNED}: brew install lambdatest/kane/kane-cli (macOS), or npm i -g @testmuai/kane-cli@${KANE_PINNED}; then kane-cli login`;
 
 /** kane-cli versions notyours was tested end to end with (docs/E2E.md, docs/KANE_COMPAT.md). */
 export const KANE_TESTED_MIN = '0.10.0';
@@ -30,14 +32,14 @@ export function checkKaneVersion(v: string | undefined): Check {
     return {
       name: 'kane-cli version',
       status: 'warn',
-      detail: `${v} is outside the tested range ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}; it may work, but see docs/KANE_COMPAT.md (pin: npm i -g @testmuai/kane-cli@${KANE_TESTED_MAX})`,
+      detail: `${v} is outside the tested range ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}; it may work, but see docs/KANE_COMPAT.md (pin: npm i -g @testmuai/kane-cli@${KANE_PINNED})`,
     };
   }
   return {
     name: 'kane-cli version',
     status: 'ok',
     detail: kaneReplaysCost(v)
-      ? `${v} (tested ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}); on this version replays cost a few credits and runs are ~3× slower than 0.10.0 (docs/KANE_COMPAT.md)`
+      ? `${v} (tested ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}); on this version replays cost a few credits and runs are about 2× slower than ${KANE_PINNED}, which the README's numbers use (pin: npm i -g @testmuai/kane-cli@${KANE_PINNED}; docs/KANE_COMPAT.md)`
       : `${v} (tested ${KANE_TESTED_MIN}–${KANE_TESTED_MAX})`,
   };
 }

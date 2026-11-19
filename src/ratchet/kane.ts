@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { execa } from 'execa';
 import type { KaneRun, KaneRunStatus } from '../types.js';
+import { withProgress } from '../shared/progress.js';
 
 export interface AuthorRequest {
   objective: string;
@@ -157,7 +158,7 @@ export class KaneCli implements KaneClient {
   async author(req: AuthorRequest): Promise<KaneRun> {
     const timeoutS = req.timeoutS ?? 300;
     const args = ['run', req.objective, '--name', req.name, '--cdp-endpoint', req.cdpEndpoint, '--agent', '--timeout', String(timeoutS)];
-    const r = await execa(this.bin, args, { cwd: req.cwd, reject: false, env: KANE_ENV, timeout: (timeoutS + 60) * 1000 });
+    const r = await withProgress(`${req.identity}: recording ${req.name}`, () => execa(this.bin, args, { cwd: req.cwd, reject: false, env: KANE_ENV, timeout: (timeoutS + 60) * 1000 }));
     return parseAuthorRun(String(r.stdout ?? ''), r.exitCode ?? 2, req.objective, req.identity);
   }
 
@@ -173,7 +174,7 @@ export class KaneCli implements KaneClient {
         writeFileSync(file, JSON.stringify(req.variables), { mode: 0o600 });
         args.push('--variables-file', file);
       }
-      const r = await execa(this.bin, args, { cwd: req.cwd, reject: false, env: KANE_ENV, timeout: (timeoutS + 60) * 1000 });
+      const r = await withProgress(`${req.identity}: replaying ${basename(req.testPath).replace(/_test\.md$/, '')}`, () => execa(this.bin, args, { cwd: req.cwd, reject: false, env: KANE_ENV, timeout: (timeoutS + 60) * 1000 }));
       // Reports and run logs show the project-relative path, never an absolute local one.
       const shown = relative(req.cwd, req.testPath);
       const out = parseReplay(String(r.stdout ?? ''), r.exitCode ?? 2, shown && !shown.startsWith('..') ? shown : basename(req.testPath), req.identity);

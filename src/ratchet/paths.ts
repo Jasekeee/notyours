@@ -16,6 +16,8 @@ export interface NotyoursPaths {
   map: string;
   dirty: string;
   attempts: string;
+  /** Escalated boundaries (attempts exhausted): they keep blocking until a person runs `notyours release`. */
+  escalated: string;
   tests: string;
   runs: string;
   /** Append-only log of every Kane run's credits_consumed. */
@@ -39,6 +41,7 @@ export function notyoursPaths(projectDir: string): NotyoursPaths {
     map: path.join(dir, 'map.json'),
     dirty: path.join(dir, 'dirty.json'),
     attempts: path.join(dir, 'attempts.json'),
+    escalated: path.join(dir, 'escalated.json'),
     tests: path.join(dir, 'tests'),
     runs: path.join(dir, 'runs'),
     creditsLog: path.join(dir, 'runs', 'credits.jsonl'),
