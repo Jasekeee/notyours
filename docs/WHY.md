@@ -5,7 +5,7 @@
 Apps that hold data for many users have one recurring failure: user A can see user B's data. The usual causes
 are small. A query is missing `where owner_id = ?`. A list endpoint returns every row. A paid page hides its
 button but still serves the data. OWASP ranks Broken Access Control first in its
-[Top 10:2021](https://owasp.org/Top10/2021/A00_2021_Introduction/index.html).
+[Top 10:2025](https://owasp.org/Top10/2025/A01_2025-Broken_Access_Control/).
 
 These bugs survive ordinary testing. Unit tests run one user at a time and check the function that was
 written, not what another user's browser can reach. An end-to-end test that signs in as one user rarely signs in

@@ -55,7 +55,7 @@ on kane-cli 0.10.0. The demo prints its estimate before it starts.
 ## Why
 
 OWASP ranks Broken Access Control first in its
-[Top 10:2021](https://owasp.org/Top10/2021/A00_2021_Introduction/index.html). The usual causes are small: a query
+[Top 10:2025](https://owasp.org/Top10/2025/A01_2025-Broken_Access_Control/). The usual causes are small: a query
 without `where owner_id = ?`, a list endpoint that returns every row, a paid page that hides its button but still
 serves the data.
 

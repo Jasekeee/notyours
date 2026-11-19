@@ -26,7 +26,7 @@ Branch `feat/site`, worktree `../notyours-site`, from `main` at 597a823. No Kane
 | Stop hook 70–535 s, median about 130 s | `docs/STATUS.md`, "Timings" |
 | Verdicts B1 LEAK_VISIBLE, B2 HELD, B3 LEAK_PAYLOAD, B4 HELD | `docs/E2E.md`, run 1 |
 | Sample report: 2 leaks, 2 held | `docs/sample-report/report.html` (checked) |
-| OWASP: Broken Access Control is #1 in Top 10:2021 | owasp.org/Top10/2021/A00_2021_Introduction/index.html (fetched via search, not a page opened directly) |
+| OWASP: Broken Access Control is #1 in Top 10:2025 | https://owasp.org/Top10/2025/A01_2025-Broken_Access_Control/ (verified by the owner; not opened by the agent) |
 
 Removed: the README's full-demo figure "10 min 49 s, 163 credits". No measurement doc records it, so it is gone.
 The comparison section names no competitor facts. It describes trade-offs, and says that no benchmark was run.
