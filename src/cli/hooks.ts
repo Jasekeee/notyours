@@ -11,6 +11,7 @@ import { MAP_COMMAND_MD } from '../map/command.js';
 import { matchesGlob } from './glob.js';
 import { ownedStorePath } from './owned.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
+import { HOOK_WRAPPER, hookLauncherCommand, hookLauncherScript, selfCliPath } from './hook-launcher.js';
 import { NY_DIR } from './workspace.js';
 
 export interface HookInput {
@@ -80,6 +81,8 @@ const READONLY_PATHS = [
   `${NY_DIR}/budget.json`,
   `${NY_DIR}/credits.log`,
   `${NY_DIR}/tests`,
+  // The fail-closed hook launcher: editing it could switch every hook off.
+  `${NY_DIR}/bin`,
   '.testmuai',
   // The hooks themselves: an agent that could edit these could switch the guard off.
   '.claude/settings.json',
@@ -232,35 +235,45 @@ export const PERMISSION_DENY = [
   'Edit(./.notyours/budget.json)',
   'Edit(./.notyours/credits.log)',
   'Edit(./.notyours/tests/**)',
+  'Edit(./.notyours/bin/**)',
   'Edit(./.claude/**)',
 ];
 
-/** Merge notyours hooks into Claude Code settings, replacing earlier notyours entries. */
-export function mergeHookSettings(settings: Settings, cli: string): Settings {
+/** Our handlers: today's launcher command, or an older `<cli> hook <event>` one (replaced on reinstall). */
+const isOurs = (c: string) => c.includes(HOOK_WRAPPER) || (OURS_RE.test(c) && /notyours|cli\/index/.test(c));
+
+/**
+ * Merge notyours hooks into Claude Code settings, replacing earlier notyours entries. Every command runs the
+ * fail-closed launcher (.notyours/bin/notyours-hook), never a CLI path directly.
+ */
+export function mergeHookSettings(settings: Settings): Settings {
   const hooks: Record<string, HookGroup[]> = { ...(settings.hooks ?? {}) };
   const add = (event: string, group: HookGroup) => {
     const kept = (hooks[event] ?? [])
-      .map((g) => ({ ...g, hooks: g.hooks.filter((h) => !(OURS_RE.test(h.command) && /notyours|cli\/index/.test(h.command))) }))
+      .map((g) => ({ ...g, hooks: g.hooks.filter((h) => !isOurs(h.command)) }))
       .filter((g) => g.hooks.length > 0);
     hooks[event] = [...kept, group];
   };
-  add('PreToolUse', { matcher: 'Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: `${cli} hook guard` }] });
-  add('PostToolUse', { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: `${cli} hook post-tool` }] });
+  add('PreToolUse', { matcher: 'Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: hookLauncherCommand('guard') }] });
+  add('PostToolUse', { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: hookLauncherCommand('post-tool') }] });
   // 900 s: a Stop replays every dirty locked boundary (Chromes + login replays + oracle visits).
-  add('Stop', { hooks: [{ type: 'command', command: `${cli} hook stop`, timeout: 900 }] });
+  add('Stop', { hooks: [{ type: 'command', command: hookLauncherCommand('stop'), timeout: 900 }] });
   // Second layer, enforced by Claude Code itself: deny rules for the secrets and the oracle.
   const perms = (settings.permissions ?? {}) as { deny?: string[] } & Record<string, unknown>;
   const deny = [...new Set([...(perms.deny ?? []), ...PERMISSION_DENY])];
   return { ...settings, permissions: { ...perms, deny }, hooks };
 }
 
-export function installHooks(root: string, cli: string): { settingsFile: string; commandFile: string } {
+export function installHooks(root: string, cli?: string, selfJs: string | undefined = selfCliPath()): { settingsFile: string; commandFile: string; launcher: string } {
   const dir = path.join(root, '.claude');
   const settingsFile = path.join(dir, 'settings.json');
   assertNoSymlinks(root, settingsFile);
   const current = fs.existsSync(settingsFile) ? (JSON.parse(fs.readFileSync(settingsFile, 'utf8')) as Settings) : {};
-  safeWriteFile(root, settingsFile, `${JSON.stringify(mergeHookSettings(current, cli), null, 2)}\n`);
+  // The launcher first: settings that point at a launcher which isn't there yet would block every tool call.
+  const launcher = path.join(root, HOOK_WRAPPER);
+  safeWriteFile(root, launcher, hookLauncherScript({ cli, selfJs }), { mode: 0o755 });
+  safeWriteFile(root, settingsFile, `${JSON.stringify(mergeHookSettings(current), null, 2)}\n`);
   const commandFile = path.join(dir, 'commands', 'notyours-map.md');
   safeWriteFile(root, commandFile, MAP_COMMAND_MD);
-  return { settingsFile, commandFile };
+  return { settingsFile, commandFile, launcher };
 }

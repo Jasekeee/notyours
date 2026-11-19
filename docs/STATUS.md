@@ -2,7 +2,7 @@
 
 ## What works (verified with real Kane and real Claude Code)
 - **Integration:** A–D merged in order, CC-1 applied, `NOTYOURS_REAL` removed (the CLI always uses the real engine and
-  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 305
+  ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 314
   tests, including the 25 demo tests.
 - **Oracle on Jotter (authoring):** B1 LEAK_VISIBLE, B2 HELD, B3 LEAK_PAYLOAD (free Bob got the Pro export), B4 HELD,
   all with both positive controls. HARNESS_BROKEN correctly refused to call a broken harness HELD 3 times while bugs
@@ -100,6 +100,17 @@ Claude Code usage for the four headless sessions.
   quick, ~120 full).
 - **Bash edits bypassed post-tool (fixed).** Run 3's agent edited a route with `python3`. Each Stop pass now also scans
   every boundary's surface for changes since the previous pass (git in a git repo, else an mtime snapshot).
+- **Hooks failed open when the CLI path vanished (fixed, v0.1.1).** `install-hooks` used to write the CLI's absolute
+  path (often an npx-cache path) into `.claude/settings.json`. A hook command that can't start is a non-blocking error
+  in Claude Code, so the guard silently let tool calls through. Now every hook command runs `.notyours/bin/notyours-hook`.
+  The launcher tries, in order: the `--cli` override, the project's `node_modules/.bin/notyours`, the install-time
+  CLI, `notyours` on PATH, then `npx github:Jasekeee/notyours`. If no CLI is found, the launcher is missing, or the
+  CLI crashes, the hook **exits 2** with "notyours guard unavailable — run `npx github:Jasekeee/notyours
+  install-hooks` (or doctor)". The one exception keeps Stop's loop protection: with `stop_hook_active` it prints the
+  note and lets that second stop through. The guard keeps `.notyours/bin` read-only. `doctor` checks that every
+  installed hook resolves and prints a FIX line if not. Tests: `src/cli/hook-launcher.test.ts`. Remaining gap: the
+  npx fallback takes 5–9 s per hook call (slow, but it blocks rather than passes). The unused library installer in
+  `src/hooks/install.ts` still builds direct `<cli> hook <event>` commands; the CLI doesn't use it.
 - **The guard is a guardrail, not a sandbox.** It decides by text-matching Bash commands, so a determined agent with
   shell access can still find spellings it doesn't anticipate. The backstops are Claude Code's `permissions.deny`
   rules and reviewing `.notyours/` in `git diff`. Credits don't depend on the guard: the daily budget is enforced
@@ -133,11 +144,6 @@ From the automated security review. By decision, only real secret or credential 
 - `planLock` writes plan-gate `viewerOwn` URLs into the recorded objective after filling in stored values; a
   templated host in `viewerOwn` isn't re-checked against `allowHosts` at that point (literal URLs are checked by the
   CLI host gate).
-- `install-hooks` writes this CLI's absolute path into `.claude/settings.json` (an `npx github:` start takes 5–9 s, too
-  slow for the per-tool-call guard). After the npx cache is cleared or the clone moves, rerun `install-hooks`. Don't
-  commit that file as is: it names a local path. `--cli "<command>"` overrides it. If that path disappears, the hook
-  command fails with "not found". Claude Code treats that as a non-blocking error, so the guard **fails open** until
-  `install-hooks` is rerun (`doctor` doesn't check the hook command yet).
 - The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and
   overshoot the cap by the number of parallel runs (the engine runs at most 2 at once).
 

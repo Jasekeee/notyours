@@ -217,7 +217,7 @@ export const actions: Actions = {
     } catch {
       /* invalid config is reported by other commands */
     }
-    const checks = await runDoctor(floor);
+    const checks = await runDoctor(floor, { root });
     for (const c of checks) {
       const mark = c.status === 'ok' ? pc.green('✓') : c.status === 'warn' ? pc.yellow('!') : pc.red('✗');
       log(`${mark} ${pc.bold(c.name)}  ${c.detail}`);
@@ -363,7 +363,8 @@ export const actions: Actions = {
     if (fs.existsSync(nyPaths(root).config)) {
       try { writeSurfaceBaseline(root, readBoundaries(root).map((b) => b.boundary)); } catch { /* optional */ }
     }
-    log(`${pc.green('✓')} ${path.relative(root, r.settingsFile)}  PreToolUse guard, PostToolUse post-tool, Stop replay  ${pc.dim(`(${o.cli} hook …)`)}`);
+    log(`${pc.green('✓')} ${path.relative(root, r.settingsFile)}  PreToolUse guard, PostToolUse post-tool, Stop replay`);
+    log(`${pc.green('✓')} ${path.relative(root, r.launcher)}  fail-closed launcher: no CLI → the hook blocks (exit 2)`);
     log(`${pc.green('✓')} ${path.relative(root, r.commandFile)}  /notyours-map`);
     log(pc.dim('The guard keeps locked boundaries, Kane recordings, results and secrets read-only for the agent.'));
     return 0;

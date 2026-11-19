@@ -177,11 +177,17 @@ Use `lock --reauthor` to re-record when the UI changes enough that a replay no l
 ## Claude Code hooks and the read-only guard
 
 ```sh
-npx github:Jasekeee/notyours install-hooks   # hooks call this CLI by absolute path (fast); override with --cli "<command>"
+npx github:Jasekeee/notyours install-hooks   # --cli "<command>" to choose the CLI yourself
 ```
 
 This merges three hooks and a few `permissions.deny` rules (for the secrets and the oracle) into
-`.claude/settings.json`, keeping your own settings, and installs the `/notyours-map` command:
+`.claude/settings.json`, keeping your own settings, and installs the `/notyours-map` command.
+
+The hooks **fail closed**. Each one runs `.notyours/bin/notyours-hook`, a small launcher that finds the CLI
+(the project's `node_modules`, the CLI you installed from, PATH, then `npx github:`). If it can't find or start one,
+the hook blocks (exit 2) with "notyours guard unavailable — run `npx github:Jasekeee/notyours install-hooks` (or
+doctor)". The Stop hook still lets a second stop in a row through, so a session can't get stuck. `doctor` checks
+that every installed hook resolves. The hooks:
 
 - **guard** (PreToolUse) makes the oracle read-only for the agent. It can't edit locked boundaries,
   Kane recordings (`.testmuai/`), run results or `config.yaml`. It can't read

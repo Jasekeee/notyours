@@ -1,5 +1,4 @@
 // Command-line surface. Handlers are injected so argument parsing is testable without side effects.
-import { realpathSync } from 'node:fs';
 import { Argument, Command, Option } from 'commander';
 import pkg from '../../package.json' with { type: 'json' };
 
@@ -33,7 +32,8 @@ export interface DemoOpts extends GlobalOpts {
   quick?: boolean;
 }
 export interface InstallHooksOpts extends GlobalOpts {
-  cli: string;
+  /** Command the hook launcher tries first (default: it finds the CLI itself). */
+  cli?: string;
 }
 
 /** Each handler returns the process exit code. */
@@ -56,22 +56,8 @@ export interface BudgetOpts extends GlobalOpts {
   set?: number;
 }
 
-/** Run notyours straight from GitHub (not on npm yet). For people and agents; too slow for hooks (5–9 s per start). */
+/** Run notyours straight from GitHub (not on npm yet). */
 export const NPX_CLI = 'npx github:Jasekeee/notyours';
-
-/**
- * The command install-hooks writes: this very CLI by absolute path (~0.2 s per start; the guard runs before every tool
- * call with a 10 s timeout). Falls back to the npx form when not running from a built .js file (e.g. tsx in dev).
- */
-export function defaultHookCli(argv1: string | undefined = process.argv[1]): string {
-  try {
-    const self = argv1 ? realpathSync(argv1) : '';
-    if (/\.[cm]?js$/.test(self)) return `node '${self.replace(/'/g, `'\\''`)}'`;
-  } catch { /* fall through */ }
-  return `npx --yes ${NPX_CLI.slice('npx '.length)}`;
-}
-
-export const DEFAULT_HOOK_CLI = defaultHookCli();
 
 const collect = (v: string, prev: string[]) => [...prev, v];
 
@@ -159,8 +145,8 @@ export function buildProgram(actions: Actions, { onExit = (c) => void (process.e
   program
     .command('install-hooks')
     .description('add notyours hooks (guard, post-tool, stop) and /notyours-map to .claude/')
-    .option('--cli <command>', 'command Claude Code runs to call notyours', DEFAULT_HOOK_CLI)
-    .action(async (o: { cli: string }, cmd: Command) => done(actions.installHooks({ ...g(cmd), cli: o.cli })));
+    .option('--cli <command>', 'command the hook launcher tries first (default: project node_modules, this CLI, PATH, npx)')
+    .action(async (o: { cli?: string }, cmd: Command) => done(actions.installHooks({ ...g(cmd), ...(o.cli ? { cli: o.cli } : {}) })));
 
   program
     .command('hook')

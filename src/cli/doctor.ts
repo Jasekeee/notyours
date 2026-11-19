@@ -1,6 +1,11 @@
 // `notyours doctor`: is this machine ready to run notyours?
 import { exec, findChrome, isPortFree, kaneBalance, kaneVersion, kaneWhoami, type Exec } from './system.js';
 
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { HOOK_WRAPPER } from './hook-launcher.js';
+
 export const MIN_NODE_MAJOR = 22;
 export const DEMO_PORT = 3077;
 export const KANE_INSTALL_HINT = 'install kane-cli: https://www.testmuai.com/kane-cli/ (macOS: brew install lambdatest/kane/kane-cli)';
@@ -56,6 +61,8 @@ export function checkNode(version = process.versions.node): Check {
 }
 
 export interface DoctorDeps {
+  /** Project folder: when set, its installed Claude Code hooks are checked too. */
+  root?: string;
   exec: Exec;
   findChrome: () => string | undefined;
   isPortFree: (port: number) => Promise<boolean>;
@@ -99,10 +106,51 @@ export async function runDoctor(creditFloor: number, deps: Partial<DoctorDeps> =
     }
   }
 
+  if (d.root) {
+    const h = checkHooks(d.root);
+    if (h) checks.push(h);
+  }
+
   checks.push(
     (await d.isPortFree(DEMO_PORT))
       ? { name: `Port ${DEMO_PORT}`, status: 'ok', detail: 'free' }
       : { name: `Port ${DEMO_PORT}`, status: 'fail', detail: `in use (the demo app needs it). Find it: lsof -i :${DEMO_PORT}` },
   );
   return checks;
+}
+
+const HOOK_FIX = 'FIX: npx github:Jasekeee/notyours install-hooks';
+
+/**
+ * Every installed notyours hook command must resolve to a runnable CLI: it goes through the launcher, the launcher
+ * exists, and `launcher --resolve` finds a CLI. undefined when the project has no notyours hooks.
+ */
+export function checkHooks(
+  root: string,
+  resolve = (launcher: string) => spawnSync('/bin/sh', [launcher, '--resolve'], { encoding: 'utf8', timeout: 15_000 }),
+): Check | undefined {
+  let settings: { hooks?: Record<string, { hooks?: { command?: unknown }[] }[]> };
+  try {
+    settings = JSON.parse(fs.readFileSync(path.join(root, '.claude', 'settings.json'), 'utf8'));
+  } catch {
+    return undefined;
+  }
+  const cmds = Object.values(settings.hooks ?? {}).flat().flatMap((g) => g.hooks ?? [])
+    .map((h) => h.command).filter((c): c is string => typeof c === 'string')
+    .filter((c) => c.includes(HOOK_WRAPPER) || (/\bhook (?:guard|post-tool|stop)\s*$/.test(c) && /notyours|cli\/index/.test(c)));
+  if (!cmds.length) return undefined;
+  const old = cmds.filter((c) => !c.includes(HOOK_WRAPPER));
+  if (old.length) {
+    return { name: 'Claude Code hooks', status: 'fail', detail: `${old.length} of ${cmds.length} hook commands call the CLI directly and fail open if it moves. ${HOOK_FIX}` };
+  }
+  const launcher = path.join(root, HOOK_WRAPPER);
+  if (!fs.existsSync(launcher)) {
+    return { name: 'Claude Code hooks', status: 'fail', detail: `${HOOK_WRAPPER} is missing: every hook blocks (exit 2). ${HOOK_FIX}` };
+  }
+  const r = resolve(launcher);
+  if (r.status !== 0) {
+    return { name: 'Claude Code hooks', status: 'fail', detail: `no notyours CLI found for the hooks: every hook blocks (exit 2). ${HOOK_FIX}` };
+  }
+  const via = String(r.stdout ?? '').trim();
+  return { name: 'Claude Code hooks', status: /npx/.test(via) ? 'warn' : 'ok', detail: `${cmds.length} hooks → ${via}` };
 }

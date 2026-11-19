@@ -7,13 +7,14 @@ import { describe, expect, it } from 'vitest';
 import { CommanderError } from 'commander';
 import { ConfigSchema, IdentitySchema } from '../schemas.js';
 import { mockBoundary, mockConfig } from '../mocks/fixtures.js';
-import { buildProgram, DEFAULT_HOOK_CLI, type Actions } from './program.js';
+import { buildProgram, type Actions } from './program.js';
 import { checkHost } from './hosts.js';
 import { runInit, parseUsersFile, readPublicIdentities } from './init.js';
 import { assertHostsAllowed, assertHuman, boundaryUrls, ensureCredits, exitCodeFor, logHook, runHook } from './commands.js';
 import { checkNode, runDoctor } from './doctor.js';
 import type { Exec } from './system.js';
 import { guard, mergeHookSettings } from './hooks.js';
+import { hookLauncherCommand } from './hook-launcher.js';
 import { matchesGlob } from './glob.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
 import { copyFilter, demoCopyFilter, demoStartCommand, packagedDemoDir } from './demo.js';
@@ -112,16 +113,6 @@ describe('argument parsing', () => {
     ]);
   });
 
-  it('the default hook command is this CLI by absolute path (npx github: takes 5-9 s per start)', async () => {
-    const { defaultHookCli } = await import('./program.js');
-    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ny-cli-')), "it's", 'index.js');
-    fs.mkdirSync(path.dirname(f), { recursive: true });
-    fs.writeFileSync(f, '');
-    expect(defaultHookCli(f)).toBe(`node '${fs.realpathSync(f).replace(/'/g, `'\\''`)}'`);
-    expect(defaultHookCli('/src/cli/index.ts')).toBe('npx --yes github:Jasekeee/notyours');
-    expect(defaultHookCli('')).toBe('npx --yes github:Jasekeee/notyours');
-  });
-
   it('install-hooks --cli and hook <event> with fixed choices', async () => {
     const h = harness();
     await h.parse('install-hooks');
@@ -130,7 +121,7 @@ describe('argument parsing', () => {
     await h.parse('hook', 'post-tool');
     await h.parse('hook', 'stop');
     expect(h.calls).toEqual([
-      ['installHooks', { cwd, cli: DEFAULT_HOOK_CLI }],
+      ['installHooks', { cwd }],
       ['installHooks', { cwd, cli: 'node ./node_modules/notyours/dist/cli/index.js' }],
       ['hook', 'guard', { cwd }],
       ['hook', 'post-tool', { cwd }],
@@ -543,7 +534,7 @@ describe('hooks', () => {
     }
     expect(g('Bash', { command: 'echo {} > .notyours/budget.json' }).allow).toBe(false);
     expect(g('Bash', { command: 'NOTYOURS_ALLOW_AGENT_AUTHORING=1 npx notyours budget --set 99' }).allow).toBe(false);
-    const deny = (mergeHookSettings({}, 'notyours').permissions as { deny: string[] }).deny;
+    const deny = (mergeHookSettings({}).permissions as { deny: string[] }).deny;
     expect(deny).toEqual(expect.arrayContaining(['Edit(./.notyours/budget.json)', 'Edit(./.notyours/credits.log)']));
   });
 
@@ -558,7 +549,7 @@ describe('hooks', () => {
     }
     expect(g('Bash', { command: 'rm .notyours/dirty.json' }).allow).toBe(false);
     expect(g('Read', { file_path: '.notyours/dirty.json' }).allow).toBe(true);
-    const deny = (mergeHookSettings({}, 'notyours').permissions as { deny: string[] }).deny;
+    const deny = (mergeHookSettings({}).permissions as { deny: string[] }).deny;
     expect(deny).toEqual(expect.arrayContaining(['Edit(./.claude/**)', 'Edit(./.notyours/dirty.json)', 'Edit(./.notyours/attempts.json)', 'Edit(./.notyours/tests/**)']));
   });
 
@@ -659,12 +650,13 @@ describe('hooks', () => {
   });
 
   it('install-hooks merges idempotently and keeps the user\'s own hooks', () => {
-    const mine = { hooks: { Stop: [{ hooks: [{ type: 'command' as const, command: 'echo mine' }] }] }, permissions: { allow: ['Bash(ls)'] } };
-    const once = mergeHookSettings(mine, 'npx notyours');
-    const twice = mergeHookSettings(once, 'node dist/cli/index.js');
-    expect(twice.hooks!.Stop!.map((x) => x.hooks[0]!.command)).toEqual(['echo mine', 'node dist/cli/index.js hook stop']);
+    // An older install (CLI path baked into the command) is replaced by the fail-closed launcher, never duplicated.
+    const mine = { hooks: { Stop: [{ hooks: [{ type: 'command' as const, command: 'echo mine' }] }, { hooks: [{ type: 'command' as const, command: "node '/old/notyours/dist/cli/index.js' hook stop" }] }] }, permissions: { allow: ['Bash(ls)'] } };
+    const once = mergeHookSettings(mine);
+    const twice = mergeHookSettings(once);
+    expect(twice.hooks!.Stop!.map((x) => x.hooks[0]!.command)).toEqual(['echo mine', hookLauncherCommand('stop')]);
     expect(twice.hooks!.PreToolUse).toHaveLength(1);
-    expect(twice.hooks!.PreToolUse![0]!.hooks[0]!.command).toBe('node dist/cli/index.js hook guard');
+    expect(twice.hooks!.PreToolUse![0]!.hooks[0]!.command).toBe(hookLauncherCommand('guard'));
     expect(twice.hooks!.PostToolUse![0]!.matcher).toBe('Edit|Write|MultiEdit|NotebookEdit');
     expect((twice.permissions as { deny: string[]; allow: string[] }).deny).toContain('Read(./.notyours/secrets.json)');
     expect((twice.permissions as { allow: string[] }).allow).toEqual(['Bash(ls)']);
