@@ -167,6 +167,9 @@ From the automated security review. By decision, only real secret or credential 
 - **Skipping the login replay needs a literal own page** (`viewerOwn`, or the owner's literal targets) and only
   happens on replays; authoring runs (`notyours run`) still replay the login. A Stop pass with both logins skipped
   and 0 credits logged still lowered the Kane balance by 0.73.
+- **Kane's guest recording can get stuck at a login redirect** (`stuck.ap_stuck`). On the natural app,
+  `share-link-guest` proved HELD, but its guest visit was stuck both in the probe and in `lock`'s own recording, so it
+  can't be locked (docs/natural-app/EXPERIMENT3.md). The demo's guest boundary locks fine.
 - `run --dry-run` underestimates long objectives and plan-gates: the natural-app run was estimated at ~120 credits
   and used 259 (15 authoring runs).
 - The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and

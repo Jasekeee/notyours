@@ -1,0 +1,91 @@
+diff --git a/server.js b/server.js
+index 502c08c..fe5e77d 100644
+--- a/server.js
++++ b/server.js
+@@ -228,18 +228,46 @@ app.post('/notes', requireLogin, checkCsrf, (req, res) => {
+   res.redirect('/notes/' + ins.lastInsertRowid);
+ });
+ 
+-app.get('/notes/:id', requireLogin, (req, res) => {
+-  const n = getOwnNote(req);
+-  if (!n) return notFound(req, res);
+-  const link = n.share_token ? `${req.protocol}://${req.get('host')}/s/${n.share_token}` : null;
+-  res.send(page(req, n.title, `<h1>${esc(n.title)}</h1><p class="muted">Updated ${esc(n.updated_at)}</p><pre class="body">${esc(n.body)}</pre>
++// In-memory cache of each note page's body HTML, keyed by note id.
++// The HTML embeds per-session CSRF tokens, so it is stored with a placeholder
++// that is filled in on every request. The ownership check (getOwnNote) still
++// runs on every request, so only the note's owner ever receives cached HTML.
++// Entries are dropped whenever the note is changed, shared, unshared or deleted.
++const CSRF_PLACEHOLDER = '\u0000CSRF\u0000';
++const NOTE_CACHE_MAX = 500;
++const noteCache = new Map(); // note id -> { origin, html }
++function cacheNote(id, origin, html) {
++  if (noteCache.size >= NOTE_CACHE_MAX) noteCache.delete(noteCache.keys().next().value);
++  noteCache.set(id, { origin, html });
++}
++const uncacheNote = (id) => noteCache.delete(id);
++
++function renderNoteBody(n, origin) {
++  const csrf = csrfField({ session: { csrf: CSRF_PLACEHOLDER } });
++  const link = n.share_token ? `${origin}/s/${n.share_token}` : null;
++  return `<h1>${esc(n.title)}</h1><p class="muted">Updated ${esc(n.updated_at)}</p><pre class="body">${esc(n.body)}</pre>
+ <p><a href="/notes/${n.id}/edit">Edit</a> ·
+-<form method="post" action="/notes/${n.id}/delete" class="inline" onsubmit="return confirm('Delete this note?')">${csrfField(req)}<button class="link">Delete</button></form></p>
++<form method="post" action="/notes/${n.id}/delete" class="inline" onsubmit="return confirm('Delete this note?')">${csrf}<button class="link">Delete</button></form></p>
+ <h3>Share</h3>
+ ${link ? `<p>Any logged-in user with this link can read this note:</p><p><code>${esc(link)}</code></p>
+-<form method="post" action="/notes/${n.id}/unshare">${csrfField(req)}<button>Stop sharing</button></form>`
+-: `<form method="post" action="/notes/${n.id}/share">${csrfField(req)}<button>Share</button></form>`}
+-<p><a href="/">← All notes</a></p>`));
++<form method="post" action="/notes/${n.id}/unshare">${csrf}<button>Stop sharing</button></form>`
++: `<form method="post" action="/notes/${n.id}/share">${csrf}<button>Share</button></form>`}
++<p><a href="/">← All notes</a></p>`;
++}
++
++app.get('/notes/:id', requireLogin, (req, res) => {
++  const n = getOwnNote(req);
++  if (!n) return notFound(req, res);
++  const origin = `${req.protocol}://${req.get('host')}`;
++  let body;
++  const hit = noteCache.get(n.id);
++  if (hit && hit.origin === origin) {
++    body = hit.html;
++  } else {
++    body = renderNoteBody(n, origin);
++    cacheNote(n.id, origin, body);
++  }
++  res.send(page(req, n.title, body.split(CSRF_PLACEHOLDER).join(esc(req.session.csrf))));
+ });
+ 
+ app.get('/notes/:id/edit', requireLogin, (req, res) => {
+@@ -254,6 +282,7 @@ app.post('/notes/:id', requireLogin, checkCsrf, (req, res) => {
+   const r = readNote(req, res);
+   if (r.error) return res.status(400).send(page(req, 'Edit note', noteForm(req, { ...req.body, id: n.id }, r.error)));
+   db.prepare("UPDATE notes SET title = ?, body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?").run(r.t, r.b, n.id, req.user.id);
++  uncacheNote(n.id);
+   res.redirect('/notes/' + n.id);
+ });
+ 
+@@ -261,6 +290,7 @@ app.post('/notes/:id/delete', requireLogin, checkCsrf, (req, res) => {
+   const n = getOwnNote(req);
+   if (!n) return notFound(req, res);
+   db.prepare('DELETE FROM notes WHERE id = ? AND user_id = ?').run(n.id, req.user.id);
++  uncacheNote(n.id);
+   res.redirect('/');
+ });
+ 
+@@ -268,12 +298,14 @@ app.post('/notes/:id/share', requireLogin, checkCsrf, (req, res) => {
+   const n = getOwnNote(req);
+   if (!n) return notFound(req, res);
+   if (!n.share_token) db.prepare('UPDATE notes SET share_token = ? WHERE id = ?').run(rand(24), n.id);
++  uncacheNote(n.id);
+   res.redirect('/notes/' + n.id);
+ });
+ app.post('/notes/:id/unshare', requireLogin, checkCsrf, (req, res) => {
+   const n = getOwnNote(req);
+   if (!n) return notFound(req, res);
+   db.prepare('UPDATE notes SET share_token = NULL WHERE id = ?').run(n.id);
++  uncacheNote(n.id);
+   res.redirect('/notes/' + n.id);
+ });
+ 
