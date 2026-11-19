@@ -30,6 +30,8 @@ community files a public project needs).
 ### Changed
 - `app.start` runs only after a person approves the exact start command and port on this machine. The wizard in a
   terminal records the approval; an agent's run can't set or approve it.
+- The approval is stored in the user's config folder (`~/.config/notyours/app-approvals.json`, mode 0600), keyed by the
+  project's real path. A file planted inside the project is ignored.
 - The Stop hook restarts the app with `app.start` only when that approval exists. Otherwise it reports YELLOW with the
   command that approves it, and blocks the stop (the same escalation as a failed restart).
 - `notyours demo` approves its own bundled start command, so it needs no manual step.

@@ -82,7 +82,8 @@ const READONLY_PATHS = [
   `${NY_DIR}/escalated.json`,
   // The daily authoring budget and the logs it is counted from: an agent must not raise or reset its own cap.
   `${NY_DIR}/budget.json`,
-  // The person's approval of app.start: an agent must not approve the command it wants run.
+  // The person's approval of app.start lives in the user's config folder now (not in the project). A legacy
+  // in-project app-approved.json is still refused, so an agent can't plant one.
   `${NY_DIR}/app-approved.json`,
   `${NY_DIR}/credits.log`,
   `${NY_DIR}/tests`,
