@@ -75,6 +75,6 @@ The expectation was "RED within seconds at ~0 credits". **Measured: ~3 min and a
 ### Why the recordings are not in the repo
 kane-cli only replays recordings that keep the TestMu `org_id`, `user_id` and `project_id`. A
 sanitized copy errored, and a test showed blanking screenshot URLs is fine but zeroing ids is not. By
-decision, recordings stay local (`**/.notyours/tests/` is gitignored), and judges get
+decision, recordings stay local (`**/.notyours/tests/` is gitignored), and people who want to see a result without credits get
 `notyours demo --quick` plus the redacted [sample report](sample-report/report.html). The sanitize test
 cost 2 extra authoring runs (logins re-recorded after the sanitized login replays errored).

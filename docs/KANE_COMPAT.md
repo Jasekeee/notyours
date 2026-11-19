@@ -48,7 +48,7 @@ on every web replay". Even with `--no-adaptive-heal`, replays on 0.10.6 are **no
 
 Verdicts are correct on both versions, because the oracle never depends on Kane's own pass/fail. But on 0.10.6 several
 of notyours' promises and estimates are wrong: "replays cost 0", "`--quick` ~4 min / ~45 credits", and the 900 s Stop
-timeout. Judges will most likely have 0.10.6. Suggested changes (not implemented yet):
+timeout. Most users will likely have 0.10.6. Suggested changes (not implemented yet):
 1. **Version-aware estimates.** `demo` and `run --dry-run` should read `kane-cli --version` and print 0.10.6 numbers
    (quick ≈ 10 min / ≈ 65 credits; full ≈ 25 min / ≈ 170 credits, extrapolated) instead of the 0.10.0 ones. `doctor`
    should show the version and say which one notyours was tested with.
@@ -60,10 +60,10 @@ timeout. Judges will most likely have 0.10.6. Suggested changes (not implemented
 4. **Stop hook time.** With 0.10.6 a 4-boundary Stop pass can exceed the 900 s hook timeout. Replay boundaries in
    parallel (separate Chrome sets), or raise the timeout for 0.10.6 (see STATUS top fix #1).
 
-If the code changes aren't done before judging, the fallback is **(b): pin 0.10.0** in the README for judges:
+If the code changes aren't done before release, the fallback is **(b): pin 0.10.0** in the README:
 ```sh
 npm i -g @testmuai/kane-cli@0.10.0   # or keep Homebrew's lambdatest/kane/kane-cli (stable 0.10.0 as of 2026-11-18)
 kane-cli --version                   # 0.10.0
 ```
 That keeps the measured numbers in docs/E2E.md and STATUS true, and makes passing replays free again. The cost is
-asking judges to downgrade.
+asking users to downgrade.
