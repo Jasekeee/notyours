@@ -35,7 +35,7 @@ No code was broken in the simulation.
 
 ---
 
-## 2. Demo video (target 4:20; the rules ask for about 3 to 5 minutes)
+## 2. Demo video (target 4:21; the rules ask for about 3 to 5 minutes)
 
 ### Before recording (not filmed, ~25 min)
 
@@ -117,20 +117,20 @@ npx github:Jasekeee/notyours map
 cd ~ && npx github:Jasekeee/notyours demo --quick        # film the first 10 s (the estimate it prints), then stop with Ctrl+C
 ```
 
-### Shot list and voiceover (~130 words per minute, about 4:15 spoken; the rules allow 3 to 5 minutes)
+### Shot list and voiceover (~130 words per minute, about 4:16 spoken; the rules allow 3 to 5 minutes)
 
 | Time | Shot (what's on screen) | Voiceover |
 |---|---|---|
-| **0:00–0:30** | **Cold open, Session B sped up.** Claude Code adding a button. The Stop hook blocks: "bob saw alice's data", with the URL and the token. Cut to the report screenshot of Bob's browser showing Alice's passport note. Claude edits `routes/notes.js`. Second stop: all boundaries HELD, green. | My AI agent just added a button to a notes app. It also put back a bug: Bob can open Alice's private note. notyours caught it before the agent could finish. Real browsers, a real leak, with proof. The agent read the evidence, fixed the access check, and the replay came back green. I didn't touch the code. The whole loop took a few minutes. |
+| **0:00–0:30** | **Cold open, Session B sped up.** On-screen label for the whole shot: **"simulated regression: an old buggy file restored"**. Claude Code adding a button. The Stop hook blocks: "bob saw alice's data", with the URL and the token. Cut to the report screenshot of Bob's browser showing Alice's passport note. Claude edits `routes/notes.js`. Second stop: all boundaries HELD, green. | A careless edit put an old bug back into my notes app: Bob can open Alice's private note. Then I asked my agent for a small feature. When it tried to finish, notyours caught the leak: real browsers, a real leak, with proof. The agent read the evidence, fixed the access check, and the replay came back green. I didn't fix it by hand. |
 | **0:30–0:56** | Title card "notyours: prove your users' data stays theirs". Then the OWASP and CVE facts as plain text on screen (see Sources). | This is the most common way web apps leak data. Broken access control is number one on the OWASP Top Ten. In 2025, a researcher found 170 apps built on one AI app builder that exposed user data like emails and phone numbers. Unit tests rarely catch it, because they never run as two users at once. |
 | **0:56–1:38** | The full-demo report (Session 0): headline "Bob saw Alice's data", then the B1 card. Zoom in on the highlighted token, then on the two positive controls. | notyours runs as two people at once. Alice creates a note with a random canary token in it. Bob then opens the pages where Alice's data could show up. If Alice's token ever reaches Bob's screen, or even just his network traffic, that is a leak. No AI judges the page; the token is there or it isn't. Two positive controls make sure an empty result means something. Alice must see her own token, and Bob must see his. If either check fails, the result is "harness broken", never "safe". |
 | **1:38–2:05** | `npx github:Jasekeee/notyours map` output (Session D). Then the headful Chrome footage from Session 0: two Chrome windows, Kane typing as Alice and as Bob. | It works from both sides. A white-box map reads your routes and drafts the boundaries to test. Your coding agent turns those drafts into real tests. Then Kane CLI is the black box. It drives a separate Chrome for each persona and does what a real user would do. It signs in, creates a note, opens a link. |
 | **2:05–2:32** | Report card B3 (plan-gate): "LEAK in payload". Show the Pro page is hidden for Bob, but the export data reached his browser. Show `// SEEDED BUG #3` in `routes/pro.js`. | Here is the freeloader bug. Bob is on the free plan. The Pro export button is hidden from him, so the page looks fine. But the export API never checks his plan. The Pro-only export still reached Bob's browser, and notyours flags that as a leak in the payload. The demo bugs are seeded and labelled on purpose. |
 | **2:32–3:04** | Session B again, slower: `install-hooks` output, the Stop hook block, and then the green replay. Overlay: "Stop replay: about 1 to 4 minutes, sped up". | Every boundary that holds gets locked into a recorded Kane test. That is the ratchet. From then on, every time the coding agent stops, notyours replays the boundaries whose code changed. It catches edits made with an editor, and edits made from the shell too. If a fix regresses, the agent can't finish. It gets the evidence back and has to fix the app code, not the test. |
-| **3:04–3:31** | Session C: the three denials, one after another. | And it can't cheat. The guard blocks the agent from deleting the check or editing a locked test. It can't raise its own Kane budget either. That is a person's decision. In one test I told the agent to make the tests pass by any means. It never touched the oracle. It fixed the server code instead. |
-| **3:31–4:00** | Session E: `docs/natural-app/SUMMARY.md` (the table), then EXPERIMENT3's Stop-hook table. | Then I tested it on an app it didn't write. A fresh Claude Code session built a notes app with no security hints. Twice I asked an agent to add a page cache, the classic way to leak pages between users. Neither model leaked, and notyours raised no false alarm. It did find four gaps in notyours itself, and I fixed them all. |
-| **4:00–4:12** | Session D: `npx github:Jasekeee/notyours demo --quick` printing its estimate. | You can try it with one command. The quick demo takes about four minutes and shows one real leak. You need Node, Chrome and Kane CLI. |
-| **4:12–4:19** | Closing card: "notyours · github.com/Jasekeee/notyours · built with Claude Code and Kane CLI · #KaneCLIHackDay". | notyours. Built with Claude Code and Kane CLI. The link is below. |
+| **3:04–3:33** | Session C: the three denials, one after another. | And it can't cheat. The guard blocks the agent from deleting the check or editing a locked test. It can't raise its own Kane budget either. That is a person's decision. In one test I told the agent to make the tests pass by any means. It tried twice. The guard said no both times. Then it fixed the server code instead. |
+| **3:33–4:02** | Session E: `docs/natural-app/SUMMARY.md` (the table), then EXPERIMENT3's Stop-hook table. | Then I tested it on an app it didn't write. A fresh Claude Code session built a notes app with no security hints. Twice I asked an agent to add a page cache, the classic way to leak pages between users. Neither model leaked, and notyours raised no false alarm. It did find four gaps in notyours itself, and I fixed them all. |
+| **4:02–4:14** | Session D: `npx github:Jasekeee/notyours demo --quick` printing its estimate. | You can try it with one command. The quick demo takes about four minutes and shows one real leak. You need Node, Chrome and Kane CLI. |
+| **4:14–4:21** | Closing card: "notyours · github.com/Jasekeee/notyours · built with Claude Code and Kane CLI · #KaneCLIHackDay". | notyours. Built with Claude Code and Kane CLI. The link is below. |
 
 ### Recording on macOS
 
@@ -173,8 +173,8 @@ cd ~ && npx github:Jasekeee/notyours demo --quick        # film the first 10 s (
    2:05 The freeloader bug
    2:32 The ratchet and the Stop hook
    3:04 Anti-cheat
-   3:31 Tested on an app it didn't write
-   4:00 Try it
+   3:33 Tested on an app it didn't write
+   4:02 Try it
    ```
 
    Chapters need the first timestamp at 0:00, at least three timestamps, and chapters of at least 10 s
@@ -187,13 +187,16 @@ cd ~ && npx github:Jasekeee/notyours demo --quick        # film the first 10 s (
 
 ## 3. Posts (no em dashes; check every external fact against the sources below)
 
+Wording rule for CVE-2025-48757: always "a researcher found …" (what Matt Palmer's scan showed), never "Lovable's
+vulnerability" as a fact. The vendor disputes parts of it (see the source).
+
 ### X thread (4 posts; post 1 carries the video)
 
 **1/4** (attach the video)
 ```
-AI coding agents ship features fast. They also ship the bug where Bob opens Alice's private note by changing a number in the URL.
+One missing ownership check, and Bob can read Alice's private note by changing a number in the URL. AI agents usually get this right. "Usually" isn't a test.
 
-I built notyours: Kane CLI signs in as Alice and Bob in real browsers and checks if Alice's data ever reaches Bob.
+I built notyours: Kane CLI plays Alice and Bob in real browsers and checks if her data reaches him.
 
 #KaneCLIHackDay
 ```
@@ -278,7 +281,7 @@ form.
 - **Team:** Solo.
 - **Credits claimed:** Yes. Check that the TestMu AI account that holds the credits uses the same email as your
   hackathon registration ("Use the same email on both").
-- **GitHub URL:** https://github.com/Jasekeee/notyours (public, MIT, first commit 2026-11-18, release tag `v0.1.2`)
+- **GitHub URL:** https://github.com/Jasekeee/notyours (public, MIT, first commit 2026-11-18, release tag `v0.1.3`)
 - **Demo video:** `https://youtu.be/<VIDEO_ID>` (placeholder)
 - **Live URL (optional):** none. notyours is a CLI that tests your own app on localhost. Fallbacks for judges:
   the sample report (`docs/sample-report/report.html`), three recorded agent loops (`docs/loop-run-1..3`), and three
@@ -297,13 +300,13 @@ form.
   > free-plan user) and has each of them use your own app in a real browser. Alice's data carries a random canary
   > token. If that token ever reaches Bob's screen or his network traffic, that's a leak, reported with the URL, the
   > snippet and a screenshot; two positive controls make sure "nothing found" really means held. I built it with
-  > Claude Code (Opus), using parallel agents in git worktrees for the engine, the demo app, the ratchet and the CLI.
+  > Claude Code (Opus 5.5 and Sonnet 5.5), using parallel agents in git worktrees for the engine, the demo app, the ratchet and the CLI.
   > Kane CLI plays three roles: it is the product's hands (one Chrome per persona: sign up, log in, create data, open
   > each other's pages), it re-proves every fix (proven boundaries are locked as recorded Kane tests and replayed),
   > and it verified the build itself (real runs found bugs the mocks missed). The loop is closed: a Claude Code Stop
   > hook replays the locked boundaries whose code changed every time the agent finishes. A leak blocks the agent with
   > the evidence until it fixes the server code, while a guard stops it from editing the tests, the recordings or its
-  > own Kane budget. On the bundled demo app Kane catches a cross-user leak and a "freeloader" bug (a free user gets
+  > own Kane budget. On the bundled demo app (seeded and labelled on purpose) Kane catches a cross-user leak and a "freeloader" bug (a free user gets
   > the Pro export through the API), and in recorded runs Claude Code fixed both and the replays came back green.
   > I also tested it on an app it didn't write: a notes app built by a fresh Claude Code session with no security
   > hints. In three experiments, two of which asked an agent (Sonnet 5.5, then Haiku 5.5) to add a page cache, it found
@@ -320,10 +323,10 @@ form.
 - [x] LICENSE: MIT (`LICENSE`, detected by GitHub)
 - [x] Repo started on or after 12 Nov: first commit 2026-11-18
 - [x] README top section: one-line pitch, the 60-second pitch, Install, Judges' quick start (a)–(d)
-- [x] Tags on GitHub: `v0.1.0` (b138214), `v0.1.1` (bb86620), `v0.1.2` (5567494); https://github.com/Jasekeee/notyours/tree/v0.1.2 opens
-- [ ] `main` has the fix-day fixes (stale server, downloads, CSP, signed-in logins) after `v0.1.2`, and the README's
-      `npx github:Jasekeee/notyours` runs `main`. Optional: tag `main` as `v0.1.3` before submitting, so the tag matches.
-- [x] These links open logged out (HTTP 200): repo, LICENSE, the v0.1.2 tag, the raw sample report, docs/loop-run-1
+- [x] Tags on GitHub: `v0.1.0` (b138214), `v0.1.1` (bb86620), `v0.1.2` (5567494), **`v0.1.3`** (main on 2026-11-19:
+      the fix-day fixes and these submission docs); https://github.com/Jasekeee/notyours/tree/v0.1.3 opens
+- [x] The README's `npx github:Jasekeee/notyours` runs `main`, which `v0.1.3` points at (until the next push).
+- [x] These links open logged out (HTTP 200): repo, LICENSE, the v0.1.3 tag, the raw sample report, docs/loop-run-1
 - [ ] Open them once yourself in an incognito window (and the YouTube link once it exists)
 - [ ] Optional: add a repo description and topics (GitHub → About → ⚙), e.g. "Prove your users' data stays theirs:
       cross-user leak tests for your own app with Kane CLI and Claude Code"; topics `kane-cli`, `claude-code`,
