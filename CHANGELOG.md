@@ -33,6 +33,8 @@ community files a public project needs).
 - The Stop hook restarts the app with `app.start` only when that approval exists. Otherwise it reports YELLOW with the
   command that approves it, and blocks the stop (the same escalation as a failed restart).
 - `notyours demo` approves its own bundled start command, so it needs no manual step.
+- The demo copy carries its own `package.json` (ES module), so `notyours demo` runs from a folder whose
+  `package.json` is CommonJS. (A pre-existing gap: in such a folder the demo's `server.js` failed on its imports.)
 - Version bumped from 0.1.5 to 0.2.0 in `package.json` and `package-lock.json`.
 
 ## [0.1.5] - 2026-11-19

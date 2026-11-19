@@ -1,9 +1,12 @@
 # notyours: rules for every agent
 
 ## Rules
-- **Craft sprint (current): the v0.1.5 code freeze is lifted for ONE sprint.** Goal: "would a developer install this tonight?" → 8+/10.
-  v0.1.5 (tag) stays as the fallback. Work lands on feat/onboarding, feat/release, feat/site, each in its own worktree.
-  When the sprint ends, re-freeze and record the outcome in this file.
+- **Frozen again at v0.2.0 (craft sprint closed 2026-11-19).** Only fix bugs that break the install path or the demo
+  recording; everything else goes to Known limitations. v0.1.5 (tag) stays as the fallback.
+  Sprint outcome: feat/onboarding, feat/site and feat/release merged into main for v0.2.0. The Stop hook restarts
+  `app.start` only after a person approves it on this machine; the demo copy runs as an ES module in any folder.
+  The goal "would a developer install this tonight?" (8+/10) was not scored: the repo has no measurement for it.
+  Measured on the v0.2.0 fresh-clone run: see docs/STATUS.md, "Fresh clone, v0.2.0".
 - **No fake metrics, users, testimonials, logos or funding claims anywhere** (code, README, docs, site, UI copy).
 - **Every number must come from the repo's measurements** (committed results, tests, benchmarks). If there is no measurement, don't state the number.
 - **Do not mention the hackathon** in README, docs or the site.
@@ -41,8 +44,8 @@ The installed kane-cli skill is useful for flags and NDJSON parsing, but this pr
 - `src/mocks/fixtures.ts`: shared fake identities/boundary/config/results. `src/shared/`: `makeToken`, `findTokens`, `redactIdentity`.
 - Branches: feat/engine (src/engine), feat/demo (demo/), feat/ratchet (src/ratchet), feat/cli (src/cli).
   Stay in your own folder. Ask before editing anything else (src/report, src/hooks, src/map, shared files).
-- Craft sprint branches (worktrees next to the repo, all from main): feat/onboarding (../notyours-ux),
-  feat/release (../notyours-rel), feat/site (../notyours-site). Stay inside the paths your task names.
+- Craft sprint branches feat/onboarding, feat/release, feat/site were merged into main for v0.2.0. Their worktrees
+  (../notyours-ux, ../notyours-rel, ../notyours-site) can be removed; no new sprint branches without a new sprint.
 
 ## Known issues
 - `npm audit`: 0 vulnerabilities (checked 2026-11-19; earlier there were 7 high findings from one picomatch ReDoS

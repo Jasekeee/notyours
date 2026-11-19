@@ -1,5 +1,32 @@
 # notyours status (2026-11-18, kane-cli 0.10.0, Claude Code 2.1.327)
 
+## Fresh clone, v0.2.0 (2026-11-19, kane-cli 0.10.0, empty npm cache)
+
+Simulation: a clone of `main` at `a54da5d` (committed, not yet pushed), `npm ci` on an empty npm cache, `npm pack`,
+the tarball installed in a fresh user folder, then the README commands with `npx notyours` (not on npm yet, so the
+installed `node_modules/.bin/notyours` stands in). Times are wall-clock, measured by hand.
+
+| Step | Time | Kane credits | Result |
+|---|---|---|---|
+| `git clone` of `main` | 0 s | 0 | committed tree |
+| `npm ci` (empty cache) | 47 s | 0 | 0 vulnerabilities |
+| `npm pack`, then install the tarball | 1 s, 22 s | 0 | `notyours 0.2.0` |
+| `notyours doctor` | 3 s | 0 | Ready, 9032 credits |
+| `notyours demo --quick` | 4 min 16 s | 27.3 (B1, from the run) | `LEAK_VISIBLE`, Bob saw Alice's data |
+| `scripts/judge-loop.sh` on the demo folder | 4 min 23 s in total (the loop itself 122 s) | 15.0 (B1 proof) + 0 (replays) | regression: exit 1 LEAK; fix: exit 0 GREEN |
+| Stop hook on the demo, `app.start` approved | 55 s | 0 (replays) | restarted the app, B1 held, exit 0 |
+| `init` from the tarball, in a pseudo-terminal, agent variables unset | under 1 s | 0 | approval recorded; the freshness check then restarts the app with no prompt |
+
+- Authoring runs: 2 logged by the demo (its output counts 4 Kane run starts, logins included), 2 logged by the loop's
+  setup. Every replay logged 0 credits.
+- Account balance: 9032 before the demo, 8951 after the loop and the Stop-hook check (81 credits in total). The credit
+  logs record 42.2 for the authoring runs; the rest is not explained by the logs (the same kind of gap as the earlier
+  61 against 48.8).
+- Found and fixed: the demo copy ran `server.js` as CommonJS inside a CommonJS user folder and failed on its imports.
+  v0.1.5 had the same gap (`demo/` had no `package.json`). Fixed by `demo/package.json` (`"type": "module"`), `a54da5d`.
+- Not covered: the GitHub fallback `npx github:Jasekeee/notyours` after the push, and the npm package itself (not
+  published here). The Stop hook was run through its code (`stopHook`), not from an installed Claude Code session.
+
 ## What works (verified with real Kane and real Claude Code)
 - **Integration:** A–D merged in order, CC-1 applied, `NOTYOURS_REAL` removed (the CLI always uses the real engine and
   ratchet; `test/contracts.test.ts` stays on MockEngine). `npm run build && npm run typecheck && npm test` passes: 346
