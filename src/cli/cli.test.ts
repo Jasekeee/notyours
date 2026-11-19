@@ -3,7 +3,8 @@ import type { Identity } from '../types.js';
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { freePortRange, killChromesUsing } from '../engine/__tests__/test-ports.js';
 import { CommanderError } from 'commander';
 import { ConfigSchema, IdentitySchema } from '../schemas.js';
 import { mockBoundary, mockConfig } from '../mocks/fixtures.js';
@@ -25,7 +26,17 @@ import { isOwnedHost, ownedStorePath, recordOwnedHosts, setOwnedStorePathForTest
 import { mockHeldResult, mockLeakResult } from '../mocks/fixtures.js';
 
 const __dirname_cli = path.dirname(new URL(import.meta.url).pathname);
-const tmp = (p = 'ny-cli-') => fs.mkdtempSync(path.join(os.tmpdir(), p));
+// Every temp dir this file makes. A CLI subprocess can start Chrome with a profile under one of them; afterAll
+// kills those (and only those), so a file never kills another file's Chrome.
+const madeDirs: string[] = [];
+const tmp = (p = 'ny-cli-') => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), p));
+  madeDirs.push(d);
+  return d;
+};
+afterAll(() => { for (const d of madeDirs) killChromesUsing(d); });
+// Identities this file creates (and the CLI subprocesses it starts) get CDP ports from a free range, never 9301.
+process.env.NOTYOURS_CDP_BASE_PORT = String(await freePortRange(8));
 // Never touch the real ~/.config/notyours from tests.
 const TEST_STORE = path.join(tmp('ny-home-'), 'owned-hosts.json');
 setOwnedStorePathForTests(TEST_STORE);

@@ -1,0 +1,68 @@
+# Manual debug run for CI test failures: per-test timings and Chrome launch output on ubuntu-latest.
+# Never installs or runs kane-cli, so it never spends Kane credits. Start it from the Actions tab.
+name: CI debug
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    name: test timings + Chrome launch (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Runner
+        run: |
+          nproc
+          free -m
+          ulimit -n
+          sysctl net.ipv4.ip_local_port_range
+
+      - name: Chrome path and version
+        run: |
+          command -v google-chrome google-chrome-stable chromium chromium-browser || true
+          google-chrome --version
+
+      - name: Chrome launch output (headless, CDP on a fixed debug port)
+        run: |
+          dir=$(mktemp -d)
+          start=$(date +%s%N)
+          google-chrome --headless=new --remote-debugging-port=29222 --user-data-dir="$dir" \
+            --no-first-run --no-default-browser-check --enable-logging=stderr --v=0 about:blank \
+            > "$dir/chrome.log" 2>&1 &
+          pid=$!
+          for i in $(seq 1 100); do
+            if curl -sf http://127.0.0.1:29222/json/version > /dev/null; then break; fi
+            sleep 0.1
+          done
+          echo "CDP answered after $(( ($(date +%s%N) - start) / 1000000 )) ms"
+          curl -s http://127.0.0.1:29222/json/version || echo "::warning::CDP never answered"
+          kill "$pid" || true
+          echo "--- chrome stderr (first 80 lines)"
+          head -80 "$dir/chrome.log"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Non-browser tests, verbose timings
+        run: npm run test:unit -- --reporter=verbose
+
+      - name: Browser tests serially, verbose timings
+        run: npm run test:browser -- --reporter=verbose
+
+      - name: Leftover Chrome processes
+        if: always()
+        run: pgrep -fl chrome || echo "none"

@@ -50,6 +50,17 @@ export interface LaunchOptions {
   onLaunch?: (identity: Identity, handle: ChromeHandle) => Promise<void>;
 }
 
+/** Every Chrome this process spawned and has not seen exit. Tests use killLiveChromes so none outlive a run. */
+const live = new Set<ChildProcess>();
+
+/** SIGKILL every Chrome this process still runs. Synchronous, so it is safe in a process 'exit' handler. */
+export function killLiveChromes(): void {
+  for (const child of live) {
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
+  }
+  live.clear();
+}
+
 /** Launch Chrome for an identity and wait until its CDP endpoint answers. */
 export async function launchChrome(identity: Identity, opts: LaunchOptions = {}): Promise<ChromeHandle> {
   const port = identity.cdpPort;
@@ -69,6 +80,8 @@ export async function launchChrome(identity: Identity, opts: LaunchOptions = {})
     'about:blank',
   ];
   const child = spawn(chromePath(), args, { stdio: 'ignore' });
+  live.add(child);
+  child.once('exit', () => live.delete(child));
   let exited = false;
   child.once('exit', () => { exited = true; });
 

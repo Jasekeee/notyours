@@ -40,5 +40,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test (mocks only, no Kane runs)
-        run: npm test
+      # Same tests as `npm test`, split in two: the browser test files run one at a time here, because on a
+      # 2-core runner parallel files compete for CPU while each one drives several headless Chromes.
+      - name: Test, non-browser files in parallel (mocks only, no Kane runs)
+        run: npm run test:unit
+
+      - name: Test, browser files serially (real headless Chrome, fake kane-cli)
+        run: npm run test:browser
