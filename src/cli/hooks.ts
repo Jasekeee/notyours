@@ -8,6 +8,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import type { Boundary } from '../types.js';
 import { MAP_COMMAND_MD } from '../map/command.js';
+import { CHECK_COMMAND_MD } from './check-command.js';
 import { matchesGlob } from './glob.js';
 import { ownedStorePath } from './owned.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
@@ -90,6 +91,7 @@ const READONLY_PATHS = [
   '.claude/settings.json',
   '.claude/settings.local.json',
   '.claude/commands/notyours-map.md',
+  '.claude/commands/notyours-check.md',
 ];
 
 /**
@@ -275,7 +277,7 @@ export function mergeHookSettings(settings: Settings): Settings {
   return { ...settings, permissions: { ...perms, deny }, hooks };
 }
 
-export function installHooks(root: string, cli?: string, selfJs: string | undefined = selfCliPath()): { settingsFile: string; commandFile: string; launcher: string } {
+export function installHooks(root: string, cli?: string, selfJs: string | undefined = selfCliPath()): { settingsFile: string; commandFile: string; checkFile: string; launcher: string } {
   const dir = path.join(root, '.claude');
   const settingsFile = path.join(dir, 'settings.json');
   assertNoSymlinks(root, settingsFile);
@@ -286,5 +288,7 @@ export function installHooks(root: string, cli?: string, selfJs: string | undefi
   safeWriteFile(root, settingsFile, `${JSON.stringify(mergeHookSettings(current), null, 2)}\n`);
   const commandFile = path.join(dir, 'commands', 'notyours-map.md');
   safeWriteFile(root, commandFile, MAP_COMMAND_MD);
-  return { settingsFile, commandFile, launcher };
+  const checkFile = path.join(dir, 'commands', 'notyours-check.md');
+  safeWriteFile(root, checkFile, CHECK_COMMAND_MD);
+  return { settingsFile, commandFile, checkFile, launcher };
 }

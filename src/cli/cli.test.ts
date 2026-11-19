@@ -55,6 +55,8 @@ function harness() {
     hook: rec('hook'),
     budget: rec('budget'),
     release: rec('release'),
+    status: rec('status'),
+    setup: rec('setup'),
   };
   const codes: number[] = [];
   const parse = (...argv: string[]) => buildProgram(actions, { testing: true, onExit: (c) => codes.push(c) }).parseAsync(['node', 'notyours', ...argv]);
@@ -75,16 +77,33 @@ describe('argument parsing', () => {
     expect(h.codes).toEqual([0, 0]);
   });
 
-  it('init: --url required, --users, repeatable --allow-host, --i-own-this', async () => {
+  it('init: the wizard takes no required flags; --url/--start/--port/--users, --yes, --no-hooks, repeatable --allow-host, --i-own-this', async () => {
     const h = harness();
-    await h.parse('init', '--url', 'http://localhost:3000');
+    await h.parse('init');
+    await h.parse('init', '--url', 'http://localhost:3000', '--start', 'npm run dev', '--port', '3000', '--yes', '--no-hooks');
     await h.parse('init', '--url', 'https://staging.acme.dev', '--users', 'u.yaml', '--allow-host', 'staging.acme.dev', '--allow-host', 'api.acme.dev', '--i-own-this');
-    expect(h.calls[0]).toEqual(['init', { cwd, url: 'http://localhost:3000', users: undefined, allowHost: [], iOwnThis: false }]);
+    expect(h.calls[0]).toEqual(['init', { cwd, allowHost: [], iOwnThis: false, yes: false, hooks: true }]);
     expect(h.calls[1]).toEqual([
       'init',
-      { cwd, url: 'https://staging.acme.dev', users: 'u.yaml', allowHost: ['staging.acme.dev', 'api.acme.dev'], iOwnThis: true },
+      { cwd, url: 'http://localhost:3000', start: 'npm run dev', port: 3000, allowHost: [], iOwnThis: false, yes: true, hooks: false },
     ]);
-    await expect(h.parse('init')).rejects.toThrow(CommanderError);
+    expect(h.calls[2]).toEqual([
+      'init',
+      { cwd, url: 'https://staging.acme.dev', users: 'u.yaml', allowHost: ['staging.acme.dev', 'api.acme.dev'], iOwnThis: true, yes: false, hooks: true },
+    ]);
+  });
+
+  it('bare `notyours` shows the status; `--json` is accepted everywhere; `setup claude` is the one setup target', async () => {
+    const h = harness();
+    await h.parse();
+    await h.parse('-C', '/tmp/app', 'setup', 'claude');
+    expect(h.calls).toEqual([
+      ['status', { cwd }],
+      ['setup', 'claude', { cwd: '/tmp/app' }],
+    ]);
+    await expect(h.parse('setup', 'cursor')).rejects.toThrow(CommanderError);
+    await h.parse('--json', 'doctor');
+    expect(h.calls.at(-1)).toEqual(['doctor', { cwd }]);
   });
 
   it('run / lock / replay take variadic boundary ids', async () => {

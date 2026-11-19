@@ -26,9 +26,12 @@ export function nyPaths(root: string) {
 }
 
 export class UserError extends Error {
-  constructor(message: string) {
+  /** One line the person or agent can act on; printed as the last line of the error. */
+  readonly fix?: string;
+  constructor(message: string, fix?: string) {
     super(message);
     this.name = 'UserError';
+    this.fix = fix;
   }
 }
 
@@ -52,6 +55,15 @@ export function writeConfig(root: string, cfg: ConfigInput): void {
   try { app = (YAML.parse(fs.readFileSync(nyPaths(root).config, 'utf8')) as { app?: unknown } | null)?.app; } catch { /* new file */ }
   const body = YAML.stringify(app === undefined ? ConfigSchema.parse(cfg) : { ...ConfigSchema.parse(cfg), app });
   safeWriteFile(root, nyPaths(root).config, `# notyours config. allowHosts: only these hosts may be probed.\n${body}`);
+}
+
+/** Sets the `app:` block (app.start, app.port: read by the Stop hook and the wizard), keeping the rest of the config. */
+export function writeAppSettings(root: string, app: { start?: string; port?: number }): void {
+  const file = nyPaths(root).config;
+  const doc = (fs.existsSync(file) ? YAML.parse(fs.readFileSync(file, 'utf8')) : null) as Record<string, unknown> | null;
+  if (!doc) throw new UserError(`No ${NY_DIR}/config.yaml here. Run: notyours init`, 'run `notyours init` in the project folder first.');
+  const next = { ...doc, app: { ...(doc.app as Record<string, unknown> | undefined), ...app } };
+  safeWriteFile(root, file, `# notyours config. allowHosts: only these hosts may be probed.\n${YAML.stringify(next)}`);
 }
 
 // ---------- identities ----------

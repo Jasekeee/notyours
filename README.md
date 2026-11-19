@@ -142,7 +142,13 @@ setup 2 min 17 s, the loop **1 min 55 s**; setup + loop 19.7 credits. Run it aga
 ```
 
 ```sh
-npx github:Jasekeee/notyours init --url http://localhost:3000 --users users.yaml
+cd your-app
+npx github:Jasekeee/notyours init                 # wizard: detects Express/Next.js, starts the app, signs test personas up with Kane, writes drafts
+npx github:Jasekeee/notyours                      # what is configured, what is locked, and the next command
+npx github:Jasekeee/notyours setup claude         # hooks + /notyours-map + /notyours-check in one step
+npx github:Jasekeee/notyours init --yes           # the same, with the defaults and no questions (agents, CI)
+npx github:Jasekeee/notyours init --users users.yaml   # accounts you already have: no sign-up runs
+# An app with a CAPTCHA, OAuth-only or SMS sign-in is refused, with the --users way to go instead.
 npx github:Jasekeee/notyours map                  # writes .notyours/boundaries/_draft_*.yaml and .notyours/map.json
 # in Claude Code: /notyours-map   # the agent turns drafts into real boundaries
 npx github:Jasekeee/notyours run --dry-run        # validate + credit estimate, starts nothing

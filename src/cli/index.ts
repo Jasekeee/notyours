@@ -10,15 +10,18 @@ if (major < MIN_NODE) {
   process.exit(1);
 }
 
-const [{ buildProgram }, { actions }, { UserError }, { SymlinkError }, pc] = await Promise.all([
+const [{ buildProgram }, { actions }, { UserError }, { SymlinkError }, { emitJson, fixLine, setJsonMode, isJsonMode, DEFAULT_FIX }, pc] = await Promise.all([
   import('./program.js'),
   import('./commands.js'),
   import('./workspace.js'),
   import('./safe-fs.js'),
+  import('./output.js'),
   import('picocolors').then((m) => m.default),
 ]);
 
 const debug = process.argv.includes('--debug');
+const json = process.argv.includes('--json');
+setJsonMode(json);
 // Kane progress lines for people watching a terminal; never for `hook` (its stderr is what the agent reads).
 if (process.argv[2] !== 'hook') {
   const { setProgress } = await import('../shared/progress.js');
@@ -27,13 +30,15 @@ if (process.argv[2] !== 'hook') {
 try {
   await buildProgram(actions).parseAsync(process.argv);
 } catch (e) {
-  const err = e as Error;
-  if (err instanceof UserError || err instanceof SymlinkError) {
-    console.error(pc.red(`✗ ${err.message}`));
+  const err = e as Error & { fix?: string };
+  const expected = err instanceof UserError || err instanceof SymlinkError;
+  // Every error ends with one "how to fix" line (the error's own, or the generic one).
+  if (isJsonMode()) {
+    emitJson({ ok: false, error: err.message, how_to_fix: err.fix ?? DEFAULT_FIX });
   } else {
     console.error(pc.red(`✗ ${err.message}`));
-    if (debug) console.error(err.stack);
-    else console.error(pc.dim('(rerun with --debug for details)'));
+    console.error(fixLine(err.fix));
+    if (!expected && debug) console.error(err.stack);
   }
   process.exitCode = 2;
 }
