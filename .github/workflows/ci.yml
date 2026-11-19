@@ -1,0 +1,44 @@
+# CI: build, typecheck and tests. Mock-driven only: this workflow never installs or runs kane-cli,
+# so it never spends Kane credits. The tests use a fake kane-cli and a local fixture app; they drive a headless Chrome,
+# which GitHub's ubuntu-latest image provides (google-chrome on PATH).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build, typecheck, test (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Show Chrome (used by the headless-browser tests)
+        run: |
+          google-chrome --version || chromium --version || echo "::warning::no Chrome on PATH; browser tests will fail"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test (mocks only, no Kane runs)
+        run: npm test
