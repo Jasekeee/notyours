@@ -1,0 +1,137 @@
+[
+  {
+    "boundaryId": "bob-sweep",
+    "verdict": "HELD",
+    "controls": {
+      "ownerSeesOwnToken": true,
+      "viewerSeesOwnToken": true
+    },
+    "hits": 0,
+    "kaneRuns": [
+      {
+        "identity": "bob",
+        "status": "passed",
+        "reason": "success.complete",
+        "creditsConsumed": 19.78,
+        "durationS": 53.1
+      },
+      {
+        "identity": "alice",
+        "status": "passed",
+        "reason": "success.complete",
+        "creditsConsumed": 20.27,
+        "durationS": 65.4
+      },
+      {
+        "identity": "bob",
+        "status": "failed",
+        "reason": "blocker.paywall",
+        "creditsConsumed": 17.09,
+        "durationS": 62.3
+      }
+    ]
+  },
+  {
+    "boundaryId": "export-plan-gate",
+    "verdict": "HARNESS_BROKEN",
+    "controls": {
+      "ownerSeesOwnToken": false,
+      "viewerSeesOwnToken": true
+    },
+    "hits": 0,
+    "kaneRuns": [
+      {
+        "identity": "alice",
+        "status": "passed",
+        "reason": "success.complete",
+        "creditsConsumed": 18.48,
+        "durationS": 46.2
+      },
+      {
+        "identity": "bob",
+        "status": "passed",
+        "reason": "success.complete",
+        "creditsConsumed": 18.73,
+        "durationS": 52.9
+      },
+      {
+        "identity": "alice",
+        "status": "passed",
+        "reason": "success.complete",
+        "creditsConsumed": 5.6,
+        "durationS": 18.7
+      },
+      {
+        "identity": "bob",
+        "status": "failed",
+        "reason": "blocker.paywall",
+        "creditsConsumed": 7.79,
+        "durationS": 20.9
+      },
+      {
+        "identity": "bob",
+        "status": "failed",
+        "reason": "blocker.paywall",
+        "creditsConsumed": 10.4,
+        "durationS": 15.7
+      }
+    ]
+  },
+  {
+    "boundaryId": "notes-cross-user",
+    "verdict": "HELD",
+    "controls": {
+      "ownerSeesOwnToken": true,
+      "viewerSeesOwnToken": true
+    },
+    "hits": 0,
+    "kaneRuns": [
+      {
+        "identity": "bob",
+        "status": "passed",
+        "reason": "success.complete",
+        "creditsConsumed": 32.36,
+        "durationS": 84.2
+      },
+      {
+        "identity": "alice",
+        "status": "passed",
+        "reason": "success.complete",
+        "creditsConsumed": 34.15,
+        "durationS": 85.1
+      },
+      {
+        "identity": "bob",
+        "status": "passed",
+        "reason": "success.complete",
+        "creditsConsumed": 14.23,
+        "durationS": 48.1
+      }
+    ]
+  },
+  {
+    "boundaryId": "share-link-guest",
+    "verdict": "HELD",
+    "controls": {
+      "ownerSeesOwnToken": true,
+      "viewerSeesOwnToken": true
+    },
+    "hits": 0,
+    "kaneRuns": [
+      {
+        "identity": "alice",
+        "status": "passed",
+        "reason": "success.complete",
+        "creditsConsumed": 24.06,
+        "durationS": 70.4
+      },
+      {
+        "identity": "guest",
+        "status": "failed",
+        "reason": "stuck.ap_stuck",
+        "creditsConsumed": 13.68,
+        "durationS": 32.8
+      }
+    ]
+  }
+]

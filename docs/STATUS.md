@@ -144,6 +144,12 @@ From the automated security review. By decision, only real secret or credential 
 - `planLock` writes plan-gate `viewerOwn` URLs into the recorded objective after filling in stored values; a
   templated host in `viewerOwn` isn't re-checked against `allowHosts` at that point (literal URLs are checked by the
   CLI host gate).
+- **File downloads can't be judged.** A GET target that answers with `Content-Disposition: attachment` (e.g. an
+  "export .txt") makes Chrome abort the navigation (`net::ERR_ABORTED`) and withhold the body, so the oracle sees no
+  token. The result is HARNESS, never a false HELD. Found on the natural app's Pro export (docs/natural-app/RESULT.md).
+  The fix would be to read GET downloads with an in-page `fetch()`, as non-GET targets already are.
+- `run --dry-run` underestimates long objectives and plan-gates: the natural-app run was estimated at ~120 credits
+  and used 259 (15 authoring runs).
 - The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and
   overshoot the cap by the number of parallel runs (the engine runs at most 2 at once).
 

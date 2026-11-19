@@ -1,0 +1,18 @@
+# A logged-out visitor must not read a shared note: the README promises "Any logged-in user with the link".
+# Code: GET /s/:token uses requireLogin (server.js:281, requireLogin at 136-139). The owner control (Alice sees her
+# token on the live share link) also shows the share link works for a logged-in user.
+id: share-link-guest
+kind: guest
+owner: alice
+viewer: guest
+create:
+  objective: >-
+    Go to http://localhost:4001/notes/new, type 'Shared {{token}}' as the Title and '{{token}}' as the Body, click Save,
+    then store the current page URL as 'note_url'. Then click the 'Share' button and store the full link shown in the
+    grey box under 'Any logged-in user with this link can read this note' as 'share_url'.
+  store: [note_url, share_url]
+targets:
+  ui: ['{{share_url}}', '{{note_url}}']
+  api: []
+expect: denied
+surface: ['server.js']

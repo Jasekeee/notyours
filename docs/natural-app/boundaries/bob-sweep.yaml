@@ -1,0 +1,16 @@
+# Sweep Bob's own pages for any of Alice's data: his notes list, account page, new-note form and his export attempt.
+# Code: GET / lists notes WHERE user_id = ? (server.js:215-220); /account shows req.user only (288-295).
+id: bob-sweep
+kind: sweep
+owner: alice
+viewer: bob
+create:
+  objective: >-
+    Go to http://localhost:4001/notes/new, type 'Sweep {{token}}' as the Title and '{{token}}' as the Body, click Save,
+    then store the current page URL as 'note_url'.
+  store: [note_url]
+targets:
+  ui: ['http://localhost:4001/', 'http://localhost:4001/account', 'http://localhost:4001/notes/new']
+  api: ['http://localhost:4001/export.txt']
+expect: denied
+surface: ['server.js']

@@ -1,0 +1,19 @@
+# Bob (free, logged in) must not see Alice's private note: the page, its edit form, or a share link she revoked.
+# Code: getOwnNote() (server.js:194-197) filters by user_id for GET /notes/:id (231) and /notes/:id/edit (245);
+# /s/:token (281) looks the note up by share_token, which /notes/:id/unshare (273) sets to NULL.
+# There are no JSON routes in this app, so targets.api is empty.
+id: notes-cross-user
+kind: cross-user
+owner: alice
+viewer: bob
+create:
+  objective: >-
+    Go to http://localhost:4001/notes/new, type 'Private {{token}}' as the Title and '{{token}}' as the Body, click Save,
+    then store the current page URL as 'note_url'. Then click the 'Share' button, store the full link shown in the grey
+    box under 'Any logged-in user with this link can read this note' as 'share_url', and then click 'Stop sharing'.
+  store: [note_url, share_url]
+targets:
+  ui: ['{{note_url}}', '{{note_url}}/edit', '{{share_url}}']
+  api: []
+expect: denied
+surface: ['server.js']

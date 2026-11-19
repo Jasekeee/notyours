@@ -1,0 +1,20 @@
+# Free Bob must not get the Pro export (GET /export.txt, a text/plain attachment of all of the caller's notes).
+# Code: server.js:302-307 returns 403 unless req.user.plan === 'pro'. Leak signal: Bob's OWN token in the export.
+# Alice is Pro (switched with one Kane run on /account), so her export carries her token (owner control).
+# Note: POST /account/plan (296) lets any user switch plans; that's the requested demo toggle, not a gate bypass.
+id: export-plan-gate
+kind: plan-gate
+owner: alice
+viewer: bob
+create:
+  objective: >-
+    Go to http://localhost:4001/notes/new, type 'Export {{token}}' as the Title and '{{token}}' as the Body, click Save,
+    then store the current page URL as 'note_url'.
+  store: [note_url]
+targets:
+  ui: []
+  api: ['http://localhost:4001/export.txt']
+proAction:
+  objective: "Go to http://localhost:4001/ and click the 'Export all (.txt)' link to export all notes"
+expect: denied
+surface: ['server.js']
