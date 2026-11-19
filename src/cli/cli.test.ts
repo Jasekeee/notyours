@@ -55,6 +55,8 @@ function harness() {
     hook: rec('hook'),
     budget: rec('budget'),
     release: rec('release'),
+    status: rec('status'),
+    setup: rec('setup'),
   };
   const codes: number[] = [];
   const parse = (...argv: string[]) => buildProgram(actions, { testing: true, onExit: (c) => codes.push(c) }).parseAsync(['node', 'notyours', ...argv]);
@@ -75,16 +77,33 @@ describe('argument parsing', () => {
     expect(h.codes).toEqual([0, 0]);
   });
 
-  it('init: --url required, --users, repeatable --allow-host, --i-own-this', async () => {
+  it('init: the wizard takes no required flags; --url/--start/--port/--users, --yes, --no-hooks, repeatable --allow-host, --i-own-this', async () => {
     const h = harness();
-    await h.parse('init', '--url', 'http://localhost:3000');
+    await h.parse('init');
+    await h.parse('init', '--url', 'http://localhost:3000', '--start', 'npm run dev', '--port', '3000', '--yes', '--no-hooks');
     await h.parse('init', '--url', 'https://staging.acme.dev', '--users', 'u.yaml', '--allow-host', 'staging.acme.dev', '--allow-host', 'api.acme.dev', '--i-own-this');
-    expect(h.calls[0]).toEqual(['init', { cwd, url: 'http://localhost:3000', users: undefined, allowHost: [], iOwnThis: false }]);
+    expect(h.calls[0]).toEqual(['init', { cwd, allowHost: [], iOwnThis: false, yes: false, hooks: true }]);
     expect(h.calls[1]).toEqual([
       'init',
-      { cwd, url: 'https://staging.acme.dev', users: 'u.yaml', allowHost: ['staging.acme.dev', 'api.acme.dev'], iOwnThis: true },
+      { cwd, url: 'http://localhost:3000', start: 'npm run dev', port: 3000, allowHost: [], iOwnThis: false, yes: true, hooks: false },
     ]);
-    await expect(h.parse('init')).rejects.toThrow(CommanderError);
+    expect(h.calls[2]).toEqual([
+      'init',
+      { cwd, url: 'https://staging.acme.dev', users: 'u.yaml', allowHost: ['staging.acme.dev', 'api.acme.dev'], iOwnThis: true, yes: false, hooks: true },
+    ]);
+  });
+
+  it('bare `notyours` shows the status; `--json` is accepted everywhere; `setup claude` is the one setup target', async () => {
+    const h = harness();
+    await h.parse();
+    await h.parse('-C', '/tmp/app', 'setup', 'claude');
+    expect(h.calls).toEqual([
+      ['status', { cwd }],
+      ['setup', 'claude', { cwd: '/tmp/app' }],
+    ]);
+    await expect(h.parse('setup', 'cursor')).rejects.toThrow(CommanderError);
+    await h.parse('--json', 'doctor');
+    expect(h.calls.at(-1)).toEqual(['doctor', { cwd }]);
   });
 
   it('run / lock / replay take variadic boundary ids', async () => {
@@ -616,9 +635,11 @@ describe('hooks', () => {
 
   it('guard: coding agents MAY run notyours authoring commands (the daily budget bounds the credits)', () => {
     for (const c of ['npx notyours run b1', 'npx notyours lock', 'npx notyours lock --reauthor b1', 'npx notyours demo --quick',
-      'npx notyours init --url http://127.0.0.1:3077', 'npx notyours install-hooks', 'npx notyours replay b1', 'npx notyours budget']) {
+      'npx notyours init', 'npx notyours init --yes --no-hooks', 'npx notyours init --users u.yaml', 'npx notyours install-hooks', 'npx notyours replay b1', 'npx notyours budget']) {
       expect([c, g('Bash', { command: c }).allow]).toEqual([c, true]);
     }
+    // Changing the URL, start command or port is a person's decision (app-approval.test.ts covers the rest).
+    expect(g('Bash', { command: 'npx notyours init --url http://127.0.0.1:3077' }).allow).toBe(false);
   });
 
   it('guard: the agent cannot raise or reset its own budget (budget.json, credits logs, the override env var)', () => {
@@ -708,12 +729,14 @@ describe('hooks', () => {
     ]));
     fs.writeFileSync(path.join(r4, 'users.yaml'), 'users:\n  - { id: alice, role: owner, plan: pro, email: a@x.test }\n');
     const { actions } = await import('./commands.js');
-    const was = process.env.CLAUDECODE;
-    delete process.env.CLAUDECODE; // the suite may itself run inside Claude Code; this test is about init, not the agent check
+    // The suite may itself run inside Claude Code: clear the agent markers, this test is about init, not the agent check.
+    const agentVars = Object.keys(process.env).filter((k) => k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_'));
+    const saved = Object.fromEntries(agentVars.map((k) => [k, process.env[k]!]));
+    for (const k of agentVars) delete process.env[k];
     try {
-      await actions.init({ cwd: r4, url: 'http://127.0.0.1:3077', users: path.join(r4, 'users.yaml'), allowHost: [], iOwnThis: false } as never);
+      await actions.init({ cwd: r4, url: 'http://127.0.0.1:3077', users: path.join(r4, 'users.yaml'), allowHost: [], iOwnThis: false, yes: true, hooks: false } as never);
     } finally {
-      if (was !== undefined) process.env.CLAUDECODE = was;
+      Object.assign(process.env, saved);
     }
     const ids = JSON.parse(fs.readFileSync(path.join(r4, '.notyours/secrets.json'), 'utf8')).identities as Identity[];
     expect(ids[0]!.token).toBe('NY-ALICE-JOTTERSEED2A');

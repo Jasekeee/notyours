@@ -84,6 +84,23 @@ separate real Chrome browsers, and checks what each one can actually see. More i
   oracle watches the DOM and network in every persona's browser and looks for that token. Nothing is judged by an AI.
 - **The ratchet** turns each proven boundary into a recorded Kane test. Replays re-check it without authoring.
 
+```sh
+cd your-app
+npx github:Jasekeee/notyours init                 # wizard: detects Express/Next.js, starts the app, signs test personas up with Kane, writes drafts
+npx github:Jasekeee/notyours                      # what is configured, what is locked, and the next command
+npx github:Jasekeee/notyours setup claude         # hooks + /notyours-map + /notyours-check in one step
+npx github:Jasekeee/notyours init --yes           # the same, with the defaults and no questions (agents, CI)
+npx github:Jasekeee/notyours init --users users.yaml   # accounts you already have: no sign-up runs
+# An app with a CAPTCHA, OAuth-only or SMS sign-in is refused, with the --users way to go instead.
+npx github:Jasekeee/notyours map                  # writes .notyours/boundaries/_draft_*.yaml and .notyours/map.json
+# in Claude Code: /notyours-map   # the agent turns drafts into real boundaries
+npx github:Jasekeee/notyours run --dry-run        # validate + credit estimate, starts nothing
+npx github:Jasekeee/notyours run                  # prove them with Kane (authoring)
+npx github:Jasekeee/notyours lock                 # record them
+npx github:Jasekeee/notyours replay               # no authoring; ~40–50 s per boundary
+npx github:Jasekeee/notyours report --open
+```
+
 A boundary says "this identity must not see that identity's data":
 
 ```yaml

@@ -11,10 +11,18 @@ export const HOOK_EVENTS = ['post-tool', 'guard', 'stop'] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
 export interface InitOpts extends GlobalOpts {
-  url: string;
+  /** Base URL of the app. Default: the detected port on localhost. */
+  url?: string;
+  /** Command that starts the app (default: the project's `start` or `dev` script). */
+  start?: string;
+  port?: number;
   users?: string;
   allowHost: string[];
   iOwnThis: boolean;
+  /** Take the defaults without asking (agents, CI). */
+  yes: boolean;
+  /** Offer / install the Claude Code hooks and slash commands (--no-hooks to skip). */
+  hooks: boolean;
 }
 export interface RunOpts extends GlobalOpts {
   dryRun: boolean;
@@ -40,6 +48,10 @@ export interface InstallHooksOpts extends GlobalOpts {
 export interface Actions {
   doctor(o: GlobalOpts): Promise<number>;
   init(o: InitOpts): Promise<number>;
+  /** `notyours` with no arguments: what is configured, what is locked, the single next command. */
+  status(o: GlobalOpts): Promise<number>;
+  /** `notyours setup claude`: hooks and slash commands in one step. */
+  setup(target: string, o: GlobalOpts): Promise<number>;
   map(o: GlobalOpts): Promise<number>;
   run(ids: string[], o: RunOpts): Promise<number>;
   lock(ids: string[], o: LockOpts): Promise<number>;
@@ -78,7 +90,9 @@ export function buildProgram(actions: Actions, { onExit = (c) => void (process.e
     .description(`${pkg.description}\nNot a pentest tool: isolation tests for your own app.`)
     .version(pkg.version)
     .option('-C, --cwd <dir>', 'project directory (default: current directory)')
-    .showHelpAfterError('(run `notyours --help` for usage)');
+    .option('--json', 'machine-readable output: one JSON object on stdout (for agents and CI)')
+    .showHelpAfterError('(run `notyours --help` for usage)')
+    .action(async (_o, cmd: Command) => done(actions.status(g(cmd))));
 
   const g = (cmd: Command): GlobalOpts => ({ cwd: (cmd.optsWithGlobals() as { cwd?: string }).cwd ?? process.cwd() });
   const done = async (p: Promise<number>) => onExit(await p);
@@ -90,14 +104,24 @@ export function buildProgram(actions: Actions, { onExit = (c) => void (process.e
 
   program
     .command('init')
-    .description('set up .notyours/ for an app you own (localhost by default)')
-    .requiredOption('--url <url>', 'base URL of your app, e.g. http://localhost:3000')
-    .option('--users <file>', 'YAML/JSON list of test users: id, role, plan, email, password|passwordEnv')
+    .description('set up .notyours/ for your app: detects it, signs test personas up with Kane, writes boundary drafts')
+    .option('--url <url>', 'base URL of your app (default: the detected port on localhost)')
+    .option('--start <command>', 'command that starts your app, e.g. "npm start" (default: detected)')
+    .option('--port <n>', 'port your app listens on (default: detected)', (v) => Number(v))
+    .option('--users <file>', 'YAML/JSON accounts you already have (id, role, plan, email, password|passwordEnv): skips sign-up')
     .option('--allow-host <host>', 'add a non-local host to allowHosts (repeatable; needs --i-own-this)', collect, [])
     .option('--i-own-this', 'confirm you own the non-local host and may test it', false)
-    .action(async (o: { url: string; users?: string; allowHost: string[]; iOwnThis: boolean }, cmd: Command) =>
-      done(actions.init({ ...g(cmd), url: o.url, users: o.users, allowHost: o.allowHost, iOwnThis: o.iOwnThis })),
+    .option('-y, --yes', 'take the defaults without asking (agents and CI)', false)
+    .option('--no-hooks', 'do not offer or install the Claude Code hooks and slash commands')
+    .action(async (o: { url?: string; start?: string; port?: number; users?: string; allowHost: string[]; iOwnThis: boolean; yes: boolean; hooks: boolean }, cmd: Command) =>
+      done(actions.init({ ...g(cmd), ...o })),
     );
+
+  program
+    .command('setup')
+    .description('install everything Claude Code needs: hooks, /notyours-map and /notyours-check')
+    .addArgument(new Argument('<target>', 'what to set up').choices(['claude']))
+    .action(async (target: string, _o, cmd: Command) => done(actions.setup(target, g(cmd))));
 
   program
     .command('map')

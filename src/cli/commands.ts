@@ -5,6 +5,16 @@ import pc from 'picocolors';
 import { getEngine, getRatchet } from './backends.js';
 import { sessionPool } from '../engine/index.js';
 import { budgetStatus, writeBudget } from '../shared/budget.js';
+import { emitJson, isJsonMode, say, table, warn } from './output.js';
+import { runWizard, summaryLines, type WizardDeps } from './wizard.js';
+import { detectProject } from './detect.js';
+import { isUp, startApp } from './app-process.js';
+import { appPort, readAppSettings } from '../hooks/app-freshness.js';
+import { approveStart, isApprovedFor, isStartApproved } from './app-approval.js';
+import { computeStatus, renderStatus } from './status.js';
+import { launchChrome } from '../engine/chrome.js';
+import { runKane } from '../engine/kane.js';
+import { signup } from '../engine/signup.js';
 import { createReport } from '../report/index.js';
 import { credits, headline, isLeak, parties, verdictExplanation, verdictGroup } from '../report/summary.js';
 import { fmtCredits } from '../report/html.js';
@@ -40,8 +50,7 @@ import {
 /** Typical credits for a first (authoring) Kane run per boundary; varies ~2x. Used for estimates only. */
 export const CREDITS_PER_AUTHORING = 30;
 
-const log = (s = '') => console.log(s);
-const warn = (s: string) => console.error(pc.yellow(`! ${s}`));
+const log = say;
 
 // ---------- shared helpers ----------
 
@@ -135,11 +144,29 @@ export function finish(root: string, command: string, startedAt: Date, results: 
   const boundaries = p.all.map((b) => b.boundary);
   const reportPath = createReport({ boundaries, identities: p.identities, baseDir: root, ...meta }).write(results, runDir);
   const h = headline(results, new Map(boundaries.map((b) => [b.id, b])));
-  log();
-  log(pc.bold(h.tone === 'LEAK' ? pc.red(h.title) : h.tone === 'HELD' ? pc.green(h.title) : pc.yellow(h.title)));
   const shown = path.relative(process.cwd(), reportPath);
-  log(`Report: ${!shown || shown.startsWith('..') ? reportPath : shown}`);
+  const report = !shown || shown.startsWith('..') ? reportPath : shown;
+  const rows = summaryRows(results);
+  if (isJsonMode()) {
+    emitJson({ ok: exitCodeFor(results) === 0, headline: h.title, results: rows, report, runDir, exitCode: exitCodeFor(results) });
+  } else {
+    log();
+    log(table(['boundary', 'verdict', 'time', 'credits'], rows.map((r) => [r.boundary, r.verdict, `${Math.round(r.seconds)} s`, r.credits.toFixed(1)])));
+    log();
+    log(pc.bold(h.tone === 'LEAK' ? pc.red(h.title) : h.tone === 'HELD' ? pc.green(h.title) : pc.yellow(h.title)));
+    log(`Report: ${report}`);
+  }
   return { runDir, reportPath, results };
+}
+
+/** One row per boundary for the summary table: verdict, Kane time and credits (summed over its Kane runs). */
+export function summaryRows(results: ProbeResult[]): Array<{ boundary: string; verdict: string; seconds: number; credits: number }> {
+  return results.map((r) => ({
+    boundary: r.boundaryId,
+    verdict: r.verdict,
+    seconds: r.kaneRuns.reduce((n, k) => n + k.durationS, 0),
+    credits: credits(r),
+  }));
 }
 
 /** Run the engine over boundaries one at a time (each boundary uses all persona Chromes). */
@@ -167,6 +194,32 @@ export async function author(p: Project, boundaries: Boundary[]): Promise<ProbeR
   return results;
 }
 
+/**
+ * Runs `fn` with the app answering. If nothing answers and config.yaml has app.start (the wizard writes it), starts
+ * the app, runs `fn`, then stops the app. No app.start: `fn` runs and the engine says the app is not reachable.
+ */
+export async function withApp<T>(root: string, cfg: Config, fn: () => Promise<T>): Promise<T> {
+  const app = readAppSettings(notyoursPaths(root));
+  if (!app.start || (await isUp(cfg.baseUrl))) return fn();
+  // config.yaml is committed and can come from a clone or an agent's shell: run only what the person approved here.
+  if (!isStartApproved(root, app, cfg.baseUrl)) {
+    throw new UserError(
+      `app.start in .notyours/config.yaml (${app.start}) has not been approved on this machine, so notyours will not run it.`,
+      'run `notyours init` in a terminal to review and approve it, or start the app yourself and rerun this command.',
+    );
+  }
+  const port = appPort(app, cfg.baseUrl);
+  const handle = await startApp(app.start, root, port, cfg.baseUrl).catch((e: Error) => {
+    throw new UserError(`The app did not start with app.start (${app.start}): ${e.message}`, `run \`${app.start}\` in another terminal, then rerun this command.`);
+  });
+  log(pc.dim(`started the app with app.start (${app.start}); it stops when this command ends`));
+  try {
+    return await fn();
+  } finally {
+    await handle.stop();
+  }
+}
+
 /** Replay locked boundaries (0 credits), optionally narrowed to ids. */
 export async function replayLocked(p: Project, ids: string[]): Promise<ProbeResult[]> {
   const results = await getRatchet(p.root).replayIds(p.identities, ids.length ? ids : undefined);
@@ -183,7 +236,7 @@ export async function replayLocked(p: Project, ids: string[]): Promise<ProbeResu
  * session dirs and local screenshot paths.
  */
 export const GITIGNORE_LINES = ['.notyours/secrets.json', '.notyours/profiles/', '.notyours/runs/', '.notyours/tests/',
-  '.notyours/app.log', '.testmuai/tests/', '.testmuai/evidence/'];
+  '.notyours/app.log', '.notyours/personas.json', '.testmuai/tests/', '.testmuai/evidence/'];
 
 export function ensureGitignore(root: string): void {
   const lines = GITIGNORE_LINES;
@@ -225,6 +278,58 @@ async function readStdin(): Promise<string> {
 
 // ---------- actions ----------
 
+/** The real wizard: terminal prompts, real Chrome per persona, real Kane sign-ups (each one an authoring run). */
+export function wizardDeps(root: string): WizardDeps {
+  const stateDir = nyPaths(root).dir;
+  const ask = async (question: string, def: string): Promise<string> => {
+    const { createInterface } = await import('node:readline/promises');
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const answer = (await rl.question(`${question} [${def}]: `)).trim();
+      return answer || def;
+    } finally {
+      rl.close();
+    }
+  };
+  return {
+    interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+    ask,
+    async yesNo(question, def) {
+      const answer = (await ask(question, def ? 'Y/n' : 'y/N')).toLowerCase();
+      return answer === 'y/n' || answer === 'y' || answer === 'yes' ? true : answer === 'n' || answer === 'no' ? false : def;
+    },
+    detect: detectProject,
+    isUp,
+    startApp,
+    async balance() {
+      try {
+        return await kaneBalance();
+      } catch {
+        return undefined;
+      }
+    },
+    async signup(identity, cfg) {
+      const handle = await launchChrome(identity);
+      try {
+        const out = await signup(identity, runKane, { cfg, stateDir, cwd: root });
+        if (out.run.status !== 'passed') {
+          throw new UserError(
+            `Sign-up for ${identity.id} ${out.run.status}${out.run.reason ? `: ${out.run.reason}` : ''}.`,
+            'open the app in a browser and check its sign-up page; or create the accounts yourself and run `notyours init --users users.yaml`.',
+          );
+        }
+        return out.run.creditsConsumed;
+      } finally {
+        await handle.close();
+      }
+    },
+    installHooks(r) {
+      const h = installHooks(r);
+      return [h.settingsFile, h.launcher, h.commandFile, h.checkFile].map((f) => path.relative(r, f));
+    },
+  };
+}
+
 export const actions: Actions = {
   async doctor(o) {
     const root = path.resolve(o.cwd);
@@ -240,6 +345,10 @@ export const actions: Actions = {
       log(`${mark} ${pc.bold(c.name)}  ${c.detail}`);
     }
     const failed = checks.filter((c) => c.status === 'fail').length;
+    if (isJsonMode()) {
+      emitJson({ ok: failed === 0, checks });
+      return failed ? 1 : 0;
+    }
     log();
     log(failed ? pc.red(`${failed} problem${failed === 1 ? '' : 's'} to fix.`) : pc.green('Ready.'));
     return failed ? 1 : 0;
@@ -247,18 +356,38 @@ export const actions: Actions = {
 
   async init(o) {
     const root = enter(o);
-    if (o.iOwnThis) await confirmOwnership([o.url, ...o.allowHost.map((h) => `http://${h}`)]);
-    // Keep tokens/ports from a previous init (secrets.json), else from the committed identities.json, so
-    // seeded data and recorded tests stay valid. (Found by the E2E: an empty list here minted new tokens.)
-    const existing: Identity[] = fs.existsSync(nyPaths(root).secrets) ? readIdentities(root) : readPublicIdentities(root);
-    const r = runInit(root, { url: o.url, users: o.users, allowHost: o.allowHost, iOwnThis: o.iOwnThis }, existing);
-    ensureGitignore(root);
-    log(`${pc.green('✓')} .notyours/config.yaml  baseUrl ${r.baseUrl}  allowHosts ${r.allowHosts.join(', ')}`);
-    log(`${pc.green('✓')} .notyours/secrets.json  ${r.identities.map((i) => `${i.id} (${i.role})`).join(', ')}  ${pc.dim('gitignored, never printed')}`);
-    const noCreds = r.identities.filter((i) => i.role !== 'guest' && !i.email);
-    if (noCreds.length) warn(`No login for ${noCreds.map((i) => i.id).join(', ')}. Pass --users users.yaml with email + password (or passwordEnv).`);
-    log(`Next: ${pc.bold('notyours map')}, then ${pc.bold('/notyours-map')} in Claude Code to write boundaries.`);
+    // What notyours runs and where it probes is a person's decision: a coding agent's shell can't set it.
+    const agent = inCodingAgent(process.env) && process.stdin.isTTY !== true && process.env[AGENT_OVERRIDE_ENV] !== '1';
+    if (agent && (o.start !== undefined || o.url !== undefined || o.port !== undefined)) {
+      throw new UserError(
+        '--url, --start and --port change what notyours runs and where it probes, which is a person\'s decision, so a coding agent can\'t set them.',
+        'run `notyours init --url ... --start ...` yourself in a terminal.',
+      );
+    }
+    if (o.iOwnThis && o.url) await confirmOwnership([o.url, ...o.allowHost.map((h) => `http://${h}`)]);
+    ensureGitignore(root); // before any secret is written
+    const r = await runWizard(
+      { root, url: o.url, start: o.start, port: o.port, users: o.users, yes: o.yes, hooks: o.hooks, allowHost: o.allowHost, iOwnThis: o.iOwnThis, mayStartApp: agent ? (s, p) => isApprovedFor(root, s, p) : undefined },
+      wizardDeps(root),
+    );
+    // A person (at a terminal, or --yes in CI) approves the start command the wizard wrote. An agent's run approves nothing.
+    if (!agent && r.app.start) approveStart(root, r.app.start, r.app.port);
+    if (isJsonMode()) emitJson({ ok: true, ...r });
+    else for (const line of summaryLines(r)) log(line);
     return 0;
+  },
+
+  async status(o) {
+    const root = enter(o);
+    const s = computeStatus(root);
+    if (isJsonMode()) emitJson(s);
+    else log(renderStatus(s));
+    return 0;
+  },
+
+  async setup(target, o) {
+    if (target !== 'claude') throw new UserError(`Unknown setup target "${target}".`, 'use `notyours setup claude`.');
+    return actions.installHooks(o);
   },
 
   async map(o) {
@@ -294,7 +423,7 @@ export const actions: Actions = {
     }
     await ensureCredits(p.cfg, chosen.length);
     const started = new Date();
-    const results = await author(p, chosen);
+    const results = await withApp(root, p.cfg, () => author(p, chosen));
     finish(root, `run ${ids.join(' ')}`.trim(), started, results, p);
     return exitCodeFor(results);
   },
@@ -310,7 +439,7 @@ export const actions: Actions = {
       assertHostsAllowed(p.cfg, chosen, root);
       assertIdentities(chosen, p.identities);
       await ensureCredits(p.cfg, chosen.length);
-      fresh = await author(p, chosen);
+      fresh = await withApp(root, p.cfg, () => author(p, chosen));
     }
     const latest = latestResultsByBoundary(root);
     const ratchet = getRatchet(root, { reauthor: o.reauthor === true });
@@ -346,7 +475,7 @@ export const actions: Actions = {
     const chosen = selectBoundaries(p.all, ids).map((b) => b.boundary); // also validates ids
     assertHostsAllowed(p.cfg, chosen, root);
     const started = new Date();
-    const results = await replayLocked(p, ids);
+    const results = await withApp(root, p.cfg, () => replayLocked(p, ids));
     if (!results.length) {
       log('Nothing to replay. Lock proven boundaries first: notyours lock');
       return 0;
@@ -383,6 +512,7 @@ export const actions: Actions = {
     log(`${pc.green('✓')} ${path.relative(root, r.settingsFile)}  PreToolUse guard, PostToolUse post-tool, Stop replay`);
     log(`${pc.green('✓')} ${path.relative(root, r.launcher)}  fail-closed launcher: no CLI → the hook blocks (exit 2)`);
     log(`${pc.green('✓')} ${path.relative(root, r.commandFile)}  /notyours-map`);
+    log(`${pc.green('✓')} ${path.relative(root, r.checkFile)}  /notyours-check`);
     log(pc.dim('The guard keeps locked boundaries, Kane recordings, results and secrets read-only for the agent.'));
     return 0;
   },

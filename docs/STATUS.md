@@ -252,3 +252,22 @@ From the automated security review. By decision, only real secret or credential 
      credits).
    - Add a `doctor --replay-selftest` that catches the 0.10.0 quirks above.
    - Find a way to ship demo recordings without account ids, so judges replay instead of author.
+
+## Onboarding (feat/onboarding, 2026-11-19): time to first verdict on a developer's own app
+
+Baseline: a fresh copy of `~/code/natural-app` (Express 4, `npm start`, PORT || 4000; its `data/` removed), kane-cli 0.10.0,
+built from this branch (`npm run build`), wizard run with `notyours init --yes`, then one boundary.
+
+| Step | Time | Kane credits | Result |
+|---|---|---|---|
+| `notyours init --yes`: detect, start the app, sign up alice, bob, free_user (3 authoring runs) | 4 m 27 s | 32.0 | 10 drafts, hooks installed |
+| boundary `notes-id-cross-user` written by hand (what `/notyours-map` does) | about 1 min (not Kane time) | 0 | `_draft_` removed |
+| `notyours run notes-id-cross-user` (2 logins recorded, owner create, viewer look) | 4 m 44 s wall (181 s Kane) | 50.2 | **HELD**, both controls passed |
+| **Total: `init` to the first verdict** | **≈ 9 m 11 s tool time** (≈ 10 min with the boundary write) | **82.2** | 8 authoring runs (budget 20/day) |
+
+Findings from this run:
+- A first `run` was refused with no Kane spend because the wizard stopped the app it had started. Fixed: `run`, `lock --reauthor`
+  and `replay` start the app from `app.start` when nothing answers, and stop it afterwards.
+- The map drafts are noisy: `PLAN_RE` matches the word "plan" in route bodies, so `signup`, `login`, `root` and `account` got plan-gate
+  drafts. Those drafts pulled in a third persona (`free_user`, 9.2 credits) for no reason. Known limitation (map heuristic).
+- Passport strategies (`GoogleStrategy`) were not detected as OAuth until the pattern was widened.
