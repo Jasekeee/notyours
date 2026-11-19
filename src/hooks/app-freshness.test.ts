@@ -7,6 +7,7 @@ import { notyoursPaths } from '../ratchet/paths.js';
 import type { Boundary } from '../types.js';
 import { lockedBoundary } from '../ratchet/testkit.js';
 import { writeConfig } from '../cli/workspace.js';
+import { approveStart } from '../cli/app-approval.js';
 import {
   appPort, checkAppFreshness, listenersOn, parseEtime, readAppSettings, restartApp, STALE_MESSAGE, type FreshnessDeps,
 } from './app-freshness.js';
@@ -77,8 +78,26 @@ describe('checkAppFreshness', () => {
     expect(noLsof).toMatchObject({ status: 'unknown', note: expect.stringContaining('set app.start') });
   });
 
-  it('app.start set: restarts instead of checking (and reports a failed restart as YELLOW)', async () => {
+  it('app.start set but not approved here: YELLOW with the approve command, and no restart', async () => {
     const dir = withServerJs('baseUrl: http://127.0.0.1:4001\napp:\n  start: node server.js\n');
+    const calls: unknown[][] = [];
+    const r = await checkAppFreshness(dir, notyoursPaths(dir), 'http://127.0.0.1:4001', [b], deps({ restart: async (...a) => { calls.push(a); } }));
+    expect(r).toMatchObject({ status: 'unapproved', message: expect.stringContaining('YELLOW') });
+    expect(r.status === 'unapproved' && r.message).toContain('npx github:Jasekeee/notyours init');
+    expect(calls).toEqual([]);
+  });
+
+  it('an approval for another command or port does not count', async () => {
+    const dir = withServerJs('baseUrl: http://127.0.0.1:4001\napp:\n  start: node server.js\n');
+    approveStart(dir, 'node other.js', 4001);
+    approveStart(dir, 'node server.js', 4002);
+    const r = await checkAppFreshness(dir, notyoursPaths(dir), 'http://127.0.0.1:4001', [b], deps({ restart: async () => { throw new Error('must not run'); } }));
+    expect(r.status).toBe('unapproved');
+  });
+
+  it('app.start approved for this command and port: restarts (and reports a failed restart as YELLOW)', async () => {
+    const dir = withServerJs('baseUrl: http://127.0.0.1:4001\napp:\n  start: node server.js\n');
+    approveStart(dir, 'node server.js', 4001);
     const calls: unknown[][] = [];
     const ok = await checkAppFreshness(dir, notyoursPaths(dir), 'http://127.0.0.1:4001', [b], deps({ restart: async (...a) => { calls.push(a); } }));
     expect(ok.status).toBe('restarted');

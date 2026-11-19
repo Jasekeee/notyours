@@ -1,18 +1,12 @@
-// A person approves the app's start command once, on this machine. config.yaml is committed and can come from a
-// clone or an agent's shell, so `app.start` is only run when the fingerprint of (start, port) matches the approval
-// the person recorded in .notyours/app-approved.json (gitignored, read-only to the coding agent).
-import { createHash } from 'node:crypto';
-import fs from 'node:fs';
+// The CLI side of the app.start approval: `init` (a person, in a terminal) records it; `withApp` and the agent-run
+// wizard check it. The check itself lives in hooks/app-approval.ts, which the Stop hook also uses.
 import path from 'node:path';
 import { appPort, type AppSettings } from '../hooks/app-freshness.js';
+import { APPROVAL_FILE, isApprovedIn, startFingerprint } from '../hooks/app-approval.js';
 import { safeMkdir, safeWriteFile } from './safe-fs.js';
 import { nyPaths } from './workspace.js';
 
-export const APPROVAL_FILE = 'app-approved.json';
-
-export function startFingerprint(start: string, port: number): string {
-  return createHash('sha256').update(JSON.stringify({ start, port })).digest('hex');
-}
+export { APPROVAL_FILE, startFingerprint };
 
 /** Records that the person approved running `start` on `port` for this project. */
 export function approveStart(root: string, start: string, port: number): void {
@@ -22,13 +16,7 @@ export function approveStart(root: string, start: string, port: number): void {
 
 /** True only when exactly this start command and port were approved here. */
 export function isApprovedFor(root: string, start: string, port: number): boolean {
-  const file = path.join(nyPaths(root).dir, APPROVAL_FILE);
-  try {
-    const approved = (JSON.parse(fs.readFileSync(file, 'utf8')) as { fingerprint?: string }).fingerprint;
-    return approved === startFingerprint(start, port);
-  } catch {
-    return false;
-  }
+  return isApprovedIn(nyPaths(root).dir, start, port);
 }
 
 /** True only when the app.start in config.yaml is the one the person approved here. */

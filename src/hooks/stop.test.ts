@@ -324,6 +324,18 @@ describe('stop hook: stale app server', () => {
     expect(readAttempts(notyoursPaths(project))[STALE_ATTEMPTS_KEY]).toBe(1);
   });
 
+  it('app.start not approved on this machine: YELLOW with the approve command, exit 2, no replay', async () => {
+    dirtyNotes();
+    const engine = new SequenceEngine([]);
+    const unapproved = withFreshness(engine, async () => ({ status: 'unapproved', message: 'notyours: YELLOW. app.start has not been approved.\n    npx github:Jasekeee/notyours init' }));
+    const r = await stopHook(input('stop-first', project), unapproved);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('npx github:Jasekeee/notyours init');
+    expect(engine.calls).toEqual([]);
+    expect(kane.replayed).toEqual([]);
+    expect(readAttempts(notyoursPaths(project))[STALE_ATTEMPTS_KEY]).toBe(1);
+  });
+
   it('after maxAttempts stale stops it escalates and keeps blocking; a fresh server clears it', async () => {
     dirtyNotes();
     const stale = withFreshness(new SequenceEngine([]), async () => ({ status: 'stale', message: 'stale!' }));

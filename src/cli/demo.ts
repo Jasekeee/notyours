@@ -8,7 +8,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pc from 'picocolors';
+import { appPort, readAppSettings } from '../hooks/app-freshness.js';
 import type { ProbeResult } from '../types.js';
+import { notyoursPaths } from '../ratchet/paths.js';
+import { approveStart } from './app-approval.js';
 import { getRatchet } from './backends.js';
 import { CREDITS_PER_AUTHORING, assertHostsAllowed, author, ensureCredits, finish, replayLocked } from './commands.js';
 import { DEMO_PORT, kaneReplaysCost } from './doctor.js';
@@ -23,6 +26,19 @@ export const DEMO_URL = `http://127.0.0.1:${DEMO_PORT}`;
 export const QUICK_BOUNDARY = 'b1-notes-cross-user';
 
 /**
+ * The demo approves its own bundled `app.start` (the copy's start command on DEMO_PORT), so the Stop hook can restart
+ * the demo app with no manual step. Only the bundled command is approved: a copy whose config was changed is not.
+ * Returns true when it approved.
+ */
+export function approveBundledDemoStart(work: string, src: string): boolean {
+  const bundled = readAppSettings(notyoursPaths(src));
+  const here = readAppSettings(notyoursPaths(work));
+  if (!bundled.start || here.start !== bundled.start || here.port !== bundled.port) return false;
+  approveStart(work, here.start, appPort(here, DEMO_URL));
+  return true;
+}
+
+/**
  * What a fresh demo costs, from the measured E2E runs on kane-cli 0.10.0 (docs/E2E.md): each persona's first
  * login is recorded (1 authoring run each), then every boundary is authored. Recordings stay local
  * (never committed: they hold account ids), so `--dir <same dir>` is what makes a rerun cheap.
@@ -30,7 +46,7 @@ export const QUICK_BOUNDARY = 'b1-notes-cross-user';
 export function demoEstimate(quick: boolean, kaneVersion?: string): string {
   // Measured: kane-cli 0.10.0 (docs/E2E.md) and 0.10.6 (docs/KANE_COMPAT.md; full is extrapolated).
   const slow = kaneReplaysCost(kaneVersion);
-  // 0.10.0 measured on the account balance (docs/SUBMISSION.md, the audit): quick 61 (48.8 logged), full 163.
+  // 0.10.0 measured on the account balance (README, Quick start; docs/STATUS.md): quick 61 (48.8 logged), full 163.
   const [qt, qc, ft, fc] = slow ? ['~10 min', '~65', '~25 min', '~170'] : ['~4 min', '~50–60', '~11 min', '~120–165'];
   const lines = [
     `${quick ? pc.bold('→ quick') : '  quick'}  (B1 only, --quick): ${qt}, ${qc} Kane credits (4 authoring runs: 2 logins + B1)`,
@@ -152,6 +168,7 @@ export async function runDemo(o: DemoOpts): Promise<number> {
     runInit(work, { url, users });
   }
   const cfg = readConfig(work);
+  approveBundledDemoStart(work, src);
   const identities = readIdentities(work);
   const all = readBoundaries(work);
   if (!all.length) throw new UserError(`The demo has no boundaries in ${path.join(work, '.notyours/boundaries')}`);

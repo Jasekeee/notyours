@@ -1,6 +1,8 @@
 // Stale-app guard for the Stop hook (experiment 2: the hook replayed against a server started before the edit, so its
 // GREEN judged old code). Before replaying:
-//   app.start set   -> restart the app (stop whatever listens on its port, run app.start, wait until the port answers)
+//   app.start set   -> only if a person approved exactly this (start, port) here (hooks/app-approval.ts); otherwise YELLOW
+//                      with the approve command. Approved: restart the app (stop whatever listens on its port, run
+//                      app.start, wait until the port answers).
 //   app.start unset -> compare the listening process's start time with the newest surface file; code newer -> YELLOW,
 //                      no replay, exit 2, so the agent restarts the server.
 // `app` lives in .notyours/config.yaml next to the frozen ConfigSchema fields (zod strips unknown keys, so the
@@ -14,6 +16,7 @@ import { z } from 'zod';
 import type { Boundary } from '../types.js';
 import type { NotyoursPaths } from '../ratchet/paths.js';
 import { surfaceFingerprints } from './surface-scan.js';
+import { isApprovedIn } from './app-approval.js';
 
 export const AppSettingsSchema = z.object({
   /** Shell command that starts the app, run in the app folder (e.g. `node server.js`, `PORT=4001 npm start`). */
@@ -136,7 +139,10 @@ export const defaultFreshnessDeps: FreshnessDeps = { listeners: listenersOn, age
 export type Freshness =
   | { status: 'fresh' | 'unknown'; note?: string }
   | { status: 'restarted'; note: string }
-  | { status: 'stale' | 'restart-failed'; message: string };
+  | { status: 'stale' | 'restart-failed' | 'unapproved'; message: string };
+
+/** The command a person runs in a terminal to approve app.start (the wizard shows the command and asks first). */
+export const APPROVE_COMMAND = 'npx github:Jasekeee/notyours init';
 
 const hhmmss = (ms: number) => new Date(ms).toTimeString().slice(0, 8);
 
@@ -160,6 +166,17 @@ export async function checkAppFreshness(
   const port = appPort(app, baseUrl);
   const host = new URL(baseUrl).hostname.replace(/^\[|\]$/g, '');
   if (app.start) {
+    // Same check as the agent-run init: only the start command and port a person approved on this machine.
+    if (!isApprovedIn(p.dir, app.start, port)) {
+      return {
+        status: 'unapproved',
+        message:
+          `notyours: YELLOW. app.start \`${app.start}\` (port ${port}) has not been approved on this machine, so notyours won't run it. Not replaying.\n` +
+          '  A person approves it once, in a terminal in this folder:\n' +
+          `    ${APPROVE_COMMAND}\n` +
+          '  The wizard shows the command and asks before approving. Then stop again.',
+      };
+    }
     try {
       await deps.restart(appDir, app.start, port, host, path.join(p.dir, 'app.log'));
       return { status: 'restarted', note: `notyours: restarted the app (app.start) on :${port} before replaying.` };

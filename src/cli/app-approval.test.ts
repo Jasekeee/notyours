@@ -42,3 +42,22 @@ describe('app.start needs the person\'s approval on this machine', () => {
     expect(guard({ tool_name: 'Edit', tool_input: { file_path: '.notyours/app-approved.json' } }, root).allow).toBe(false);
   });
 });
+
+describe('the demo approves its own bundled app.start', () => {
+  it('approves the bundled command on the demo port, and nothing else', async () => {
+    const { approveBundledDemoStart } = await import('./demo.js');
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'ny-demo-src-'));
+    fs.mkdirSync(path.join(src, '.notyours'));
+    fs.writeFileSync(path.join(src, '.notyours/config.yaml'), 'baseUrl: http://127.0.0.1:3077\napp:\n  start: node server.js\n  port: 3077\n');
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ny-demo-work-'));
+    fs.mkdirSync(path.join(work, '.notyours'));
+    fs.writeFileSync(path.join(work, '.notyours/config.yaml'), 'baseUrl: http://127.0.0.1:3077\napp:\n  start: node server.js\n  port: 3077\n');
+    expect(approveBundledDemoStart(work, src)).toBe(true);
+    expect(isStartApproved(work, { start: 'node server.js', port: 3077 }, 'http://127.0.0.1:3077')).toBe(true);
+
+    // A copy whose start command was changed (by anyone) is not approved.
+    fs.writeFileSync(path.join(work, '.notyours/config.yaml'), 'baseUrl: http://127.0.0.1:3077\napp:\n  start: node evil.js\n  port: 3077\n');
+    expect(approveBundledDemoStart(work, src)).toBe(false);
+    expect(isStartApproved(work, { start: 'node evil.js', port: 3077 }, 'http://127.0.0.1:3077')).toBe(false);
+  });
+});
