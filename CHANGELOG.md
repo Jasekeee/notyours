@@ -7,10 +7,18 @@ release tags (`git log v0.1.x..v0.1.y`). Until 0.2.0 is published to npm, instal
 
 ## [0.2.0]
 
-Release packaging: npm metadata, a prebuilt `dist/` in the package, CI on every push and pull request, and the
-community files a public project needs.
+Craft sprint: an install-and-go first run (`notyours init`), a README and static site written for a developer
+installing it, the app-start approval that the Stop hook now shares, and release packaging (npm metadata, CI, the
+community files a public project needs).
 
 ### Added
+- `notyours init` wizard: detects Express or Next.js, proposes the app's start command and port, creates the test
+  users and writes the boundary drafts. `--yes`, `--users`, `--url`, `--start` and `--port` cover CI and existing
+  accounts. Apps with a CAPTCHA, OAuth-only or SMS sign-in are refused, with the `--users` way to continue.
+- `notyours setup claude` (hooks, `/notyours-map`, `/notyours-check` in one step), a bare `notyours` status command,
+  and `--json` output.
+- A product README, `docs/WHY.md`, a static site (`site/`) with a redacted sample report, a social preview image,
+  and a GitHub Pages workflow.
 - npm package metadata: `keywords`, `homepage`, `bugs`, `repository`, `engines` (Node 22+) and a `files` list that
   ships `dist/`, the demo app and the license.
 - A `prepublishOnly` guard (typecheck and build) so the published tarball always contains a fresh `dist/`.
@@ -20,6 +28,11 @@ community files a public project needs.
   `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), and issue and pull request templates.
 
 ### Changed
+- `app.start` runs only after a person approves the exact start command and port on this machine. The wizard in a
+  terminal records the approval; an agent's run can't set or approve it.
+- The Stop hook restarts the app with `app.start` only when that approval exists. Otherwise it reports YELLOW with the
+  command that approves it, and blocks the stop (the same escalation as a failed restart).
+- `notyours demo` approves its own bundled start command, so it needs no manual step.
 - Version bumped from 0.1.5 to 0.2.0 in `package.json` and `package-lock.json`.
 
 ## [0.1.5] - 2026-11-19
@@ -53,7 +66,7 @@ Fix-day fixes from the natural-app experiments.
 - The oracle's own tabs bypass the app's Content Security Policy, so its `fetch()` calls are not blocked.
 
 ### Added
-- Submission documents and three natural-app experiments on an app notyours did not write.
+- Internal working documents and three natural-app experiments on an app notyours did not write.
 
 ## [0.1.2] - 2026-11-19
 

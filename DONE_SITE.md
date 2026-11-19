@@ -13,7 +13,7 @@ Branch `feat/site`, worktree `../notyours-site`, from `main` at 597a823. No Kane
 | Pages deploy workflow | `.github/workflows/pages.yml` | Written. **Not enabled.** See open items. |
 | Social preview 1280×640 | `assets/social-preview.png`, source `assets/social-preview/card.html`, renderer `assets/social-preview/render.mjs` | Done. Rendered with local Chrome through the repo's `puppeteer-core`. Verified 1280×640. |
 | SUBMISSION moved out of the repo | `~/notyours-private/SUBMISSION.md` (outside any repo, untracked) | Done. `docs/SUBMISSION.md` removed from the tree. |
-| Hackathon wording removed | `README.md`, `docs/WHY.md`, `docs/E2E.md`, `docs/KANE_COMPAT.md`, `site/` | Done in my scope. See the remaining mentions below. |
+| Event wording removed | `README.md`, `docs/WHY.md`, `docs/E2E.md`, `docs/KANE_COMPAT.md`, `site/` | Done in my scope. See the remaining mentions below. |
 | Placeholder for the demo GIF | `README.md` (`assets/demo.gif`) | Placeholder only. The file does not exist yet. |
 
 ## Numbers in the README and site, and where they come from
@@ -44,10 +44,10 @@ The comparison section names no competitor facts. It describes trade-offs, and s
 2. **Git history still has the removed files.** Removing `docs/SUBMISSION.md` from the tree does not remove it from
    history, and neither does the ABOUT.md rename. Removing it from history means rewriting history and force-pushing,
    which CLAUDE.md forbids. Tell me if you want that done as a separate, approved step.
-3. **Hackathon mentions outside my scope:**
+3. **Event mentions outside my scope:**
    - `src/cli/demo.ts:33` comments on `docs/SUBMISSION.md` (dangling now). Belongs to feat/onboarding (src/cli).
    - `docs/STATUS.md:179` mentions "submission drafts". Belongs to the STATUS owner. The "Judge path" headings there
-     use "judge" as a verb about verdicts, and "judges" in a few places. Not hackathon wording, but worth a rename.
+     use "judge" as a verb about verdicts, and "judges" in a few places. Not event wording, but worth a rename.
    - `scripts/judge-loop.sh:2` says "for judges". Not my folder.
 4. **The README quickstart** uses `npx github:Jasekeee/notyours init`, because `notyours` is not on npm. When the
    onboarding wizard lands and the package is published, switch the quickstart to `npx notyours init`. Do not claim the

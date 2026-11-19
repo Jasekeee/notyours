@@ -22,7 +22,7 @@
 - **Guard:** blocks Edit, Write and Bash tampering with `.notyours/`: locked boundaries, recordings,
   `dirty.json`/`attempts.json`, `budget.json` and the credit logs, config, hook settings, secrets and recorded logins.
   It fails closed on internal errors. In run 3 the agent was denied twice and fixed the code instead of cheating.
-- **Judges:** `notyours demo --quick` (B1 only) prints its estimate up front. There's also a no-credits
+- **Quick start:** `notyours demo --quick` (B1 only) prints its estimate up front. There's also a no-credits
   [sample report](sample-report/report.html).
 
 ## Timings (measured)
@@ -53,7 +53,7 @@ The floor is Kane, not notyours. The demo's boundaries all include Alice, so the
 path. It helps projects whose boundaries use different personas. Stopped after 18 of the 90 timeboxed minutes:
 the rest would have been Kane time.
 
-## Judge path after the audit fixes (2026-11-19, fresh clone of `fix/audit`, empty npm cache, kane-cli 0.10.0)
+## Quick end-to-end check after the audit fixes (2026-11-19, fresh clone of `fix/audit`, empty npm cache, kane-cli 0.10.0)
 | Step | Time | Kane credits (balance) | Result |
 |---|---|---|---|
 | `npm ci` | 49 s | 0 | no install-script warnings |
@@ -65,7 +65,7 @@ the rest would have been Kane time.
 | **v0.1.5**, fresh clone of the tag: `npm ci` / `doctor` | 90 s / 3 s | 0 | no install-script warnings; all green |
 | **v0.1.5** `demo --quick` (recorded logins reused) | 2 min 13 s | **32.68** (26.2 logged) | B1 **LEAK_VISIBLE**, 2 authoring runs |
 
-## Judge path (measured on a clean copy, kane-cli 0.10.0)
+## Quick end-to-end check (measured on a clean copy, kane-cli 0.10.0)
 | Step | Time |
 |---|---|
 | `git clone` (fresh, `/tmp/judge`) | 2 s |
@@ -77,9 +77,9 @@ the rest would have been Kane time.
 
 The demo copy contains no `test/` or `vitest.config.js`.
 
-### Feature-freeze prompt (catch every edit, faster replays, judge path)
-**12 authoring runs** of the 15 allowed (B3 re-recorded on a non-gated page: 4; judge path A: 4; judge path B: 4).
-About **153 Kane credits**: B3 re-recording 40.06, judge A 60.90, judge B 30.94, and the Stop-pass measurements 21.46.
+### Feature-freeze prompt (catch every edit, faster replays, quick end-to-end check)
+**12 authoring runs** of the 15 allowed (B3 re-recorded on a non-gated page: 4; quick check A: 4; quick check B: 4).
+About **153 Kane credits**: B3 re-recording 40.06, quick check A 60.90, quick check B 30.94, and the Stop-pass measurements 21.46.
 Balance is now 10,163.58.
 
 ## Credits spent in the integration prompt
@@ -160,7 +160,7 @@ The audit itself stays private; ids below are its finding numbers. Code fixes co
   boundary is escalated (`ESCALATION.md` + `.notyours/escalated.json`) and **keeps blocking**, with no new Kane runs
   until its code changes, until a person runs `notyours release` (refused from an agent, denied by the guard).
 - **Report (AUD-02):** no Test Manager links (TestMu ids) or local session paths in `report.html` / `report.json`.
-- **Judge path:**
+- **Quick end-to-end check:**
   - A start line per Kane run, plus a 30 s heartbeat (AUD-10).
   - The demo works in `./notyours-demo` and prints the report path first (AUD-19).
   - `doctor` pins kane-cli 0.10.0 (AUD-05, AUD-22).
@@ -176,7 +176,7 @@ The audit itself stays private; ids below are its finding numbers. Code fixes co
   - Signed-in personas also skip the login replay during authoring runs (`run`), not only replays.
   - `package.json` is 0.1.4 (AUD-09).
 - **Not done here:** AUD-23 (the budget check isn't atomic) stays documented below. AUD-25, 28 and 29 were
-  deferred by the owner. AUD-04, 08 and 26 concern the submission drafts, which wait for the video and posts.
+  deferred by the owner. AUD-04, 08 and 26 are documentation items outside this release.
 
 ## Fixed after the second independent review (2026-11-19, v0.1.5)
 - **The Stop hook could be switched off from a boundary file (P0).** An invalid boundary file, or an unlocked copy
@@ -251,7 +251,7 @@ From the automated security review. By decision, only real secret or credential 
    - Evaluate kane-cli 0.10.6 (it changes replay, variables and healing; your decision, since healing may cost
      credits).
    - Add a `doctor --replay-selftest` that catches the 0.10.0 quirks above.
-   - Find a way to ship demo recordings without account ids, so judges replay instead of author.
+   - Find a way to ship demo recordings without account ids, so a replay needs no authoring run.
 
 ## Onboarding (feat/onboarding, 2026-11-19): time to first verdict on a developer's own app
 

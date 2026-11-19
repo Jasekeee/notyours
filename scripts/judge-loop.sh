@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The notyours loop without Claude Code, for judges (AUD-15): a fixed boundary is locked, a regression comes back,
+# The notyours loop without Claude Code, as a quick end-to-end check (AUD-15): a fixed boundary is locked, a regression comes back,
 # the replay catches it (exit 1, LEAK), the fix goes back in, the replay is GREEN (exit 0).
 #
 #   From a clone:  npm ci && npm run build && bash scripts/judge-loop.sh            (work folder ./notyours-loop)

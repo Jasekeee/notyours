@@ -1,5 +1,7 @@
 # notyours
 
+[![CI](https://github.com/Jasekeee/notyours/actions/workflows/ci.yml/badge.svg)](https://github.com/Jasekeee/notyours/actions/workflows/ci.yml)
+
 **Prove your users' data stays theirs.** notyours runs your app on localhost, signs in as several users, and checks
 that one user's data never reaches another user's browser.
 
@@ -12,31 +14,35 @@ that one user's data never reaches another user's browser.
 ## Quickstart
 
 You need Node 22+, Google Chrome, and [kane-cli](https://www.testmuai.com/kane-cli/) **0.10.0**, logged in.
-notyours isn't on npm yet, so run it from GitHub:
 
 ```sh
 brew install lambdatest/kane/kane-cli        # macOS: installs 0.10.0
 npm i -g @testmuai/kane-cli@0.10.0           # anywhere else; pin it, plain install gets 0.10.6
 kane-cli login
-npx github:Jasekeee/notyours doctor          # checks Node, Chrome, kane-cli version and login, credits, port 3077
-npx github:Jasekeee/notyours demo --quick    # one real leak in the bundled demo app, about 5 minutes
+npx notyours doctor                          # Node, Chrome, kane-cli version and login, credits, port 3077
+npx notyours demo --quick                    # one real leak in the bundled demo app, about 5 minutes
 ```
 
-Then point it at your own app. It needs your app's URL and a file of test accounts:
+Then, in your own app's folder, the main command is the wizard. It finds your app, asks you to approve the start
+command, signs up test users with Kane, and writes boundary drafts:
 
 ```sh
-npx github:Jasekeee/notyours init --url http://localhost:3000 --users users.yaml
-npx github:Jasekeee/notyours map             # static scan of Express / Next.js routes -> draft boundaries
+cd your-app
+npx notyours init                            # or: npx notyours init --users users.yaml  (accounts you already have)
+npx notyours map                             # static scan of Express / Next.js routes -> draft boundaries
 ```
 
 Finish the drafts (by hand, or with `/notyours-map` in Claude Code), then:
 
 ```sh
-npx github:Jasekeee/notyours run --dry-run   # validates boundaries and prints the credit estimate; starts nothing
-npx github:Jasekeee/notyours run             # proves them with Kane (costs credits)
-npx github:Jasekeee/notyours lock            # records proven boundaries; later checks are replays
-npx github:Jasekeee/notyours replay          # re-checks locked boundaries; no authoring
+npx notyours run --dry-run                   # validates boundaries and prints the credit estimate; starts nothing
+npx notyours run                             # proves them with Kane (costs credits)
+npx notyours lock                            # records proven boundaries; later checks are replays
+npx notyours replay                          # re-checks locked boundaries; no authoring
 ```
+
+**Fallback until the npm release:** notyours isn't on npm yet. Run the same commands as
+`npx github:Jasekeee/notyours`, in place of `npx notyours` (the first run downloads and builds it, about 1–2 min).
 
 `users.yaml` lists your test accounts. Use test accounts, never real users' passwords. Passwords can come from the
 environment and are stored only in `.notyours/secrets.json` (gitignored, mode 0600, never printed):
