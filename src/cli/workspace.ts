@@ -47,7 +47,10 @@ export function readConfigIfExists(root: string): Config | undefined {
 }
 
 export function writeConfig(root: string, cfg: ConfigInput): void {
-  const body = YAML.stringify(ConfigSchema.parse(cfg));
+  // Keep an existing `app:` block (app.start / app.port, read by the Stop hook): ConfigSchema doesn't know it.
+  let app: unknown;
+  try { app = (YAML.parse(fs.readFileSync(nyPaths(root).config, 'utf8')) as { app?: unknown } | null)?.app; } catch { /* new file */ }
+  const body = YAML.stringify(app === undefined ? ConfigSchema.parse(cfg) : { ...ConfigSchema.parse(cfg), app });
   safeWriteFile(root, nyPaths(root).config, `# notyours config. allowHosts: only these hosts may be probed.\n${body}`);
 }
 

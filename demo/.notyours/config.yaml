@@ -1,3 +1,7 @@
 # notyours config for the Jotter demo (start it with: node demo/server.js --seed)
 baseUrl: http://127.0.0.1:3077
 allowHosts: [127.0.0.1, localhost]
+# The Stop hook restarts the app with app.start (in this folder) before replaying, so it never judges an old process.
+app:
+  start: node server.js
+  port: 3077

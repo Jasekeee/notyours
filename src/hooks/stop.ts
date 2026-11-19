@@ -14,6 +14,7 @@ import {
   writeDirty,
   type DirtyEntry,
 } from '../ratchet/store.js';
+import { checkAppFreshness, type Freshness } from './app-freshness.js';
 import { findAppDirs } from './appdir.js';
 import { markSurfaceChanges } from './surface-scan.js';
 import { ok, projectDirOf, tellHuman, type HookInput, type HookResult } from './types.js';
@@ -34,7 +35,12 @@ export interface StopDeps {
   identities?: Identity[];
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
+  /** Is the running app as new as its code? Default: restart via app.start, else compare start time and mtimes. */
+  freshness?: (appDir: string, paths: NotyoursPaths, baseUrl: string, boundaries: Boundary[]) => Promise<Freshness>;
 }
+
+/** attempts.json key for "the app server was older than the code" (YELLOW) stops. */
+export const STALE_ATTEMPTS_KEY = '__app_server_stale__';
 
 async function defaultReplay(ids: string[], ctx: StopContext): Promise<ProbeResult[]> {
   // Imported lazily: the guard and post-tool hooks share this module graph and must stay fast.
@@ -125,6 +131,8 @@ interface AppOutcome {
   blocks: string[][];
   escalated: string[];
   humanNotes: string[];
+  /** YELLOW: not replayed because the app server is older than the code (or could not be restarted). */
+  stale?: string[];
 }
 
 /** The Stop pass for one app folder (the folder holding .notyours/); `projectDir` is only used for display paths. */
@@ -161,6 +169,27 @@ async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, no
       humanNotes.push(`notyours: ${id} changed but is not locked yet (no recorded test to replay); probe and lock it.`);
       delete dirty[id];
     } else toReplay.push(id);
+  }
+
+  // Never judge old code: restart the app (app.start) or check that the running server is newer than its code.
+  if (toReplay.length) {
+    const fresh = await (deps.freshness ?? checkAppFreshness)(appDir, p, cfg.baseUrl, toReplay.map((id) => byId.get(id)!));
+    const att = readAttempts(p);
+    if (fresh.status === 'stale' || fresh.status === 'restart-failed') {
+      writeDirty(p, dirty); // still dirty: replay once the app is restarted
+      const n = (att[STALE_ATTEMPTS_KEY] ?? 0) + 1;
+      if (n >= cfg.maxAttempts) {
+        // Loop safety: after maxAttempts blocked stops, let the agent stop and hand it to the human.
+        delete att[STALE_ATTEMPTS_KEY];
+        writeAttempts(p, att);
+        return { ...none, humanNotes: [...humanNotes, fresh.message, `notyours: ${toReplay.join(', ')} not replayed after ${n} stops; letting the agent stop. Restart the app, then: npx github:Jasekeee/notyours replay`] };
+      }
+      att[STALE_ATTEMPTS_KEY] = n;
+      writeAttempts(p, att);
+      return { ...none, humanNotes, stale: [fresh.message] };
+    }
+    if ('note' in fresh && fresh.note) humanNotes.push(fresh.note);
+    if (att[STALE_ATTEMPTS_KEY] !== undefined) { delete att[STALE_ATTEMPTS_KEY]; writeAttempts(p, att); }
   }
 
   let results: ProbeResult[] = [];
@@ -236,11 +265,14 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
   const blocks = outcomes.flatMap((o) => o.blocks);
   const escalated = outcomes.flatMap((o) => o.escalated);
   const humanNotes = outcomes.flatMap((o) => o.humanNotes);
+  const stale = outcomes.flatMap((o) => o.stale ?? []);
 
   // Loop safety (stop_hook_active): this Stop may itself be a continuation we caused. Every block increments
   // attempts, so a RED boundary blocks at most maxAttempts-1 times in a row, then escalates and lets Claude stop.
   // That stays under Claude Code's 8-continuation cap. An early exit on stop_hook_active alone would let the agent
   // skip the check just by trying to stop twice, so the attempts counter is the guard.
-  if (blocks.length) return { exitCode: 2, stderr: formatLeakReport(blocks, escalated) };
+  if (blocks.length) return { exitCode: 2, stderr: [...stale, formatLeakReport(blocks, escalated)].join('\n\n') };
+  // YELLOW (stale app): exit 2 so the agent restarts the server; counted in attempts.json, so it can't loop forever.
+  if (stale.length) return { exitCode: 2, stderr: stale.join('\n\n') };
   return humanNotes.length ? tellHuman(humanNotes.join('\n')) : ok();
 }

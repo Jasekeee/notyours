@@ -13,8 +13,9 @@ import type { Boundary, Config, Engine, Identity, ProbeResult } from '../types.j
 import { appIndexFile, findAppDirs, scanAppDirs } from './appdir.js';
 import { postToolHook } from './post-tool.js';
 import { parseHookInput } from './types.js';
-import { LAST_LINE, MAX_REPORT_LINES, stopHook, type StopDeps, leakBlock, formatLeakReport } from './stop.js';
+import { LAST_LINE, MAX_REPORT_LINES, STALE_ATTEMPTS_KEY, stopHook, type StopDeps, leakBlock, formatLeakReport } from './stop.js';
 import { writeSurfaceBaseline } from './surface-scan.js';
+import { checkAppFreshness, STALE_MESSAGE, type FreshnessDeps } from './app-freshness.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const input = (name: string, project: string) =>
@@ -38,6 +39,7 @@ let project: string;
 let kane: FakeKane;
 const deps = (engine: Engine): StopDeps => ({
   env: {},
+  freshness: async () => ({ status: 'fresh' }), // the stale-app check has its own tests below
   replay: (ids, ctx) => new RealRatchet({ projectDir: ctx.projectDir, kane, oracle: engineOracle(engine) }).replayIds(ctx.identities, ids),
 });
 const dirtyNotes = () =>
@@ -254,5 +256,57 @@ describe('formatLeakReport', () => {
     const lines = formatLeakReport(blocks, ['x']).trimEnd().split('\n');
     expect(lines).toHaveLength(MAX_REPORT_LINES);
     expect(lines.at(-1)).toBe(LAST_LINE);
+  });
+});
+
+describe('stop hook: stale app server', () => {
+  const withFreshness = (engine: Engine, freshness: StopDeps['freshness']): StopDeps => ({ ...deps(engine), freshness });
+
+  it('app server older than the code: YELLOW, no replay, exit 2, boundary stays dirty', async () => {
+    dirtyNotes();
+    const engine = new SequenceEngine([]);
+    const r = await stopHook(input('stop-first', project), withFreshness(engine, async () => ({ status: 'stale', message: `notyours: YELLOW. ${STALE_MESSAGE}.` })));
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain(STALE_MESSAGE);
+    expect(r.stderr).not.toContain(LAST_LINE); // not a leak report
+    expect(engine.calls).toEqual([]);
+    expect(kane.replayed).toEqual([]);
+    expect(Object.keys(readDirty(notyoursPaths(project)))).toEqual(['notes-cross-user']);
+    expect(readAttempts(notyoursPaths(project))[STALE_ATTEMPTS_KEY]).toBe(1);
+  });
+
+  it('loop safety: after maxAttempts stale stops it lets the agent stop and tells the human', async () => {
+    dirtyNotes();
+    const stale = withFreshness(new SequenceEngine([]), async () => ({ status: 'stale', message: 'stale!' }));
+    expect((await stopHook(input('stop-first', project), stale)).exitCode).toBe(2);
+    expect((await stopHook(input('stop-first', project), stale)).exitCode).toBe(2);
+    const third = await stopHook(input('stop-first', project), stale); // maxAttempts = 3
+    expect(third.exitCode).toBe(0);
+    expect(third.stdout ?? '').toContain('not replayed after 3 stops');
+    expect(readAttempts(notyoursPaths(project))[STALE_ATTEMPTS_KEY]).toBeUndefined();
+  });
+
+  it('app.start restarted the app: replays as usual and clears the stale counter', async () => {
+    dirtyNotes();
+    writeAttempts(notyoursPaths(project), { [STALE_ATTEMPTS_KEY]: 1 });
+    const engine = new SequenceEngine([mockHeldResult]);
+    const r = await stopHook(input('stop-first', project), withFreshness(engine, async () => ({ status: 'restarted', note: 'notyours: restarted the app (app.start) on :3000 before replaying.' })));
+    expect(r.exitCode).toBe(0);
+    expect(engine.calls.map((b) => b.id)).toEqual(['notes-cross-user']);
+    expect(readAttempts(notyoursPaths(project))[STALE_ATTEMPTS_KEY]).toBeUndefined();
+  });
+
+  it('end to end with the real check: a server started before the edit is stale', async () => {
+    const p = notyoursPaths(project);
+    mkdirSync(path.join(project, 'src/app/api/notes'), { recursive: true });
+    writeFileSync(path.join(project, 'src/app/api/notes/route.ts'), 'edited just now\n');
+    dirtyNotes();
+    const fake: FreshnessDeps = { listeners: () => [4242], ageSeconds: () => 3600, now: () => Date.now(), restart: async () => { throw new Error('not configured'); } };
+    const engine = new SequenceEngine([]);
+    const r = await stopHook(input('stop-first', project), withFreshness(engine, (dir, paths, baseUrl, bs) => checkAppFreshness(dir, paths, baseUrl, bs, fake)));
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/pid 4242\) started at .*, but src\/app\/api\/notes\/route\.ts changed at/);
+    expect(engine.calls).toEqual([]);
+    void p;
   });
 });
