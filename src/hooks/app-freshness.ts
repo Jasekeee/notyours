@@ -1,6 +1,7 @@
 // Stale-app guard for the Stop hook (experiment 2: the hook replayed against a server started before the edit, so its
 // GREEN judged old code). Before replaying:
-//   app.start set   -> only if a person approved exactly this (start, port) here (hooks/app-approval.ts); otherwise YELLOW
+//   app.start set   -> only if a person approved exactly this (start, port) for this project on this machine
+//                      (hooks/app-approval.ts, kept in the user's config folder); otherwise YELLOW
 //                      with the approve command. Approved: restart the app (stop whatever listens on its port, run
 //                      app.start, wait until the port answers).
 //   app.start unset -> compare the listening process's start time with the newest surface file; code newer -> YELLOW,
@@ -16,7 +17,7 @@ import { z } from 'zod';
 import type { Boundary } from '../types.js';
 import type { NotyoursPaths } from '../ratchet/paths.js';
 import { surfaceFingerprints } from './surface-scan.js';
-import { isApprovedIn } from './app-approval.js';
+import { isAppStartApproved } from './app-approval.js';
 
 export const AppSettingsSchema = z.object({
   /** Shell command that starts the app, run in the app folder (e.g. `node server.js`, `PORT=4001 npm start`). */
@@ -167,7 +168,7 @@ export async function checkAppFreshness(
   const host = new URL(baseUrl).hostname.replace(/^\[|\]$/g, '');
   if (app.start) {
     // Same check as the agent-run init: only the start command and port a person approved on this machine.
-    if (!isApprovedIn(p.dir, app.start, port)) {
+    if (!isAppStartApproved(path.dirname(p.dir), app.start, port)) {
       return {
         status: 'unapproved',
         message:

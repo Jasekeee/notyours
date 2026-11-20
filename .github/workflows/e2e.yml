@@ -1,0 +1,39 @@
+# E2E: the five browser test files (real headless Chrome, a local fixture app, a fake kane-cli), run one file at a time.
+# Never installs or runs kane-cli, so it never spends Kane credits. Manual and nightly, not on every push:
+# on ubuntu-latest, 8 engine tests that judge captured network response bodies currently time out
+# (docs/STATUS.md, "CI"). They pass on macOS (`npm test`). This workflow keeps them running and visible.
+name: E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  browser-tests:
+    name: browser tests, serial (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Show Chrome
+        run: google-chrome --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Browser tests, serially (verbose timings)
+        run: npm run test:browser -- --reporter=verbose
+
+      - name: Leftover Chrome processes
+        if: always()
+        run: pgrep -fl chrome || echo "none"

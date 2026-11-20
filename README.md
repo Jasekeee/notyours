@@ -276,10 +276,14 @@ The full list, with measurements, is in [docs/STATUS.md](docs/STATUS.md#known-li
 
 ```sh
 npm install
-npm run typecheck && npm test
+npm run typecheck && npm test      # every test, including the browser tests (needs Google Chrome)
 npm run dev -- doctor              # run the CLI from source
 NOTYOURS_DEMO_DIR=./demo npm run dev -- demo --no-open
 ```
+
+The CI badge covers typecheck, build and the non-browser tests (`npm run test:unit`). The browser tests run locally
+and in the E2E workflow (manual and nightly). On GitHub's ubuntu-latest runner, 8 engine tests currently time out;
+see [docs/STATUS.md](docs/STATUS.md#ci).
 
 Secrets live only in `.env` / `.notyours/secrets.json` (both gitignored). After cloning, enable the repo's
 secret-blocking pre-push hook:

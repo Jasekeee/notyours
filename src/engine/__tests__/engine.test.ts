@@ -7,11 +7,12 @@ import puppeteer from 'puppeteer-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BoundarySchema, ConfigSchema } from '../../schemas.js';
 import type { Boundary, Config, Identity } from '../../types.js';
-import { ChromePool } from '../chrome.js';
+import { ChromePool, killLiveChromes } from '../chrome.js';
 import { byId, createIdentities } from '../identities.js';
 import { KaneEngine } from '../index.js';
 import type { KaneRunner } from '../kane.js';
 import { startFixture, type FixtureApp } from './fixture-app.js';
+import { freePortRange, killChromesUsing } from './test-ports.js';
 
 const CREATE = 'Create a note containing {{token}} and store the current page URL as item_url';
 const SEEDED = 'Go to the seeded note, verify it contains {{token}}, store the current page URL as item_url';
@@ -78,17 +79,26 @@ beforeAll(async () => {
     { id: 'free_user', role: 'free', plan: 'free' },
     { id: 'pro_user', role: 'pro', plan: 'pro' },
     { id: 'dave', role: 'viewer', plan: null }, // has an account but is never logged in
-  ], { stateDir, basePort: 9411 });
+  ], { stateDir, basePort: await freePortRange(6) });
   for (const i of ids) if (i.email) app.addUser(i.email, i.password!, i.plan === 'pro' ? 'pro' : 'free');
   pool = new ChromePool({ headful: false });
   for (const id of ['alice', 'bob', 'free_user', 'pro_user']) await logIn(byId(ids, id));
   engine = new KaneEngine({ runner: fakeRunner, pool, stateDir, runId: 'test' });
 }, 60_000);
 
+// A file that aborts (hook timeout, crash) must not leave Chrome on the test ports: close the pool, then
+// kill anything still running, even if closing failed. The exit handler covers a worker that dies outright.
+process.once('exit', killLiveChromes);
+
 afterAll(async () => {
-  await pool?.closeAll();
-  await app?.close();
-  rmSync(stateDir, { recursive: true, force: true });
+  try {
+    await pool?.closeAll();
+    await app?.close();
+  } finally {
+    killLiveChromes();
+    killChromesUsing(stateDir);
+    rmSync(stateDir, { recursive: true, force: true });
+  }
 });
 
 const alice = () => byId(ids, 'alice');

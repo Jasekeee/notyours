@@ -11,6 +11,7 @@ import { MAP_COMMAND_MD } from '../map/command.js';
 import { CHECK_COMMAND_MD } from './check-command.js';
 import { matchesGlob } from './glob.js';
 import { ownedStorePath } from './owned.js';
+import { approvalsDir } from '../hooks/app-approval.js';
 import { assertNoSymlinks, safeWriteFile } from './safe-fs.js';
 import { HOOK_WRAPPER, hookLauncherCommand, hookLauncherScript, selfCliPath } from './hook-launcher.js';
 import { NY_DIR } from './workspace.js';
@@ -82,7 +83,8 @@ const READONLY_PATHS = [
   `${NY_DIR}/escalated.json`,
   // The daily authoring budget and the logs it is counted from: an agent must not raise or reset its own cap.
   `${NY_DIR}/budget.json`,
-  // The person's approval of app.start: an agent must not approve the command it wants run.
+  // The person's approval of app.start lives in the user's config folder now (not in the project). A legacy
+  // in-project app-approved.json is still refused, so an agent can't plant one.
   `${NY_DIR}/app-approved.json`,
   `${NY_DIR}/credits.log`,
   `${NY_DIR}/tests`,
@@ -193,8 +195,15 @@ export function guard(input: HookInput, root: string): GuardResult {
 
   const p = toolPath(input);
   if (!p) return { allow: true };
-  if (WRITE_TOOLS.has(tool) && realish(path.resolve(cwd, p)).toLowerCase().startsWith(realish(path.dirname(ownedStorePath())).toLowerCase())) {
-    return deny('the owned-hosts store records the human\'s --i-own-this confirmations and is off limits.');
+  if (WRITE_TOOLS.has(tool)) {
+    const target = realish(path.resolve(cwd, p)).toLowerCase();
+    if (target.startsWith(realish(path.dirname(ownedStorePath())).toLowerCase())) {
+      return deny('the owned-hosts store records the human\'s --i-own-this confirmations and is off limits.');
+    }
+    // The app.start approvals: a person's decision, kept in the account's config folder.
+    if (target.startsWith(realish(approvalsDir()).toLowerCase())) {
+      return deny('the app.start approvals record the human\'s decisions and are off limits.');
+    }
   }
   const rel = canonRel(root, p, cwd);
   if (rel === undefined) return { allow: true };

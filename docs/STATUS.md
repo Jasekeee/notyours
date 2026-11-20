@@ -298,3 +298,22 @@ Findings from this run:
 - The map drafts are noisy: `PLAN_RE` matches the word "plan" in route bodies, so `signup`, `login`, `root` and `account` got plan-gate
   drafts. Those drafts pulled in a third persona (`free_user`, 9.2 credits) for no reason. Known limitation (map heuristic).
 - Passport strategies (`GoogleStrategy`) were not detected as OAuth until the pattern was widened.
+
+## CI
+Measured 2026-11-19 on GitHub's ubuntu-latest (Chrome 157) and locally (macOS, Chrome 157).
+
+| Run | Result |
+|---|---|
+| main, `npm test` in CI (run 44585050296) | red: 8 engine tests time out at 60 s, 1 stop-hook test at 5 s; 11 min |
+| local, `npm test` (parallel files) | red: engine tests lose their Chrome mid-run (CDP stops answering). Partly fixed: 24 → 14 failures |
+| local, `npm run test:unit` + `npm run test:browser` (browser files serial) | green: 299 + 92 = 391 tests, the same count as `npm test`; 0 Chrome left running |
+| fix/ci, CI with browser files serial (run 44592803801) | non-browser green; browser step red: the same 8 engine tests time out at 60 s |
+
+- **Fixed:** test Chrome always dies with its test file (`killLiveChromes` plus a kill by the file's own temp
+  profile path), and no test uses a fixed CDP port (`freePortRange`, 20000–32000, below the OS ephemeral range).
+  Leftover Chromes from earlier runs had been holding the fixed test ports (9301–9304, 9391, 9411, 9431).
+- **Not fixed:** the 8 engine tests that judge captured network response bodies (payload, XML, script, download,
+  POST export, judge-only) time out on ubuntu-latest even when run serially. They pass locally. The cause is
+  not known yet; run the CI debug workflow (`ci-debug.yml`) for per-test timings and Chrome output.
+- **Split:** `ci.yml` (the README badge) runs typecheck, build and the non-browser tests. The browser tests run
+  locally (`npm test`) and in `e2e.yml` (manual + nightly). No test was removed, skipped or given a longer timeout.

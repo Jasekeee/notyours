@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { approveStart, isStartApproved } from './app-approval.js';
+import { approvalsDir } from '../hooks/app-approval.js';
 import { withApp } from './commands.js';
 import { guard } from './hooks.js';
 import type { Config } from '../types.js';
@@ -59,5 +60,30 @@ describe('the demo approves its own bundled app.start', () => {
     fs.writeFileSync(path.join(work, '.notyours/config.yaml'), 'baseUrl: http://127.0.0.1:3077\napp:\n  start: node evil.js\n  port: 3077\n');
     expect(approveBundledDemoStart(work, src)).toBe(false);
     expect(isStartApproved(work, { start: 'node evil.js', port: 3077 }, 'http://127.0.0.1:3077')).toBe(false);
+  });
+});
+
+describe('an approval can only come from this machine\'s person, not from the project', () => {
+  it('ignores an app-approved.json planted inside the project', () => {
+    const root = project('node server.js', 4777);
+    // A forged approval written by a clone or an agent: the old format, inside .notyours/.
+    fs.writeFileSync(path.join(root, '.notyours/app-approved.json'), JSON.stringify({ fingerprint: 'x', start: 'node server.js', port: 4777 }));
+    expect(isStartApproved(root, { start: 'node server.js', port: 4777 }, 'http://127.0.0.1:4777')).toBe(false);
+  });
+
+  it('an approval is per project path: another project with the same command is not approved', () => {
+    const a = project('node server.js', 4778);
+    const b = project('node server.js', 4778);
+    approveStart(a, 'node server.js', 4778);
+    expect(isStartApproved(a, { start: 'node server.js', port: 4778 }, 'http://127.0.0.1:4778')).toBe(true);
+    expect(isStartApproved(b, { start: 'node server.js', port: 4778 }, 'http://127.0.0.1:4778')).toBe(false);
+  });
+});
+
+describe('the agent cannot write the approvals', () => {
+  it('the guard refuses an Edit of the approvals folder', () => {
+    const root = project('node server.js', 4779);
+    const r = guard({ tool_name: 'Edit', tool_input: { file_path: path.join(approvalsDir(), 'app-approvals.json') } }, root);
+    expect(r.allow).toBe(false);
   });
 });

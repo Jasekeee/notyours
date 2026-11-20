@@ -2,15 +2,18 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ConfigSchema } from '../../schemas.js';
 import type { Identity } from '../../types.js';
 import type { KaneRunner } from '../kane.js';
 import { loginTestName, sessionPool } from '../session.js';
+import { freePortRange, killChromesUsing } from './test-ports.js';
 
 const root = mkdtempSync(join(tmpdir(), 'ny-session-'));
 const stateDir = join(root, '.notyours');
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+let base = 0;
+beforeAll(async () => { base = await freePortRange(16); });
+afterAll(() => { killChromesUsing(root); rmSync(root, { recursive: true, force: true }); });
 
 const ident = (id: string, role: Identity['role'], port: number): Identity => ({
   id, role, plan: null, token: `NY-${id.toUpperCase()}-AAAAAAAAAAAA`, cdpPort: port, userDataDir: join(stateDir, 'profiles', id),
@@ -38,8 +41,8 @@ describe('session pool', () => {
       },
     };
     const opts = { cfg: ConfigSchema.parse({ baseUrl: 'http://127.0.0.1:1' }), stateDir, cwd: root, runner, kane, log: () => {} };
-    const alice = ident('alice', 'owner', 9431);
-    const guest = ident('guest', 'guest', 9432);
+    const alice = ident('alice', 'owner', base + 1);
+    const guest = ident('guest', 'guest', base + 2);
 
     const first = sessionPool(opts, { headful: false });
     await Promise.all([first.get(alice), first.get(guest)]);

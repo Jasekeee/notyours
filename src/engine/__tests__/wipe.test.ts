@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { freePortRange, killChromesUsing } from './test-ports.js';
 import { ChromePool } from '../chrome.js';
 import { wipeProfile } from '../probes.js';
 import type { Identity } from '../../types.js';
@@ -9,9 +10,11 @@ import type { Identity } from '../../types.js';
 const real = realpathSync(mkdtempSync(join(tmpdir(), 'ny-wipe-')));
 const alias = `${real}-alias`;
 symlinkSync(real, alias); // like macOS /tmp -> /private/tmp
-afterAll(() => { rmSync(alias, { force: true }); rmSync(real, { recursive: true, force: true }); });
+afterAll(() => { killChromesUsing(real); rmSync(alias, { force: true }); rmSync(real, { recursive: true, force: true }); });
 
-const guest = (dir: string): Identity => ({ id: 'guest', role: 'guest', plan: null, token: 'NY-GUEST-AAAAAAAAAAAA', cdpPort: 9441, userDataDir: dir });
+let wipePort = 0;
+beforeAll(async () => { wipePort = await freePortRange(1); });
+const guest = (dir: string): Identity => ({ id: 'guest', role: 'guest', plan: null, token: 'NY-GUEST-AAAAAAAAAAAA', cdpPort: wipePort, userDataDir: dir });
 
 describe('wipeProfile', () => {
   it('accepts a profile reached through a symlinked path (Claude Code passes the real path)', async () => {
