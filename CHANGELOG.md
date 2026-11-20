@@ -2,8 +2,28 @@
 
 All notable changes to notyours. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/). Entries are taken from the git history between the
-release tags (`git log v0.1.x..v0.1.y`). Until 0.2.0 is published to npm, install from GitHub:
+release tags (`git log v0.1.x..v0.1.y`). Run it with `npx notyours`, or from GitHub with
 `npx github:Jasekeee/notyours`.
+
+## [0.2.1] - 2026-11-20
+
+### Security
+- The `app.start` approval moved out of the project. It was an unkeyed hash in `.notyours/app-approved.json`, so
+  anything that could write inside the project could forge it. It is now stored in the account's config folder
+  (`<home>/.config/notyours/app-approvals.json`, mode 0600), keyed by the project's real path, the exact start
+  command and the port. The home comes from the account database, so `HOME` and `XDG_CONFIG_HOME` can't move it.
+  A file inside the project is ignored, and the guard refuses an agent's writes to the approvals folder.
+  An approval given under 0.2.0 is not carried over: run `notyours init` in a terminal once to approve again.
+
+### Changed
+- CI is split. `ci.yml` (the README badge) runs typecheck, build and the non-browser tests (`npm run test:unit`).
+  `e2e.yml` runs the five browser test files one at a time (`npm run test:browser`), by hand and nightly: on GitHub's
+  ubuntu-latest runner 8 engine tests time out (docs/STATUS.md, "CI"). `ci-debug.yml` is a manual diagnostic run.
+
+### Fixed
+- Test runs no longer leave headless Chromes behind. The engine keeps track of every Chrome it starts
+  (`killLiveChromes()`), and each browser test file kills what it started in `afterAll`, even when the file aborts.
+- Browser tests pick free debugging ports instead of fixed ones, so parallel test files don't collide.
 
 ## [0.2.0]
 
@@ -30,8 +50,6 @@ community files a public project needs).
 ### Changed
 - `app.start` runs only after a person approves the exact start command and port on this machine. The wizard in a
   terminal records the approval; an agent's run can't set or approve it.
-- The approval is stored in the user's config folder (`~/.config/notyours/app-approvals.json`, mode 0600), keyed by the
-  project's real path. A file planted inside the project is ignored.
 - The Stop hook restarts the app with `app.start` only when that approval exists. Otherwise it reports YELLOW with the
   command that approves it, and blocks the stop (the same escalation as a failed restart).
 - `notyours demo` approves its own bundled start command, so it needs no manual step.

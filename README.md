@@ -1,6 +1,10 @@
+[![notyours: prove your users' data stays theirs](assets/social-preview.png)](https://jasekeee.github.io/notyours/)
+
 # notyours
 
 [![CI](https://github.com/Jasekeee/notyours/actions/workflows/ci.yml/badge.svg)](https://github.com/Jasekeee/notyours/actions/workflows/ci.yml)
+
+[Website](https://jasekeee.github.io/notyours/) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [Known limitations](#known-limitations)
 
 **Prove your users' data stays theirs.** notyours runs your app on localhost, signs in as several users, and checks
 that one user's data never reaches another user's browser.
@@ -13,11 +17,12 @@ that one user's data never reaches another user's browser.
 
 ## Quickstart
 
-You need Node 22+, Google Chrome, and [kane-cli](https://www.testmuai.com/kane-cli/) **0.10.0**, logged in.
+You need Node 22+, Google Chrome, and [kane-cli](https://www.testmuai.com/kane-cli/) 0.10.0–0.10.6 (tested both; 0.10.0 is
+faster), logged in.
 
 ```sh
-brew install lambdatest/kane/kane-cli        # macOS: installs 0.10.0
-npm i -g @testmuai/kane-cli@0.10.0           # anywhere else; pin it, plain install gets 0.10.6
+brew install lambdatest/kane/kane-cli        # macOS
+npm i -g @testmuai/kane-cli                  # anywhere else
 kane-cli login
 npx notyours doctor                          # Node, Chrome, kane-cli version and login, credits, port 3077
 npx notyours demo --quick                    # one real leak in the bundled demo app, about 5 minutes
@@ -41,8 +46,7 @@ npx notyours lock                            # records proven boundaries; later 
 npx notyours replay                          # re-checks locked boundaries; no authoring
 ```
 
-**Fallback until the npm release:** notyours isn't on npm yet. Run the same commands as
-`npx github:Jasekeee/notyours`, in place of `npx notyours` (the first run downloads and builds it, about 1–2 min).
+Fallback: `npx github:Jasekeee/notyours ...` runs the same commands straight from GitHub (the first run builds it, about 1–2 min).
 
 `users.yaml` lists your test accounts. Use test accounts, never real users' passwords. Passwords can come from the
 environment and are stored only in `.notyours/secrets.json` (gitignored, mode 0600, never printed):
@@ -92,19 +96,19 @@ separate real Chrome browsers, and checks what each one can actually see. More i
 
 ```sh
 cd your-app
-npx github:Jasekeee/notyours init                 # wizard: detects Express/Next.js, starts the app, signs test personas up with Kane, writes drafts
-npx github:Jasekeee/notyours                      # what is configured, what is locked, and the next command
-npx github:Jasekeee/notyours setup claude         # hooks + /notyours-map + /notyours-check in one step
-npx github:Jasekeee/notyours init --yes           # the same, with the defaults and no questions (agents, CI)
-npx github:Jasekeee/notyours init --users users.yaml   # accounts you already have: no sign-up runs
+npx notyours init                 # wizard: detects Express/Next.js, starts the app, signs test personas up with Kane, writes drafts
+npx notyours                      # what is configured, what is locked, and the next command
+npx notyours setup claude         # hooks + /notyours-map + /notyours-check in one step
+npx notyours init --yes           # the same, with the defaults and no questions (agents, CI)
+npx notyours init --users users.yaml   # accounts you already have: no sign-up runs
 # An app with a CAPTCHA, OAuth-only or SMS sign-in is refused, with the --users way to go instead.
-npx github:Jasekeee/notyours map                  # writes .notyours/boundaries/_draft_*.yaml and .notyours/map.json
+npx notyours map                  # writes .notyours/boundaries/_draft_*.yaml and .notyours/map.json
 # in Claude Code: /notyours-map   # the agent turns drafts into real boundaries
-npx github:Jasekeee/notyours run --dry-run        # validate + credit estimate, starts nothing
-npx github:Jasekeee/notyours run                  # prove them with Kane (authoring)
-npx github:Jasekeee/notyours lock                 # record them
-npx github:Jasekeee/notyours replay               # no authoring; ~40–50 s per boundary
-npx github:Jasekeee/notyours report --open
+npx notyours run --dry-run        # validate + credit estimate, starts nothing
+npx notyours run                  # prove them with Kane (authoring)
+npx notyours lock                 # record them
+npx notyours replay               # no authoring; ~40–50 s per boundary
+npx notyours report --open
 ```
 
 A boundary says "this identity must not see that identity's data":
@@ -207,12 +211,10 @@ authoring runs, but each replay still uses Kane and its credits (see below).
 **Can my coding agent cheat?** The guard hook blocks an agent's edits to locked boundaries, recordings, run results,
 budget and config. It's a guardrail for a cooperating agent, not a sandbox. See the hooks section.
 
-**Why `npx github:Jasekeee/notyours`?** notyours isn't published to npm yet.
-
 ## Claude Code hooks and the read-only guard
 
 ```sh
-npx github:Jasekeee/notyours install-hooks   # --cli "<command>" to choose the CLI yourself
+npx notyours install-hooks   # --cli "<command>" to choose the CLI yourself
 ```
 
 This merges three hooks and a few `permissions.deny` rules into `.claude/settings.json`, keeping your own settings,
@@ -249,8 +251,8 @@ notyours refuses to start authoring runs when your balance is below `creditFloor
 quick demo).
 
 ```sh
-npx github:Jasekeee/notyours budget          # today's authoring runs vs the cap
-npx github:Jasekeee/notyours budget --set 40 # raise it (a person only; refused from a coding agent)
+npx notyours budget          # today's authoring runs vs the cap
+npx notyours budget --set 40 # raise it (a person only; refused from a coding agent)
 ```
 
 ## Roadmap
