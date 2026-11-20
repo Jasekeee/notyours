@@ -3,6 +3,8 @@ export interface HookResult {
   exitCode: 0 | 2;
   stdout?: string;
   stderr?: string;
+  /** Work was abandoned at the Stop hook's own deadline and may still be running: the CLI exits right away. */
+  abandoned?: boolean;
 }
 
 /** The subset of the Claude Code hook stdin JSON the notyours hooks read. */

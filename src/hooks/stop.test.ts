@@ -14,7 +14,7 @@ import type { Boundary, Config, Engine, Identity, ProbeResult } from '../types.j
 import { appIndexFile, findAppDirs, scanAppDirs } from './appdir.js';
 import { postToolHook } from './post-tool.js';
 import { parseHookInput } from './types.js';
-import { LAST_LINE, MAX_REPORT_LINES, STALE_ATTEMPTS_KEY, stopHook, type StopDeps, leakBlock, formatLeakReport } from './stop.js';
+import { LAST_LINE, MAX_REPORT_LINES, STALE_ATTEMPTS_KEY, STOP_DEADLINE_MS, stopHook, type StopDeps, leakBlock, formatLeakReport } from './stop.js';
 import { writeSurfaceBaseline } from './surface-scan.js';
 import { checkAppFreshness, STALE_MESSAGE, type FreshnessDeps } from './app-freshness.js';
 
@@ -234,6 +234,18 @@ describe('stop hook', () => {
     expect(third.exitCode).toBe(2);
     expect(third.stderr).toContain('ESCALATED, still blocking');
     expect(readEscalated(notyoursPaths(project))['notes-cross-user']?.reason).toContain('kane-cli not found');
+  });
+
+  it('a replay slower than its own deadline blocks (exit 2) before the hook timeout, and keeps the boundary marked (audit P1-16)', async () => {
+    dirtyNotes();
+    const slow: StopDeps = { env: {}, freshness: async () => ({ status: 'fresh' }), deadlineMs: 50, replay: () => new Promise<never>(() => {}) };
+    const r = await stopHook(input('stop-first', project), slow);
+    expect(r.exitCode).toBe(2);
+    expect(r.abandoned).toBe(true); // the CLI ends the process now, with the replay still running
+    expect(r.stderr).toContain('COULD NOT CHECK notes-cross-user');
+    expect(r.stderr).toMatch(/ran out of time.*This is not a pass/s);
+    expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
+    expect(STOP_DEADLINE_MS).toBeLessThan(900_000); // the timeout install-hooks writes for the Stop hook
   });
 });
 

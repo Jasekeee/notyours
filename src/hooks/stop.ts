@@ -40,7 +40,31 @@ export interface StopDeps {
   now?: () => Date;
   /** Is the running app as new as its code? Default: restart via app.start, else compare start time and mtimes. */
   freshness?: (appDir: string, paths: NotyoursPaths, baseUrl: string, boundaries: Boundary[]) => Promise<Freshness>;
+  /** The Stop hook's own time limit (default STOP_DEADLINE_MS). */
+  deadlineMs?: number;
 }
+
+/**
+ * The Stop hook gives up at this point and blocks (exit 2), below the 900 s timeout it is installed with
+ * (src/cli/hooks.ts): a hook that Claude Code kills on timeout doesn't block, so a slow check would let the agent
+ * stop with leaks unchecked (audit P1-16). Boundaries not checked stay marked for the next stop.
+ */
+export const STOP_DEADLINE_MS = 780_000;
+
+class StopDeadline extends Error {}
+
+/** Resolves like `work`, or rejects with StopDeadline at `deadlineAt` (epoch ms). */
+function beforeDeadline<T>(work: Promise<T>, deadlineAt: number, limitMs: number): Promise<T> {
+  const left = deadlineAt - Date.now();
+  const late = () => new StopDeadline(`ran out of time: the Stop check stops itself after ${Math.round(limitMs / 1000)} s, below the hook's timeout, so a slow check can't let the agent stop unchecked. This is not a pass; the boundary stays marked for the next stop.`);
+  if (left <= 0) return Promise.reject(late());
+  let timer: NodeJS.Timeout | undefined;
+  const t = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(late()), left); timer.unref?.(); });
+  return Promise.race([work, t]).finally(() => clearTimeout(timer));
+}
+
+/** Set when this Stop pass gave up at its deadline (work may still be running). */
+let abandoned = false;
 
 /** attempts.json key for "the app server was older than the code" (YELLOW) stops. */
 export const STALE_ATTEMPTS_KEY = '__app_server_stale__';
@@ -143,7 +167,7 @@ interface AppOutcome {
 }
 
 /** The Stop pass for one app folder (the folder holding .notyours/); `projectDir` is only used for display paths. */
-async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, now: Date): Promise<AppOutcome> {
+async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, now: Date, deadlineAt: number): Promise<AppOutcome> {
   const p = notyoursPaths(appDir);
   const dirty = readDirty(p);
   const dirtyIds = Object.keys(dirty);
@@ -234,8 +258,9 @@ async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, no
 
   let results: ProbeResult[];
   try {
-    results = await (deps.replay ?? defaultReplay)(replayIds, { projectDir: appDir, paths: p, identities });
+    results = await beforeDeadline((deps.replay ?? defaultReplay)(replayIds, { projectDir: appDir, paths: p, identities }), deadlineAt, deps.deadlineMs ?? STOP_DEADLINE_MS);
   } catch (e) {
+    if (e instanceof StopDeadline) abandoned = true;
     // A replay that throws proves nothing: block (fail closed), counted per boundary like any failed check.
     const why = (e as Error).message;
     const errBlocks: string[][] = [];
@@ -345,8 +370,10 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
   const apps = dirtyApps(projectDir, now);
   if (!apps.length) return ok();
 
+  const deadlineAt = Date.now() + (deps.deadlineMs ?? STOP_DEADLINE_MS);
+  abandoned = false;
   const outcomes: AppOutcome[] = [];
-  for (const appDir of apps) outcomes.push(await stopForApp(appDir, projectDir, deps, now));
+  for (const appDir of apps) outcomes.push(await stopForApp(appDir, projectDir, deps, now, deadlineAt));
   const blocks = outcomes.flatMap((o) => o.blocks);
   const escalated = outcomes.flatMap((o) => o.escalated);
   const humanNotes = outcomes.flatMap((o) => o.humanNotes);
@@ -360,6 +387,6 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
   // the block text tells the agent to stop retrying and hand it to the user (`notyours release` is a person's call).
   const parts = [...failures, ...stale, ...(blocks.length ? [formatLeakReport(blocks, escalated)] : []), ...escalatedMsgs];
   if (humanNotes.length && parts.length) parts.push(humanNotes.join('\n'));
-  if (parts.length) return { exitCode: 2, stderr: `${parts.join('\n\n').trimEnd()}\n` };
+  if (parts.length) return { exitCode: 2, stderr: `${parts.join('\n\n').trimEnd()}\n`, ...(abandoned ? { abandoned: true } : {}) };
   return humanNotes.length ? tellHuman(humanNotes.join('\n')) : ok();
 }

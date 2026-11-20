@@ -12,7 +12,7 @@ import { isUp, startApp } from './app-process.js';
 import { appPort, readAppSettings } from '../hooks/app-freshness.js';
 import { approveStart, isApprovedFor, isStartApproved } from './app-approval.js';
 import { computeStatus, renderStatus } from './status.js';
-import { launchChrome } from '../engine/chrome.js';
+import { killLiveChromes, launchChrome } from '../engine/chrome.js';
 import { runKane } from '../engine/kane.js';
 import { signup } from '../engine/signup.js';
 import { createReport } from '../report/index.js';
@@ -572,6 +572,11 @@ export const actions: Actions = {
       const write = (s: NodeJS.WriteStream, t: string) => new Promise<void>((res) => s.write(t, () => res()));
       if (r.stdout) await write(process.stdout, r.stdout);
       if (r.stderr) await write(process.stderr, r.stderr);
+      if (r.abandoned) {
+        // The Stop hook hit its own deadline with replays still running: end now (blocking), Chromes included.
+        killLiveChromes();
+        process.exit(r.exitCode);
+      }
       return r.exitCode;
     } catch (e) {
       console.error(`notyours hook ${event}: ${(e as Error).message}`);
