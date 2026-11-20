@@ -143,7 +143,7 @@ export type Freshness =
   | { status: 'stale' | 'restart-failed' | 'unapproved'; message: string };
 
 /** The command a person runs in a terminal to approve app.start (the wizard shows the command and asks first). */
-export const APPROVE_COMMAND = 'npx github:Jasekeee/notyours init';
+export const APPROVE_COMMAND = 'npx notyours init';
 
 const hhmmss = (ms: number) => new Date(ms).toTimeString().slice(0, 8);
 

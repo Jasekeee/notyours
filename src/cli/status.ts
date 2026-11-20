@@ -125,9 +125,9 @@ export function nextStep(s: Omit<StatusReport, 'next'>, boundaries: Boundary[]):
     return { command: 'notyours report --open', why: `${s.lastRun.leaks.length} leak(s): ${s.lastRun.leaks.join(', ')}. Fix the code, then notyours replay` };
   }
   const unlocked = boundaries.filter((b) => b.locked !== true).map((b) => b.id);
-  if (unlocked.length) return { command: 'notyours lock', why: `${unlocked.length} proven but not locked: ${unlocked.join(', ')} (replays then cost 0 credits)` };
+  if (unlocked.length) return { command: 'notyours lock', why: `${unlocked.length} proven but not locked: ${unlocked.join(', ')} (replays then need no authoring runs)` };
   if (!s.hooks.installed) return { command: 'notyours setup claude', why: 'boundaries are locked; install the hooks so Claude Code re-checks them on every stop' };
-  return { command: 'notyours replay', why: `all ${s.boundaries.locked.length} boundaries locked; replay them (0 credits)` };
+  return { command: 'notyours replay', why: `all ${s.boundaries.locked.length} boundaries locked; replay them (no authoring runs; about 0–1 credit each)` };
 }
 
 function readAppBlock(root: string): { start?: string; port?: number } | undefined {

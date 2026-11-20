@@ -13,7 +13,7 @@ Filter (optional): $ARGUMENTS
 
 ## Steps
 
-1. If `.notyours/map.json` is missing or older than the code, run `npx github:Jasekeee/notyours map`.
+1. If `.notyours/map.json` is missing or older than the code, run `npx notyours map`.
 2. Read `.notyours/map.json` (routes, the files behind them, and the identity ids/roles you may use)
    and every `.notyours/boundaries/_draft_*.yaml`. Read `.notyours/config.yaml` for `baseUrl`.
 3. For each draft, read the route's code and what it calls (handler, auth middleware, data query).
@@ -36,11 +36,11 @@ Filter (optional): $ARGUMENTS
 5. Save each one as `.notyours/boundaries/<id>.yaml` (drop the `_draft_` prefix) and delete the draft.
    Add a `guest` variant (`kind: guest`, `viewer` = the guest identity) for routes that should
    require login.
-6. Check your work with `npx github:Jasekeee/notyours run --dry-run`. It validates every boundary and prints the
+6. Check your work with `npx notyours run --dry-run`. It validates every boundary and prints the
    plan and the credit estimate without starting Kane.
-7. Stop and tell the user what you wrote and the command to prove it: `npx github:Jasekeee/notyours run <ids>`.
-   Do not run it yourself: each new boundary costs about 30 Kane credits per Kane run to author
-   (replays of locked boundaries are free).
+7. Stop and tell the user what you wrote and the command to prove it: `npx notyours run <ids>`.
+   Do not run it yourself: each new boundary costs several authoring Kane runs (the dry run prints the
+   estimate); replays of locked boundaries need no authoring runs (about 0–1 credit each).
 
 ## Example
 

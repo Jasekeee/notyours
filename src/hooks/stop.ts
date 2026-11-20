@@ -1,4 +1,4 @@
-// Stop: replay the dirty locked boundaries (0 credits) and send leaks back to the agent until they are fixed.
+// Stop: replay the dirty locked boundaries (no authoring runs) and send leaks back to the agent until they are fixed.
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Boundary, Identity, ProbeResult } from '../types.js';
@@ -84,7 +84,7 @@ export function leakBlock(b: Boundary, r: ProbeResult, d: DirtyEntry | undefined
   if (r.hits.length > 1) lines.push(`  (+${r.hits.length - 1} more hit(s): ${[...new Set(r.hits.slice(1).map((h) => h.url))].slice(0, 3).join(', ')})`);
   lines.push(`  Screenshot: ${r.screenshots[0] ?? '(none)'}`);
   lines.push(`  Suspected files: ${suspected(d, b)}`);
-  lines.push(`  Repro: npx github:Jasekeee/notyours replay ${b.id}`);
+  lines.push(`  Repro: npx notyours replay ${b.id}`);
   return lines;
 }
 
@@ -115,7 +115,7 @@ export function formatEscalation(
     out.push(`- **What leaked:** ${b.kind === 'plan-gate' ? `${b.viewer} (free plan) got the Pro-only result` : `${b.viewer} saw ${b.owner}'s data`} (${leakKind(r)})`);
     out.push(`- **Attempts:** ${attempts}`);
     out.push(`- **Suspected files:** ${suspected(d, b)}`);
-    out.push(`- **Repro:** \`npx github:Jasekeee/notyours replay ${b.id}\``);
+    out.push(`- **Repro:** \`npx notyours replay ${b.id}\``);
     out.push('- **Hits:**');
     for (const h of r.hits) out.push(`  - ${h.where} at ${h.url}: \`${oneLine(scrubSecrets(h.snippet, ids), 200).replace(/`/g, "'")}\``);
     if (!r.hits.length) out.push('  - (none recorded)');
@@ -298,7 +298,7 @@ export function harnessBlock(b: Boundary, r: ProbeResult, attempt: number, max: 
     `  Why: ${why}`,
     '  Check that the app runs and the personas can still sign in, then stop again.',
     `  ${reauthorHint(b.id)}`,
-    `  Repro: npx github:Jasekeee/notyours replay ${b.id}`,
+    `  Repro: npx notyours replay ${b.id}`,
   ];
 }
 
@@ -307,7 +307,7 @@ export function escalationNotice(ids: string[], state: EscalatedState, max: numb
   const lines = [`notyours: ESCALATED, still blocking: ${ids.map((id) => `${id} (${state[id]?.reason ?? 'attempts exhausted'})`).join('; ')}.`,
     `  ${max} attempts failed. Stop retrying and tell the user. Details: ${escalationFile}.`,
     '  A person must fix it, or release the block in their own terminal (a coding agent cannot):',
-    '    npx github:Jasekeee/notyours release' + (ids.length === 1 && !ids[0]!.startsWith('__') ? ` ${ids[0]}` : ''),
+    '    npx notyours release' + (ids.length === 1 && !ids[0]!.startsWith('__') ? ` ${ids[0]}` : ''),
     '  Changing the code under the boundary makes the next stop replay it again (GREEN clears the escalation).'];
   return lines.join('\n');
 }
@@ -316,7 +316,7 @@ function writeEscalationFile(p: NotyoursPaths, state: EscalatedState, items: { b
   const others = Object.entries(state).filter(([id]) => !items.some((i) => i.b.id === id)).map(([id, e]) => `- **${id}**: ${e.reason} (since ${e.ts})`);
   const body = formatEscalation(items, max, ids, now) + (others.length ? `\n## Also escalated\n\n${others.join('\n')}\n` : '') +
     '\n## Releasing the block\n\nThe Stop hook keeps blocking until this is fixed (a GREEN replay) or a person releases it in a terminal:\n\n' +
-    '```sh\nnpx github:Jasekeee/notyours release        # all, or: release <boundary-id>\n```\n';
+    '```sh\nnpx notyours release        # all, or: release <boundary-id>\n```\n';
   writeFileSync(p.escalation, body);
 }
 

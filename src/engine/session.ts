@@ -1,5 +1,5 @@
 // Persona sessions. Many apps (the Jotter demo included) use session cookies, which a Chrome restart drops, so
-// each persona logs in right after its Chrome launches: by replaying its recorded login test (0 credits), or,
+// each persona logs in right after its Chrome launches: by replaying its recorded login test (no authoring run), or,
 // the first time only, by recording one (1 authoring run).
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';

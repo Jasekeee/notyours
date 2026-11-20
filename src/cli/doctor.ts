@@ -101,7 +101,7 @@ export async function runDoctor(creditFloor: number, deps: Partial<DoctorDeps> =
       checks.push({
         name: 'Kane credits',
         status: 'warn',
-        detail: `${balance.toFixed(0)} left, below creditFloor ${creditFloor}: authoring runs (~30 credits each) are refused; replays (0 credits) still work`,
+        detail: `${balance.toFixed(0)} left, below creditFloor ${creditFloor}: authoring runs (~30 credits each) are refused; replays (no authoring runs; about 0–1 credit each) still work`,
       });
     } else {
       checks.push({ name: 'Kane credits', status: 'ok', detail: `${balance.toFixed(0)} available (floor ${creditFloor})` });
@@ -121,7 +121,7 @@ export async function runDoctor(creditFloor: number, deps: Partial<DoctorDeps> =
   return checks;
 }
 
-const HOOK_FIX = 'FIX: npx github:Jasekeee/notyours install-hooks';
+const HOOK_FIX = 'FIX: npx notyours install-hooks';
 
 /**
  * Every installed notyours hook command must resolve to a runnable CLI: it goes through the launcher, the launcher

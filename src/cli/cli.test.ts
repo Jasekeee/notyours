@@ -828,7 +828,7 @@ describe('demo helpers', () => {
     const quick = demoEstimate(true);
     expect(quick).toMatch(/quick.*~4 min.*~50–60 Kane credits/);
     expect(quick).toMatch(/full.*~11 min.*~120–165 Kane credits/);
-    expect(quick).toContain('raw.githubusercontent.com/Jasekeee/notyours/main/docs/sample-report/report.html');
+    expect(quick).toContain('jasekeee.github.io/notyours/sample-report/report.html');
     const h = harness();
     await h.parse('demo', '--quick', '--no-open');
     expect(h.calls[0]?.[0]).toBe('demo');

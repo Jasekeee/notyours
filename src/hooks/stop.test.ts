@@ -94,7 +94,7 @@ describe('stop hook', () => {
     expect(red.stderr).toContain('NY-ALICE-AAAAAAAAAAAA');
     expect(red.stderr).toContain('Screenshot: .notyours/runs/r1/bob-notes.png');
     expect(red.stderr).toContain('src/app/api/notes/route.ts (matched src/app/api/notes/**)');
-    expect(red.stderr).toContain('npx github:Jasekeee/notyours replay notes-cross-user');
+    expect(red.stderr).toContain('npx notyours replay notes-cross-user');
     expect(readAttempts(notyoursPaths(project))).toEqual({ 'notes-cross-user': 1 });
     expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
     // owner and viewer replayed in their own Chromes
@@ -118,7 +118,7 @@ describe('stop hook', () => {
     const third = await stopHook(input('stop-continuation', project), deps(engine));
     expect(third.exitCode).toBe(2); // not silently released
     expect(third.stderr).toContain('ESCALATED, still blocking');
-    expect(third.stderr).toContain('npx github:Jasekeee/notyours release notes-cross-user');
+    expect(third.stderr).toContain('npx notyours release notes-cross-user');
     expect(third.stderr).toContain('Stop retrying and tell the user');
     const esc = readFileSync(p.escalation, 'utf8');
     expect(esc).toContain("bob saw alice's data");
@@ -327,10 +327,10 @@ describe('stop hook: stale app server', () => {
   it('app.start not approved on this machine: YELLOW with the approve command, exit 2, no replay', async () => {
     dirtyNotes();
     const engine = new SequenceEngine([]);
-    const unapproved = withFreshness(engine, async () => ({ status: 'unapproved', message: 'notyours: YELLOW. app.start has not been approved.\n    npx github:Jasekeee/notyours init' }));
+    const unapproved = withFreshness(engine, async () => ({ status: 'unapproved', message: 'notyours: YELLOW. app.start has not been approved.\n    npx notyours init' }));
     const r = await stopHook(input('stop-first', project), unapproved);
     expect(r.exitCode).toBe(2);
-    expect(r.stderr).toContain('npx github:Jasekeee/notyours init');
+    expect(r.stderr).toContain('npx notyours init');
     expect(engine.calls).toEqual([]);
     expect(kane.replayed).toEqual([]);
     expect(readAttempts(notyoursPaths(project))[STALE_ATTEMPTS_KEY]).toBe(1);

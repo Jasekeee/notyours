@@ -20,7 +20,7 @@ export interface KaneRunOptions {
   cwd?: string;
   /** kane-cli --timeout in seconds. Default 240. */
   timeoutS?: number;
-  /** kane-cli --name: persist the run as .testmuai/tests/<name>_test.md for 0-credit replays (ratchet). */
+  /** kane-cli --name: persist the run as .testmuai/tests/<name>_test.md for replays without authoring (ratchet). */
   name?: string;
 }
 

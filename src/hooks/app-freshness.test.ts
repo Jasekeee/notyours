@@ -83,7 +83,7 @@ describe('checkAppFreshness', () => {
     const calls: unknown[][] = [];
     const r = await checkAppFreshness(dir, notyoursPaths(dir), 'http://127.0.0.1:4001', [b], deps({ restart: async (...a) => { calls.push(a); } }));
     expect(r).toMatchObject({ status: 'unapproved', message: expect.stringContaining('YELLOW') });
-    expect(r.status === 'unapproved' && r.message).toContain('npx github:Jasekeee/notyours init');
+    expect(r.status === 'unapproved' && r.message).toContain('npx notyours init');
     expect(calls).toEqual([]);
   });
 

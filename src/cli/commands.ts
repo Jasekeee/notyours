@@ -27,6 +27,7 @@ import { hostOf, isLocalHost } from './hosts.js';
 import { guard, guardOutput, installHooks, type HookInput } from './hooks.js';
 import { postToolHook, stopHook, writeSurfaceBaseline, type HookResult } from '../hooks/index.js';
 import { notyoursPaths } from '../ratchet/paths.js';
+import { estimateAuthoring, estimateLine } from './estimate.js';
 import { ownPagesFor } from '../ratchet/ratchet.js';
 import { readAttempts, readDirty, readEscalated, writeAttempts, writeDirty, writeEscalated } from '../ratchet/store.js';
 import { readPublicIdentities, runInit } from './init.js';
@@ -105,7 +106,7 @@ export async function ensureCredits(cfg: Config, authoringRuns: number, balance:
   const bal = await balance();
   if (bal === undefined) throw new UserError('Could not read your Kane balance (`kane-cli balance`). Run: notyours doctor');
   if (bal < cfg.creditFloor) {
-    throw new UserError(`Kane balance ${bal.toFixed(0)} is below creditFloor ${cfg.creditFloor}: refusing to start authoring runs. Replays are free: notyours replay`);
+    throw new UserError(`Kane balance ${bal.toFixed(0)} is below creditFloor ${cfg.creditFloor}: refusing to start authoring runs. Replays need no authoring runs (about 0–1 credit each): notyours replay`);
   }
   const estimate = authoringRuns * CREDITS_PER_AUTHORING;
   if (bal - estimate < cfg.creditFloor) warn(`~${estimate} credits needed; this may take the balance (${bal.toFixed(0)}) below creditFloor ${cfg.creditFloor}.`);
@@ -171,7 +172,7 @@ export function summaryRows(results: ProbeResult[]): Array<{ boundary: string; v
 
 /** Run the engine over boundaries one at a time (each boundary uses all persona Chromes). */
 export async function author(p: Project, boundaries: Boundary[]): Promise<ProbeResult[]> {
-  // One logged-in Chrome per persona for the whole command (each launch logs in; replayed logins are free).
+  // One logged-in Chrome per persona for the whole command (each launch logs in; replayed logins need no authoring run).
   // Personas still signed in (their own page shows their token) skip the login replay: replaying a login while
   // signed in fails on apps that redirect /login away, and a failed one would cost a re-recording here.
   const pool = sessionPool({ cfg: p.cfg, stateDir: nyPaths(p.root).dir, cwd: p.root, ownPages: ownPagesFor(boundaries) });
@@ -220,7 +221,7 @@ export async function withApp<T>(root: string, cfg: Config, fn: () => Promise<T>
   }
 }
 
-/** Replay locked boundaries (0 credits), optionally narrowed to ids. */
+/** Replay locked boundaries (no authoring runs), optionally narrowed to ids. */
 export async function replayLocked(p: Project, ids: string[]): Promise<ProbeResult[]> {
   const results = await getRatchet(p.root).replayIds(p.identities, ids.length ? ids : undefined);
   const wanted = ids.length ? results.filter((r) => ids.includes(r.boundaryId)) : results;
@@ -413,15 +414,15 @@ export const actions: Actions = {
     if (!chosen.length) throw new UserError('No boundaries in .notyours/boundaries/. Run `notyours map`, then /notyours-map in Claude Code.');
     assertHostsAllowed(p.cfg, chosen, root);
     assertIdentities(chosen, p.identities);
-    const estimate = chosen.length * CREDITS_PER_AUTHORING;
-    const cost = `~${estimate} Kane credits (authoring)`;
-    log(`${chosen.length} boundar${chosen.length === 1 ? 'y' : 'ies'} against ${p.cfg.baseUrl}: ${cost}. Replays after \`notyours lock\` are free.`);
+    const est = estimateAuthoring(chosen, p.identities, notyoursPaths(root).dir);
+    log(`${chosen.length} boundar${chosen.length === 1 ? 'y' : 'ies'} against ${p.cfg.baseUrl}: ${estimateLine(est)}.`);
+    log(pc.dim('After `notyours lock`, replays need no authoring runs: about 0–1 Kane credit and ~40–50 s per boundary on kane-cli 0.10.0.'));
     if (o.dryRun) {
       for (const b of chosen) log(`  ${pc.bold(b.id)}  ${b.kind}: ${b.owner} → ${b.viewer}  ui ${b.targets.ui.length}, api ${b.targets.api.length}${b.locked ? pc.dim('  (locked)') : ''}`);
       log(pc.dim('Dry run: nothing started.'));
       return 0;
     }
-    await ensureCredits(p.cfg, chosen.length);
+    await ensureCredits(p.cfg, est.runs);
     const started = new Date();
     const results = await withApp(root, p.cfg, () => author(p, chosen));
     finish(root, `run ${ids.join(' ')}`.trim(), started, results, p);
@@ -465,7 +466,7 @@ export const actions: Actions = {
       log(`${pc.green('✓')} locked ${pc.bold(b.id)} ${pc.dim(`(${isLeak(r) ? 'currently LEAKS: replay after your fix' : 'held'})`)}`);
     }
     if (fresh.length) finish(root, `lock --reauthor ${ids.join(' ')}`.trim(), started, fresh, p);
-    log(`${locked} locked. Replays cost 0 credits: notyours replay`);
+    log(`${locked} locked. Replays need no authoring runs (about 0–1 credit and ~40–50 s per boundary on kane-cli 0.10.0): notyours replay`);
     return locked === chosen.length ? 0 : 1;
   },
 
@@ -597,7 +598,7 @@ export function logHook(root: string, event: HookEvent, input: HookInput, r: Hoo
 /**
  * Hook dispatch. guard: the CLI's hardened guard (canonical paths, Bash allowlist, hook config read-only).
  * post-tool / stop: the ratchet's hooks (dirty set with file + glob evidence; Stop replays the dirty locked
- * boundaries for 0 credits, exits 2 with a leak report, escalates to the human after 3 attempts).
+ * boundaries with no authoring runs, exits 2 with a leak report, escalates to the human after 3 attempts).
  */
 /**
  * When a hook itself crashes. The guard and the Stop hook fail closed (exit 2: the tool call or the stop is

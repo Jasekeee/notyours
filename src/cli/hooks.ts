@@ -2,7 +2,7 @@
 // guard (PreToolUse): the oracle is read-only to the coding agent: no edits to locked boundaries, Kane
 //   recordings, run results or config, no reading identity passwords, no self-approving new hosts.
 // post-tool (PostToolUse): an edit to a boundary's `surface` marks that boundary dirty.
-// stop (Stop): dirty locked boundaries are replayed (0 credits); a leak blocks the stop with the evidence.
+// stop (Stop): dirty locked boundaries are replayed (no authoring runs); a leak blocks the stop with the evidence.
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -102,7 +102,7 @@ const READONLY_PATHS = [
  * Bash segments that touch protected folders must be one of these read-only commands, with no redirects.
  * Allowlist, not denylist: anything unrecognised (interpreters, cp, sed, editors, scripts) is refused.
  */
-const READONLY_BASH_RE = /^(?:ls|cat|head|tail|wc|stat|jq|grep|diff|git\s+(?:status|diff|log|show)|(?:npx\s+(?:--yes\s+)?(?:github:Jasekeee\/)?)?notyours\s+(?:replay|report|map|doctor|run\s+--dry-run))\b/;
+const READONLY_BASH_RE = /^(?:ls|cat|head|tail|wc|stat|jq|grep|diff|git\s+(?:status|diff|log|show)|(?:npx\s+(?:--yes\s+)?(?:github:Jasekeee\/)?)?notyours(?:@[\w.-]+)?\s+(?:replay|report|map|doctor|run\s+--dry-run))\b/;
 const PROTECTED_IN_SHELL_RE = /\.notyours\b|\.testmuai\b|\.claude\/(?:settings|commands\/notyours)/;
 
 const under = (rel: string, p: string) => rel === p || rel.startsWith(`${p}/`);
@@ -186,7 +186,7 @@ export function guard(input: HookInput, root: string): GuardResult {
       if (!READONLY_BASH_RE.test(bare) || /(?:^|[^<0-9&])>|<\(|-exec\b|--output\b/.test(bare)) {
         return deny(
           'in Bash, .notyours/, .testmuai/ and .claude/settings are read-only (ls, cat, grep, jq, git diff, notyours replay/report). ' +
-            'Edit unlocked boundaries with the Edit/Write tools; fix the app code, then: npx github:Jasekeee/notyours replay',
+            'Edit unlocked boundaries with the Edit/Write tools; fix the app code, then: npx notyours replay',
         );
       }
     }
@@ -215,7 +215,7 @@ export function guard(input: HookInput, root: string): GuardResult {
   }
   if (WRITE_TOOLS.has(tool)) {
     if (READONLY_PATHS.some((s) => under(rel, s))) {
-      return deny(`${rel} is part of the test oracle (recordings, results, config) and is read-only. Fix the app code, then: npx github:Jasekeee/notyours replay`);
+      return deny(`${rel} is part of the test oracle (recordings, results, config) and is read-only. Fix the app code, then: npx notyours replay`);
     }
     if (lockedBoundaryFiles(root).includes(rel)) {
       return deny(`${rel} is a locked boundary and is read-only. If it leaks, fix the code in its surface, not the test.`);

@@ -5,13 +5,16 @@
 //   2. the project's own node_modules/.bin/notyours
 //   3. the CLI that ran install-hooks (absolute path; ~0.2 s per start), while it still exists
 //   4. `notyours` on PATH
-//   5. npx --yes github:Jasekeee/notyours (5–9 s per start, but it works)
+//   5. npx --yes notyours@<the installed version> (pinned; 5–9 s per start, but it works)
 // If none is found, or the CLI exits with anything but 0 or 2, the hook exits 2 (blocking) with HOOK_UNAVAILABLE.
 // The one exception is the Stop hook's loop protection: with stop_hook_active it reports and lets the stop through.
 import fs from 'node:fs';
+import pkg from '../../package.json' with { type: 'json' };
 
 export const HOOK_WRAPPER = '.notyours/bin/notyours-hook';
-export const HOOK_UNAVAILABLE = 'notyours guard unavailable — run `npx github:Jasekeee/notyours install-hooks` (or doctor)';
+export const HOOK_UNAVAILABLE = 'notyours guard unavailable — run `npx notyours install-hooks` (or doctor)';
+/** The npx fallback runs exactly the version that installed the hooks, never a moving target. */
+export const PINNED_NPX = `npx --yes notyours@${pkg.version}`;
 export type LaunchedHook = 'guard' | 'post-tool' | 'stop';
 
 /** POSIX single-quote a string for sh. */
@@ -59,7 +62,7 @@ describe() {
     local) echo "$root/node_modules/.bin/notyours" ;;
     baked) echo "node $baked" ;;
     path) command -v notyours ;;
-    npx) echo "npx --yes github:Jasekeee/notyours (slow: 5-9 s per hook call)" ;;
+    npx) echo "${PINNED_NPX} (slow: 5-9 s per hook call)" ;;
   esac
 }
 
@@ -87,7 +90,7 @@ case "$how" in
   local) printf '%s' "$input" | "$root/node_modules/.bin/notyours" hook "$event" ;;
   baked) printf '%s' "$input" | node "$baked" hook "$event" ;;
   path) printf '%s' "$input" | notyours hook "$event" ;;
-  npx) printf '%s' "$input" | npx --yes github:Jasekeee/notyours hook "$event" ;;
+  npx) printf '%s' "$input" | ${PINNED_NPX} hook "$event" ;;
 esac
 rc=$?
 case "$rc" in 0|2) exit "$rc" ;; esac
