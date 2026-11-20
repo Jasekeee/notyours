@@ -145,6 +145,17 @@ describe('runMap', () => {
     expect(proj.surface).toEqual(['src/app/(dash)/projects/[projectId]/page.tsx', 'src/app/(dash)/projects/[projectId]/**']);
   });
 
+  it('drafts whose targets use stored values say they are not lockable on kane-cli 0.10.0 (audit P1-10)', () => {
+    const dir = path.join(root, '.notyours/boundaries');
+    const text = fs.readFileSync(path.join(dir, '_draft_notes-id-cross-user.yaml'), 'utf8');
+    expect(text).toContain('# WARNING: not lockable on kane-cli 0.10.0. Its targets use stored values ({{record_url}})');
+    expect(text).toMatch(/use fixed URLs instead: an existing record of alice .* and a `viewerOwn` page for bob/);
+    const inv = fs.readFileSync(path.join(dir, '_draft_api-invoices-invoiceid-cross-user.yaml'), 'utf8');
+    expect(inv).toContain('not lockable on kane-cli 0.10.0');
+    // a plan-gate draft with fixed targets and nothing stored: no warning
+    expect(fs.readFileSync(path.join(dir, '_draft_export-plan-gate.yaml'), 'utf8')).not.toContain('WARNING');
+  });
+
   it('writes map.json: route -> files, without node_modules or private folders', () => {
     const map = JSON.parse(fs.readFileSync(result.mapFile, 'utf8'));
     expect(map.routes['GET /notes/:id'].files).toEqual(['server.ts']);

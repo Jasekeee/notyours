@@ -155,7 +155,23 @@ ${found}
 #   targets.ui/api    where ${b.viewer} looks for it (may use {{stored}} values)
 #   surface           code that enforces this boundary
 # Then save it as .notyours/boundaries/${b.id}.yaml (no _draft_ prefix) and delete this file.
-${YAML.stringify(b, { lineWidth: 0 })}`;
+${lockWarning(b)}${YAML.stringify(b, { lineWidth: 0 })}`;
+}
+
+/**
+ * Audit P1-10: targets built from values the create run stores ({{record_url}}) can be proven with `run`, but not
+ * locked: a kane-cli 0.10.0 replay doesn't return stored values, so `lock`, `replay` and the Stop hook report HARNESS.
+ */
+export function lockWarning(b: Boundary): string {
+  const stored = new Set(b.create.store);
+  const used = [...new Set([...b.targets.ui, ...b.targets.api].flatMap((t) => [...t.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map((m) => m[1]!)))]
+    .filter((name) => stored.has(name));
+  if (!used.length) return '';
+  return `# WARNING: not lockable on kane-cli 0.10.0. Its targets use stored values (${used.map((n) => `{{${n}}}`).join(', ')}), and a 0.10.0
+#   replay doesn't return them, so after \`notyours lock\` its replays (and the Stop hook) report HARNESS. \`run\` proves it.
+#   To lock it, use fixed URLs instead: an existing record of ${b.owner} (e.g. /notes/1001) and a \`viewerOwn\` page for ${b.viewer},
+#   as the demo's boundaries do (\`notyours demo\` writes them to ./notyours-demo/.notyours/boundaries/).
+`;
 }
 
 export function runMap(opts: MapOptions): MapResult {
