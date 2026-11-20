@@ -21,7 +21,7 @@ gitignored). The stack is Express 5, server-rendered HTML and sql.js (SQLite in 
 
 ## Seed
 
-Re-seeding always produces the same users, note ids and URLs, so cached (0-credit) Kane replays
+Re-seeding always produces the same users, note ids and URLs, so cached Kane replays (no authoring runs)
 keep working.
 
 | User | Plan | Password (dev default) | Seeded data |

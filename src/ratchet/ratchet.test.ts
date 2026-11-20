@@ -366,3 +366,23 @@ describe('kane-cli NDJSON parsing', () => {
     expect(args[args.indexOf('--cdp-endpoint') + 1]).toBe('http://127.0.0.1:9302');
   });
 });
+
+describe('guest boundaries are checked logged out (audit P1-17)', () => {
+  it('a guest boundary whose viewer has credentials is HARNESS on replay, never judged as that user', async () => {
+    const credentialed: Boundary = { ...lockedBoundary, id: 'guest-with-bob', kind: 'guest', viewer: 'bob' };
+    const project = tempProject([credentialed]);
+    let judged = 0;
+    const oracle = { judge: async (b: Boundary) => { judged++; return { ...mockHeldResult, boundaryId: b.id }; } };
+    const [r] = await new RealRatchet({ projectDir: project, kane: new FakeKane(), oracle }).replay(mockIdentities);
+    expect(r!.verdict).toBe('HARNESS_BROKEN');
+    expect(judged).toBe(0);
+  });
+
+  it('a real guest viewer (role guest, no credentials) replays as before', async () => {
+    const guest: Boundary = { ...lockedBoundary, id: 'guest-ok', kind: 'guest', viewer: 'guest' };
+    const project = tempProject([guest]);
+    const oracle = { judge: async (b: Boundary) => ({ ...mockHeldResult, boundaryId: b.id }) };
+    const [r] = await new RealRatchet({ projectDir: project, kane: new FakeKane(), oracle }).replay(mockIdentities);
+    expect(r!.verdict).toBe('HELD');
+  });
+});

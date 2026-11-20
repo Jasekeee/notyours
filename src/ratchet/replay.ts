@@ -1,4 +1,4 @@
-// replay(): re-run each locked boundary's recorded tests (0 credits), then let the engine's canary oracle judge.
+// replay(): re-run each locked boundary's recorded tests (no authoring runs), then let the engine's canary oracle judge.
 import type { Boundary, Config, Engine, Identity, KaneRun, ProbeResult } from '../types.js';
 import { cdpEndpoint, type KaneClient, type ReplayOutcome } from './kane.js';
 import { testFile, testName, type NotyoursPaths } from './paths.js';

@@ -1,6 +1,5 @@
-# CI: build, typecheck and tests. Mock-driven only: this workflow never installs or runs kane-cli,
-# so it never spends Kane credits. The tests use a fake kane-cli and a local fixture app; they drive a headless Chrome,
-# which GitHub's ubuntu-latest image provides (google-chrome on PATH).
+# CI: build, typecheck, the non-browser tests and the false-green regression tests. Mock-driven only: this workflow
+# never installs or runs kane-cli, so it never spends Kane credits. The browser tests run in e2e.yml (manual).
 name: CI
 
 on:
@@ -46,3 +45,9 @@ jobs:
       # instead of being skipped or weakened.
       - name: Test, non-browser files (mocks only, no Kane runs)
         run: npm run test:unit
+
+      # The checks that keep a verdict from going falsely green (oracle bodies and controls, the Stop hook failing
+      # closed, the stale-server and restart checks, replay exit codes, guest viewers, the agent budget guard),
+      # all without a browser, so they gate every push and pull request.
+      - name: False-green regression tests (no browser)
+        run: npm run test:false-green

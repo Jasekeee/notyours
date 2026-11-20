@@ -1,6 +1,6 @@
 {
   "name": "notyours",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Prove your users' data stays theirs: cross-user leak tests for your own app, driven by Kane CLI personas and a canary-token oracle",
   "keywords": [
     "security",
@@ -21,6 +21,7 @@
     "test": "vitest run",
     "test:unit": "vitest run --exclude src/engine/__tests__/engine.test.ts --exclude src/engine/__tests__/chrome.test.ts --exclude src/engine/__tests__/session.test.ts --exclude src/engine/__tests__/wipe.test.ts --exclude src/cli/cli.test.ts",
     "test:browser": "vitest run --no-file-parallelism src/engine/__tests__/engine.test.ts src/engine/__tests__/chrome.test.ts src/engine/__tests__/session.test.ts src/engine/__tests__/wipe.test.ts src/cli/cli.test.ts",
+    "test:false-green": "vitest run src/engine/__tests__/false-green.test.ts src/engine/__tests__/oracle.test.ts src/hooks/stop.test.ts src/hooks/app-freshness.test.ts src/ratchet/ratchet.test.ts && vitest run src/cli/cli.test.ts -t \"daily authoring budget|credits and exit codes\"",
     "prepare": "npm run build",
     "prepublishOnly": "npm run typecheck && npm run build"
   },

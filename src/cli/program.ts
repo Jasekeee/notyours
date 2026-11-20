@@ -70,8 +70,8 @@ export interface BudgetOpts extends GlobalOpts {
   set?: number;
 }
 
-/** Run notyours straight from GitHub (not on npm yet). */
-export const NPX_CLI = 'npx github:Jasekeee/notyours';
+/** How users run notyours (from npm). */
+export const NPX_CLI = 'npx notyours';
 
 const collect = (v: string, prev: string[]) => [...prev, v];
 
@@ -137,14 +137,14 @@ export function buildProgram(actions: Actions, { onExit = (c) => void (process.e
 
   program
     .command('lock')
-    .description('lock proven boundaries into replayable tests (replays cost 0 credits)')
+    .description('lock proven boundaries into replayable tests (replays need no authoring runs)')
     .argument('[ids...]', 'boundary ids (default: all)')
     .option('--reauthor', 'record the test again with a fresh authoring run (~30 credits each)', false)
     .action(async (ids: string[], o: { reauthor: boolean }, cmd: Command) => done(actions.lock(ids, { ...g(cmd), reauthor: o.reauthor })));
 
   program
     .command('replay')
-    .description('replay locked boundaries (0 credits, about a second each)')
+    .description('replay locked boundaries (no authoring runs; about 0–1 credit and ~40–50 s per boundary on kane-cli 0.10.0)')
     .argument('[ids...]', 'boundary ids (default: all locked)')
     .action(async (ids: string[], _o, cmd: Command) => done(actions.replay(ids, g(cmd))));
 
@@ -169,7 +169,7 @@ export function buildProgram(actions: Actions, { onExit = (c) => void (process.e
   program
     .command('demo')
     .description('run the bundled demo app on :3077 and probe it end to end')
-    .option('--dir <dir>', 'working directory to reuse (keeps recordings, so reruns replay for 0 credits)')
+    .option('--dir <dir>', 'working directory to reuse (keeps recordings, so reruns replay with no authoring runs)')
     .option('--no-open', 'do not open the report')
     .option('--quick', "only B1 (Bob opens Alice's note): one real leak in ~4 min")
     .action(async (o: { dir?: string; open: boolean; quick?: boolean }, cmd: Command) => done(actions.demo({ ...g(cmd), dir: o.dir, open: o.open, quick: o.quick === true })));

@@ -27,7 +27,7 @@
 </svg>
 <a class="skip" href="#loop">Skip to content</a>
 
-<div class="announce"><a href="https://github.com/Jasekeee/notyours/blob/main/CHANGELOG.md"><span class="ver">v0.2.0</span><span>init wizard · Stop hook restarts your app first</span><span class="go">Changelog</span></a></div>
+<div class="announce"><a href="https://github.com/Jasekeee/notyours/blob/main/CHANGELOG.md"><span class="ver">v0.2.2</span><span>on npm · four false-green paths closed · honest replay cost</span><span class="go">Changelog</span></a></div>
 
 <header class="hero">
   <div class="grid-bg"></div>
@@ -38,9 +38,9 @@
     </nav>
     <div class="hero-top">
       <h1>Prove your users' data stays theirs.</h1>
-      <p class="lede">notyours signs in to your app as several users and plants a canary token in each account. If one user's token reaches another user's browser, your coding agent can't stop until the server is fixed.</p>
+      <p class="lede">notyours signs in to your app as several users and plants a canary token in each account. If one user's token reaches another user's browser, your coding agent is blocked from finishing and gets the evidence; after 3 failed attempts it escalates to you.</p>
       <div class="row">
-        <div class="install"><span class="prompt" aria-hidden="true">$</span><code id="cmd-hero">npx github:Jasekeee/notyours init</code>
+        <div class="install"><span class="prompt" aria-hidden="true">$</span><code id="cmd-hero">npx notyours init</code>
           <button class="copy" type="button" data-copy="cmd-hero" aria-label="Copy install command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
         <a class="btn btn-primary" href="#quickstart">Try the demo</a><a class="btn btn-ghost" href="https://github.com/Jasekeee/notyours">View on GitHub</a>
       </div>
@@ -94,7 +94,7 @@
         <div class="results">
           <div class="float" data-at="8"><div class="k">canary token</div><div class="v"><span class="tok">NY-ALICE-JOTTERSEED2A</span></div><div class="s">Planted in Alice's note. Found on Bob's screen.</div></div>
           <div class="float" data-at="9"><div class="k">evidence</div><div class="v">Screenshot + URL</div><div class="s">/notes/1001 and /api/notes/1001</div></div>
-          <div class="float" data-at="21"><div class="k">replay</div><div class="v">0 Kane credits</div><div class="s">for each replay that passes</div></div>
+          <div class="float" data-at="21"><div class="k">replay</div><div class="v">0 authoring runs</div><div class="s">a passing replay costs about 0–1 Kane credit (kane-cli 0.10.0)</div></div>
         </div>
         <p class="seeded src">From <a href="https://github.com/Jasekeee/notyours/tree/main/docs/loop-run-1">docs/loop-run-1</a>. A passing Stop prints nothing; the HELD lines summarise its exit 0.</p>
       </div>
@@ -134,7 +134,7 @@
       <li class="card step lift"><span class="num">02</span><h3>Prove</h3><p>Kane signs in as Alice and Bob in separate Chromes. Alice's record carries a canary token; Bob visits it. The token decides.</p>
         <div class="viz" aria-hidden="true"><span class="persona"><span class="av">A</span>creates <span class="tok">NY-ALICE-…</span></span><span class="arrow">↓ Bob opens /notes/1001</span><span class="persona bob"><span class="av">B</span>did the token reach Bob?</span></div></li>
       <li class="card step lift"><span class="num">03</span><h3>Lock</h3><p><code>notyours lock</code> turns each proven boundary into a recorded Kane test. Later checks replay it, with no authoring runs.</p>
-        <div class="viz" aria-hidden="true"><span class="arrow">.notyours/tests/</span><span class="file">b1-…_bob_test.md</span><span class="arrow">↓ replay</span><span>authoring runs: <span class="ok">0</span></span><span>passing replay: <span class="ok">0 credits</span></span></div></li>
+        <div class="viz" aria-hidden="true"><span class="arrow">.notyours/tests/</span><span class="file">b1-…_bob_test.md</span><span class="arrow">↓ replay</span><span>authoring runs: <span class="ok">0</span></span><span>passing replay: <span class="ok">~0–1 credit</span></span></div></li>
       <li class="card step lift"><span class="num">04</span><h3>Guard</h3><p>The Stop hook replays changed boundaries each time the agent tries to finish. A leak blocks the stop and hands the agent the evidence.</p>
         <div class="viz" aria-hidden="true"><span>agent stops</span><span class="arrow">↓ replay b1, b2, b4</span><span><span class="bad">LEAK</span> → exit 2, keep working</span><span><span class="ok">HELD</span> → exit 0, done</span></div></li>
     </ol>
@@ -249,28 +249,27 @@
     <div class="qs">
       <div class="card tabs" data-tabs>
         <div class="tablist" role="tablist" aria-label="Install method">
-          <button class="tab" role="tab" id="t-npm" aria-controls="p-npm" aria-selected="false" tabindex="-1" type="button">npx notyours</button>
-          <button class="tab" role="tab" id="t-gh" aria-controls="p-gh" aria-selected="true" type="button">from GitHub</button>
+          <button class="tab" role="tab" id="t-npm" aria-controls="p-npm" aria-selected="true" type="button">npx notyours</button>
+          <button class="tab" role="tab" id="t-gh" aria-controls="p-gh" aria-selected="false" tabindex="-1" type="button">from GitHub (fallback)</button>
         </div>
-        <div class="panel" role="tabpanel" id="p-npm" aria-labelledby="t-npm" tabindex="0" hidden>
-          <p class="note-np">notyours isn't on npm yet. These work once 0.2.0 is published; until then, use the GitHub tab.</p>
-          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><code id="q1n">npx notyours doctor</code><button class="copy" type="button" data-copy="q1n" aria-label="Copy the doctor command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
-          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><code id="q2n">npx notyours demo --quick</code><button class="copy" type="button" data-copy="q2n" aria-label="Copy the demo command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
-          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><code id="q3n">npx notyours init</code><button class="copy" type="button" data-copy="q3n" aria-label="Copy the init command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+        <div class="panel" role="tabpanel" id="p-npm" aria-labelledby="t-npm" tabindex="0">
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q1n">npx notyours doctor</code><span class="c">Checks Node, Chrome, kane-cli and its login, credits and port 3077.</span></div><button class="copy" type="button" data-copy="q1n" aria-label="Copy the doctor command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q2n">npx notyours demo --quick</code><span class="c">One real leak in the bundled demo app, about 5 minutes.</span></div><button class="copy" type="button" data-copy="q2n" aria-label="Copy the demo command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q3n">npx notyours init</code><span class="c">In your app's folder: finds the app, asks you to approve its start command, writes boundary drafts.</span></div><button class="copy" type="button" data-copy="q3n" aria-label="Copy the init command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
         </div>
-        <div class="panel" role="tabpanel" id="p-gh" aria-labelledby="t-gh" tabindex="0">
-          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q1g">npx github:Jasekeee/notyours doctor</code><span class="c">Checks Node, Chrome, kane-cli and its login, credits and port 3077.</span></div><button class="copy" type="button" data-copy="q1g" aria-label="Copy the doctor command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+        <div class="panel" role="tabpanel" id="p-gh" aria-labelledby="t-gh" tabindex="0" hidden>
+          <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q1g">npx github:Jasekeee/notyours doctor</code><span class="c">The same commands, built straight from GitHub on the first run. Use it only if npm is unavailable.</span></div><button class="copy" type="button" data-copy="q1g" aria-label="Copy the doctor command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
           <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q2g">npx github:Jasekeee/notyours demo --quick</code><span class="c">One real leak in the bundled demo app, about 5 minutes.</span></div><button class="copy" type="button" data-copy="q2g" aria-label="Copy the demo command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
           <div class="cmd"><span class="prompt" aria-hidden="true">$</span><div class="cmd-t"><code id="q3g">npx github:Jasekeee/notyours init</code><span class="c">In your app's folder: finds the app, asks you to approve its start command, writes boundary drafts.</span></div><button class="copy" type="button" data-copy="q3g" aria-label="Copy the init command"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
         </div>
       </div>
       <div class="card req">
         <h3>Requirements</h3>
-        <ul><li><strong>Node 22+</strong></li><li><strong>Google Chrome</strong></li><li><strong>kane-cli 0.10.0</strong>, logged in to your TestMu AI account</li></ul>
+        <ul><li><strong>Node 22+</strong></li><li><strong>Google Chrome</strong></li><li><strong>kane-cli</strong> (tested on 0.10.0–0.10.6; 0.10.0 is faster), logged in to your TestMu AI account</li></ul>
 <pre><span class="t-dim"># macOS</span>
 brew install lambdatest/kane/kane-cli
-<span class="t-dim"># anywhere else (pin it)</span>
-npm i -g @testmuai/kane-cli@0.10.0
+<span class="t-dim"># anywhere else</span>
+npm i -g @testmuai/kane-cli
 kane-cli login</pre>
       </div>
     </div>
@@ -287,7 +286,7 @@ kane-cli login</pre>
     <div class="faq">
       <details open><summary>Does it need an AI API key?</summary><p>No. Kane drives the browsers, and the verdict comes from the canary token. Nothing is judged by an AI.</p></details>
       <details><summary>What does it cost?</summary><p>Kane credits from your TestMu AI account. Measured: the quick demo used 61.69 credits (4 min 48 s), and a replay of four locked boundaries used 3.4 credits (170 s). <code>run --dry-run</code> prints an estimate without starting Kane, and the CLI caps authoring runs per project per day (default 20).</p></details>
-      <details><summary>Does my data leave my machine?</summary><p>Your app runs on localhost. Kane runs are tied to your TestMu AI account, and its evidence packs hold your account email and share links. <code>init</code> keeps them out of git; don't publish them.</p></details>
+      <details><summary>Does my data leave my machine?</summary><p>Yes, through Kane. Your app runs on localhost, but every Kane run belongs to your TestMu AI account and gets a Test Manager link, and Kane's agent decides its steps from what the personas' browsers show. Treat what your test personas see, and the test accounts' credentials, as shared with TestMu AI: use test accounts and test data. notyours itself sends nothing; the oracle runs on your machine. Evidence packs hold your account email and share links; <code>init</code> keeps them out of git, so don't publish them.</p></details>
       <details><summary>Which frameworks does it understand?</summary><p>The route scan reads Express and Next.js code. Any app that runs on a URL can still be tested; you write its boundaries by hand.</p></details>
       <details><summary>Can my coding agent cheat?</summary><p>The guard hook blocks the agent's edits to locked boundaries, recordings, run results, budget and config, and the Stop hook fails closed. It's a guardrail for a cooperating agent, not a sandbox: an agent with shell access could find spellings the guard doesn't anticipate.</p></details>
     </div>

@@ -1,4 +1,4 @@
-// lock(): turn a HELD probe into two recorded, replayable (0-credit) Kane tests, one per identity.
+// lock(): turn a HELD probe into two recorded, replayable Kane tests (no authoring runs), one per identity.
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Boundary, Config, Identity, KaneRun, ProbeResult } from '../types.js';

@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HOOK_UNAVAILABLE, HOOK_WRAPPER, hookLauncherCommand, selfCliPath, shq, type LaunchedHook } from './hook-launcher.js';
+import { HOOK_UNAVAILABLE, HOOK_WRAPPER, PINNED_NPX, hookLauncherCommand, hookLauncherScript, selfCliPath, shq, type LaunchedHook } from './hook-launcher.js';
+import pkg from '../../package.json' with { type: 'json' };
 import { guard, installHooks } from './hooks.js';
 import { checkHooks } from './doctor.js';
 
@@ -123,7 +124,7 @@ describe('doctor: installed hook commands resolve', () => {
     expect(checkHooks(root)).toMatchObject({ status: 'ok', detail: expect.stringContaining('3 hooks →') });
 
     fs.rmSync(path.join(root, HOOK_WRAPPER));
-    expect(checkHooks(root)).toMatchObject({ status: 'fail', detail: expect.stringContaining('FIX: npx github:Jasekeee/notyours install-hooks') });
+    expect(checkHooks(root)).toMatchObject({ status: 'fail', detail: expect.stringContaining('FIX: npx notyours install-hooks') });
 
     installHooks(root, undefined, '/nonexistent/index.js');
     const none = checkHooks(root, (l) => spawnSync('/bin/sh', [l, '--resolve'], { encoding: 'utf8', env: bareEnv(root) }));
@@ -133,5 +134,13 @@ describe('doctor: installed hook commands resolve', () => {
     s.hooks.PreToolUse.at(-1).hooks[0].command = "node '/old/dist/cli/index.js' hook guard";
     fs.writeFileSync(path.join(root, '.claude', 'settings.json'), JSON.stringify(s));
     expect(checkHooks(root)).toMatchObject({ status: 'fail', detail: expect.stringContaining('fail open') });
+  });
+
+  it('the npx fallback runs the installed version from npm, never GitHub (audit P1-02)', () => {
+    expect(PINNED_NPX).toBe(`npx --yes notyours@${pkg.version}`);
+    const script = hookLauncherScript({});
+    expect(script).toContain(`${PINNED_NPX} hook "$event"`);
+    expect(script).not.toContain('github:');
+    expect(HOOK_UNAVAILABLE).toContain('npx notyours install-hooks');
   });
 });

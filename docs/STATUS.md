@@ -216,6 +216,61 @@ The audit itself stays private; ids below are its finding numbers. Code fixes co
   the seed script; the recorded loops predate v0.1.4; Kane's pass/fail never changes a verdict. The rest of the
   review's P1 items are listed as known limitations and roadmap in the README.
 
+## Fixed after the v0.2.1 audit (2026-11-20, v0.2.2)
+The audit is docs/AUDIT-v0.2.1.md; ids below are its finding ids. Each code fix has a test that failed on 0.2.1.
+
+- **False greens:**
+  - P0-2: a body the oracle fetches itself (download, non-GET target) over 2 MB is flagged unreadable, never HELD
+    (`src/engine/__tests__/false-green.test.ts`).
+  - P0-3: the `app.start` restart requires the port to refuse connections before the start, and a new listener after;
+    otherwise restart-failed (YELLOW), no replay. `portAnswers()` closes politely: the earlier `destroy()` probe reset
+    the connection and could crash a test server (`app-freshness.test.ts`, "audit P0-3", three cases).
+  - P1-08: without `app.start`, freshness that can't be verified is YELLOW `unverified`, never a replay as if fresh.
+    Nothing answering on the port is YELLOW too, before any Kane run.
+  - P1-09: the owner control is per target for cross-user and guest boundaries. plan-gate and sweep keep any-of,
+    because their targets include pages that legitimately don't show the owner's token: B3's `/pro/export` shows
+    Alice a count and an Export button, and B4's `/account` has no canary (`demo/routes/pro.js`, `account.js`).
+    The engine test "URL echo is not a leak" now expects HARNESS: its 404 target shows the owner nothing.
+  - P1-12: `replay` fails when nothing is locked, a named boundary isn't locked, or a requested boundary produced no
+    result.
+  - P1-16: the Stop hook stops itself at 780 s (the hook timeout is 900 s), blocks, keeps the boundaries marked,
+    and the CLI exits and kills its Chromes.
+  - P1-17: a guest boundary whose viewer has credentials or a non-guest role is refused by `run`/`lock --reauthor`
+    and is HARNESS on replay.
+- **Claims and install path:**
+  - P0-1, P1-04, P1-05: the site defaults to npm, shows v0.2.2, and the hero no longer says the agent "can't stop".
+  - P1-01: the broken demo.gif placeholder is gone from the README.
+  - P1-02: `npx notyours` in the CLI, hook messages and slash commands. The hook launcher's npx fallback is
+    `npx --yes notyours@<installed version>`.
+  - P1-03, P1-06: replay cost and speed as measured; the stale-server wording matches the code; the one-boundary
+    Stop pass cited (62 s, 0.73 off the balance); the balance gap cited (81 vs 42.2; 37.17 vs 29.10); the data
+    question answered.
+  - P1-07: "tested on 0.10.0–0.10.6; 0.10.0 is faster" in the README, on the site and in `doctor`.
+  - P1-10: drafts with `{{stored}}` targets carry a "not lockable on kane-cli 0.10.0" warning.
+  - P1-11: the `run` estimate counts login recordings and per-kind Kane runs and prints a range (10–20 per run,
+    from the measured averages 10.3–15.4).
+  - P1-13: `ci.yml` runs `npm run test:false-green` (no browser, about 5 s). `e2e.yml` is manual only.
+  - P1-14: the demo's no-credits link is the rendered sample report on the site.
+- **Tests:** `npm test` 409/409 locally (was 391). CI on `fix/audit-0.2.1` green (run 44695361192), including the
+  false-green step.
+
+### Judge path from the 0.2.2 tarball (2026-11-20, kane-cli 0.10.0)
+`npm pack` of this branch, installed in an empty `/tmp` folder (`npm i notyours-0.2.2.tgz`), then the commands run
+with that install from another empty folder. Times are wall-clock.
+
+| Step | Time | Kane | Result |
+|---|---|---|---|
+| install the tarball | 22 s | 0 | `notyours --version` 0.2.2 |
+| `notyours doctor` | 15 s | 0 | all green; "0.10.0 (tested on 0.10.0–0.10.6; 0.10.0 is faster)" |
+| `notyours demo --quick` | **9 m 4 s** | 4 authoring runs, 49.46 logged, **64.40 off the balance** | B1 **LEAK_VISIBLE**, both controls. The two login recordings took about 5 min each (earlier runs: 50–75 s), hence the time. |
+| `scripts/judge-loop.sh` on that folder | 10 m 8 s in total; **the loop itself 346 s** | setup: 2 authoring runs, 14.21 logged, 20.76 off the balance; replays 0 logged | fixed B1 HELD and locked (0 authoring to lock); regression: `replay` **exit 1, LEAK_VISIBLE**; fix: **exit 0, HELD** |
+
+- Six authoring runs in total, as approved: 63.67 credits logged, 85.16 off the balance (8913.83 → 8828.67).
+- The new `run` estimate printed "about 20–40" for the loop's proof, and it used 14.21. The range comes from measured
+  averages per run, and single runs vary.
+- The quick demo took 9 m 4 s this time, against 4–5 min in the four earlier fresh runs; the README's "about
+  5 minutes" stays the typical case.
+
 ## Known limitations
 From the automated security review. By decision, only real secret or credential leaks are fixed; the rest is logged here.
 - Bash-guard parser differentials: comment `#` handling, `rg --pre` / `git` aliases running a program, option values
@@ -265,6 +320,26 @@ From the automated security review. By decision, only real secret or credential 
   and used 259 (15 authoring runs).
 - The budget check isn't atomic: several authoring runs started at the same moment can each pass the check and
   overshoot the cap by the number of parallel runs (the engine runs at most 2 at once).
+
+- **From the v0.2.1 audit, not fixed in 0.2.2** (docs/AUDIT-v0.2.1.md):
+  - P1-15: GitHub private vulnerability reporting is off, although SECURITY.md points to it (a repository setting).
+  - P1-09 scope: plan-gate and sweep boundaries keep the any-of owner control (see above).
+  - P2-01: when the app dies mid-run, the login error blames the credentials.
+  - P2-02: the demo prints "~50–60" and then "~30 credits" for the same work.
+  - P2-03: noisy plan-gate drafts (`PLAN_RE` matches the word "plan"), which can add a third persona sign-up.
+  - P2-04: `init` signs personas up without asking first.
+  - P2-05: `run --dry-run` with only drafts suggests `doctor`.
+  - P2-06: the Stop hook loads `_draft_*.yaml`.
+  - P2-07: after `stop_hook_active`, a CLI that crashes lets later stops through.
+  - P2-08: `budget --set` through a pseudo-terminal passes the TTY check.
+  - P2-09: `Edit(./.claude/**)` deny is broad.
+  - P2-10: freshness uses `app.port`, not the target URLs' ports.
+  - P2-11: bare status and `map` in an empty folder.
+  - P2-12: remaining README wording nits (fallback build time, "same answer on each replay", "Judge path" citation).
+  - P2-13: release polish (v0.2.0 has no GitHub release; CHANGELOG isn't in the tarball; no social preview set).
+  - P2-14: handoff files and merged branches are public.
+  - P2-15: site meta, accessibility and mobile nits.
+  - P2-16: the CI table's local `npm test` row below is historical.
 
 ## Top 3 fixes
 1. **Keep persona Chromes alive between Stop passes.** Chrome launch and login replays are ~23 of a 1-boundary Stop's
@@ -316,4 +391,5 @@ Measured 2026-11-19 on GitHub's ubuntu-latest (Chrome 157) and locally (macOS, C
   POST export, judge-only) time out on ubuntu-latest even when run serially. They pass locally. The cause is
   not known yet; run the CI debug workflow (`ci-debug.yml`) for per-test timings and Chrome output.
 - **Split:** `ci.yml` (the README badge) runs typecheck, build and the non-browser tests. The browser tests run
-  locally (`npm test`) and in `e2e.yml` (manual + nightly). No test was removed, skipped or given a longer timeout.
+  locally (`npm test`) and in `e2e.yml` (manual only since 0.2.2). No test was removed, skipped or given a longer
+  timeout. Since 0.2.2, `ci.yml` also runs `npm run test:false-green` (no browser).

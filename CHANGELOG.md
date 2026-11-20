@@ -2,8 +2,48 @@
 
 All notable changes to notyours. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/). Entries are taken from the git history between the
-release tags (`git log v0.1.x..v0.1.y`). Run it with `npx notyours`, or from GitHub with
-`npx github:Jasekeee/notyours`.
+release tags (`git log v0.1.x..v0.1.y`). Run it with `npx notyours` (from npm); `npx github:Jasekeee/notyours` is the
+fallback.
+
+## [0.2.2] - 2026-11-20
+
+Fixes from the independent v0.2.1 audit (docs/AUDIT-v0.2.1.md). Each code fix has a test that fails on 0.2.1.
+
+### Fixed (false greens)
+- A body the oracle fetches itself (a file download, a non-GET target) over 2 MB was cut to 2 MB and judged, so a
+  token past that point could give HELD. It is now flagged unreadable: never HELD (P0-2).
+- The `app.start` restart could report "restarted" while the old server still held the port (no `lsof`, or a
+  process it can't see), and the replay then judged old code. The port must now refuse connections before the
+  start, and a new process must answer after it; otherwise the Stop hook reports YELLOW and doesn't replay (P0-3).
+- Without `app.start`, a server whose age couldn't be checked (no `lsof`, an invisible listener, an unreadable start
+  time) was replayed as if current. Now that is YELLOW, "can't verify the server is current", and nothing answering
+  on the port is YELLOW too, before any Kane run (P1-08).
+- The owner's positive control passed if the owner saw her token on any one target. For cross-user and guest
+  boundaries every target must now show it, so a target that shows nothing to anyone (a typo, a login redirect)
+  is HARNESS, not HELD. plan-gate and sweep keep any-of: their targets include pages without the owner's token (P1-09).
+- `replay` exited 0 when nothing was locked or a named boundary wasn't locked. It now fails (P1-12).
+- The Stop hook has its own deadline (780 s, below the 900 s hook timeout). When it hits it, it blocks and keeps
+  the boundaries marked, instead of being killed by Claude Code, which would let the agent stop (P1-16).
+- A `kind: guest` boundary whose viewer has credentials was checked logged in. `run` and `lock --reauthor` refuse it,
+  and a replay reports HARNESS (P1-17).
+
+### Changed
+- `npx notyours` everywhere: CLI output, hook messages, `/notyours-map` and `/notyours-check`. The hook launcher's npx
+  fallback runs `npx --yes notyours@<the installed version>`, never GitHub. Run `npx notyours setup claude` once to
+  get the new launcher and commands (P1-02).
+- Replay cost stated as measured: no authoring runs; about 0–1 Kane credit and ~40–50 s per boundary on kane-cli
+  0.10.0 (was "0 credits, about a second each") (P1-03).
+- `run` and `run --dry-run` count the login recordings and the Kane runs each boundary kind starts, and print a
+  range (10–20 credits per run, from the measured averages) (P1-11).
+- Drafts whose targets use stored values (`{{record_url}}`) say they can't be locked on kane-cli 0.10.0 and how to
+  lock them (P1-10).
+- The demo's no-credits sample report link opens the rendered page on the site (P1-14).
+- CI: the badge workflow also runs `npm run test:false-green` (no browser). The browser tests (e2e.yml) are manual
+  only; the nightly run is gone (P1-13).
+- README and site: npm is the default install; the broken demo.gif placeholder is gone; "Does my data leave my
+  machine?" answers yes (through Kane); one kane-cli sentence ("tested on 0.10.0–0.10.6; 0.10.0 is faster");
+  the hero says the agent is blocked and gets the evidence, escalating to a person after 3 attempts
+  (P0-1, P1-01, P1-04 to P1-07).
 
 ## [0.2.1] - 2026-11-20
 

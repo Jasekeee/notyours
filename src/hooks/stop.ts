@@ -1,4 +1,4 @@
-// Stop: replay the dirty locked boundaries (0 credits) and send leaks back to the agent until they are fixed.
+// Stop: replay the dirty locked boundaries (no authoring runs) and send leaks back to the agent until they are fixed.
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Boundary, Identity, ProbeResult } from '../types.js';
@@ -40,7 +40,31 @@ export interface StopDeps {
   now?: () => Date;
   /** Is the running app as new as its code? Default: restart via app.start, else compare start time and mtimes. */
   freshness?: (appDir: string, paths: NotyoursPaths, baseUrl: string, boundaries: Boundary[]) => Promise<Freshness>;
+  /** The Stop hook's own time limit (default STOP_DEADLINE_MS). */
+  deadlineMs?: number;
 }
+
+/**
+ * The Stop hook gives up at this point and blocks (exit 2), below the 900 s timeout it is installed with
+ * (src/cli/hooks.ts): a hook that Claude Code kills on timeout doesn't block, so a slow check would let the agent
+ * stop with leaks unchecked (audit P1-16). Boundaries not checked stay marked for the next stop.
+ */
+export const STOP_DEADLINE_MS = 780_000;
+
+class StopDeadline extends Error {}
+
+/** Resolves like `work`, or rejects with StopDeadline at `deadlineAt` (epoch ms). */
+function beforeDeadline<T>(work: Promise<T>, deadlineAt: number, limitMs: number): Promise<T> {
+  const left = deadlineAt - Date.now();
+  const late = () => new StopDeadline(`ran out of time: the Stop check stops itself after ${Math.round(limitMs / 1000)} s, below the hook's timeout, so a slow check can't let the agent stop unchecked. This is not a pass; the boundary stays marked for the next stop.`);
+  if (left <= 0) return Promise.reject(late());
+  let timer: NodeJS.Timeout | undefined;
+  const t = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(late()), left); timer.unref?.(); });
+  return Promise.race([work, t]).finally(() => clearTimeout(timer));
+}
+
+/** Set when this Stop pass gave up at its deadline (work may still be running). */
+let abandoned = false;
 
 /** attempts.json key for "the app server was older than the code" (YELLOW) stops. */
 export const STALE_ATTEMPTS_KEY = '__app_server_stale__';
@@ -84,7 +108,7 @@ export function leakBlock(b: Boundary, r: ProbeResult, d: DirtyEntry | undefined
   if (r.hits.length > 1) lines.push(`  (+${r.hits.length - 1} more hit(s): ${[...new Set(r.hits.slice(1).map((h) => h.url))].slice(0, 3).join(', ')})`);
   lines.push(`  Screenshot: ${r.screenshots[0] ?? '(none)'}`);
   lines.push(`  Suspected files: ${suspected(d, b)}`);
-  lines.push(`  Repro: npx github:Jasekeee/notyours replay ${b.id}`);
+  lines.push(`  Repro: npx notyours replay ${b.id}`);
   return lines;
 }
 
@@ -115,7 +139,7 @@ export function formatEscalation(
     out.push(`- **What leaked:** ${b.kind === 'plan-gate' ? `${b.viewer} (free plan) got the Pro-only result` : `${b.viewer} saw ${b.owner}'s data`} (${leakKind(r)})`);
     out.push(`- **Attempts:** ${attempts}`);
     out.push(`- **Suspected files:** ${suspected(d, b)}`);
-    out.push(`- **Repro:** \`npx github:Jasekeee/notyours replay ${b.id}\``);
+    out.push(`- **Repro:** \`npx notyours replay ${b.id}\``);
     out.push('- **Hits:**');
     for (const h of r.hits) out.push(`  - ${h.where} at ${h.url}: \`${oneLine(scrubSecrets(h.snippet, ids), 200).replace(/`/g, "'")}\``);
     if (!r.hits.length) out.push('  - (none recorded)');
@@ -143,7 +167,7 @@ interface AppOutcome {
 }
 
 /** The Stop pass for one app folder (the folder holding .notyours/); `projectDir` is only used for display paths. */
-async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, now: Date): Promise<AppOutcome> {
+async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, now: Date, deadlineAt: number): Promise<AppOutcome> {
   const p = notyoursPaths(appDir);
   const dirty = readDirty(p);
   const dirtyIds = Object.keys(dirty);
@@ -217,7 +241,7 @@ async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, no
   // Never judge old code: restart the app (app.start) or check that the running server is newer than its code.
   const fresh = await (deps.freshness ?? checkAppFreshness)(appDir, p, cfg.baseUrl, replayIds.map((id) => byId.get(id)!));
   const att = readAttempts(p);
-  if (fresh.status === 'stale' || fresh.status === 'restart-failed' || fresh.status === 'unapproved') {
+  if (fresh.status === 'stale' || fresh.status === 'unverified' || fresh.status === 'restart-failed' || fresh.status === 'unapproved') {
     // Still dirty: replay once the app is restarted. Counted, and escalated (still blocking) after maxAttempts.
     const n = (att[STALE_ATTEMPTS_KEY] ?? 0) + 1;
     att[STALE_ATTEMPTS_KEY] = n;
@@ -234,8 +258,9 @@ async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, no
 
   let results: ProbeResult[];
   try {
-    results = await (deps.replay ?? defaultReplay)(replayIds, { projectDir: appDir, paths: p, identities });
+    results = await beforeDeadline((deps.replay ?? defaultReplay)(replayIds, { projectDir: appDir, paths: p, identities }), deadlineAt, deps.deadlineMs ?? STOP_DEADLINE_MS);
   } catch (e) {
+    if (e instanceof StopDeadline) abandoned = true;
     // A replay that throws proves nothing: block (fail closed), counted per boundary like any failed check.
     const why = (e as Error).message;
     const errBlocks: string[][] = [];
@@ -298,7 +323,7 @@ export function harnessBlock(b: Boundary, r: ProbeResult, attempt: number, max: 
     `  Why: ${why}`,
     '  Check that the app runs and the personas can still sign in, then stop again.',
     `  ${reauthorHint(b.id)}`,
-    `  Repro: npx github:Jasekeee/notyours replay ${b.id}`,
+    `  Repro: npx notyours replay ${b.id}`,
   ];
 }
 
@@ -307,7 +332,7 @@ export function escalationNotice(ids: string[], state: EscalatedState, max: numb
   const lines = [`notyours: ESCALATED, still blocking: ${ids.map((id) => `${id} (${state[id]?.reason ?? 'attempts exhausted'})`).join('; ')}.`,
     `  ${max} attempts failed. Stop retrying and tell the user. Details: ${escalationFile}.`,
     '  A person must fix it, or release the block in their own terminal (a coding agent cannot):',
-    '    npx github:Jasekeee/notyours release' + (ids.length === 1 && !ids[0]!.startsWith('__') ? ` ${ids[0]}` : ''),
+    '    npx notyours release' + (ids.length === 1 && !ids[0]!.startsWith('__') ? ` ${ids[0]}` : ''),
     '  Changing the code under the boundary makes the next stop replay it again (GREEN clears the escalation).'];
   return lines.join('\n');
 }
@@ -316,7 +341,7 @@ function writeEscalationFile(p: NotyoursPaths, state: EscalatedState, items: { b
   const others = Object.entries(state).filter(([id]) => !items.some((i) => i.b.id === id)).map(([id, e]) => `- **${id}**: ${e.reason} (since ${e.ts})`);
   const body = formatEscalation(items, max, ids, now) + (others.length ? `\n## Also escalated\n\n${others.join('\n')}\n` : '') +
     '\n## Releasing the block\n\nThe Stop hook keeps blocking until this is fixed (a GREEN replay) or a person releases it in a terminal:\n\n' +
-    '```sh\nnpx github:Jasekeee/notyours release        # all, or: release <boundary-id>\n```\n';
+    '```sh\nnpx notyours release        # all, or: release <boundary-id>\n```\n';
   writeFileSync(p.escalation, body);
 }
 
@@ -345,8 +370,10 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
   const apps = dirtyApps(projectDir, now);
   if (!apps.length) return ok();
 
+  const deadlineAt = Date.now() + (deps.deadlineMs ?? STOP_DEADLINE_MS);
+  abandoned = false;
   const outcomes: AppOutcome[] = [];
-  for (const appDir of apps) outcomes.push(await stopForApp(appDir, projectDir, deps, now));
+  for (const appDir of apps) outcomes.push(await stopForApp(appDir, projectDir, deps, now, deadlineAt));
   const blocks = outcomes.flatMap((o) => o.blocks);
   const escalated = outcomes.flatMap((o) => o.escalated);
   const humanNotes = outcomes.flatMap((o) => o.humanNotes);
@@ -360,6 +387,6 @@ export async function stopHook(input: HookInput, deps: StopDeps = {}): Promise<H
   // the block text tells the agent to stop retrying and hand it to the user (`notyours release` is a person's call).
   const parts = [...failures, ...stale, ...(blocks.length ? [formatLeakReport(blocks, escalated)] : []), ...escalatedMsgs];
   if (humanNotes.length && parts.length) parts.push(humanNotes.join('\n'));
-  if (parts.length) return { exitCode: 2, stderr: `${parts.join('\n\n').trimEnd()}\n` };
+  if (parts.length) return { exitCode: 2, stderr: `${parts.join('\n\n').trimEnd()}\n`, ...(abandoned ? { abandoned: true } : {}) };
   return humanNotes.length ? tellHuman(humanNotes.join('\n')) : ok();
 }

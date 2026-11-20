@@ -5,7 +5,7 @@ import { customAlphabet } from 'nanoid';
 import { z } from 'zod';
 import { IdentityIdSchema, IdentitySchema, PlanSchema, RoleSchema } from '../schemas.js';
 import { makeToken } from '../shared/token.js';
-import type { Identity, Plan, Role } from '../types.js';
+import type { Boundary, Identity, Plan, Role } from '../types.js';
 
 export interface IdentitySpec {
   id: string;
@@ -133,4 +133,17 @@ export function byId(identities: Identity[], id: string): Identity {
   const found = identities.find((i) => i.id === id);
   if (!found) throw new Error(`Unknown identity "${id}". Known: ${identities.map((i) => i.id).join(', ')}`);
   return found;
+}
+
+/**
+ * A guest boundary is checked logged out, so its viewer must be a guest identity: role guest, no email, no password
+ * (audit P1-17). A credentialed viewer would be logged in by the session pool, and the boundary would be judged as
+ * that user: HELD for a page an anonymous visitor can read. Returns the problem, or undefined.
+ */
+export function guestViewerProblem(b: Boundary, identities: Identity[]): string | undefined {
+  if (b.kind !== 'guest') return undefined;
+  const v = identities.find((i) => i.id === b.viewer);
+  if (!v || (v.role === 'guest' && !v.email && !v.password)) return undefined;
+  const why = v.role !== 'guest' ? `has role ${v.role}` : 'has login credentials';
+  return `Boundary ${b.id} is kind: guest, but its viewer "${v.id}" ${why}. A guest boundary is checked logged out: use a guest identity (role: guest, no email or password).`;
 }

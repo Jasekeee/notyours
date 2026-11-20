@@ -151,10 +151,15 @@ describe('engine (fake Kane, real Chrome + oracle)', () => {
     expect(r.verdict).toBe('HARNESS_BROKEN');
   }, 60_000);
 
-  it('URL echo is not a leak: a 404 that repeats the requested path -> HELD', async () => {
+  it('URL echo is not a leak: a 404 that repeats the requested path is no hit (and, showing the owner nothing, proves nothing)', async () => {
     const r = await engine.runBoundary(boundary({ id: 'echo', targets: { ui: ['{{item_url}}/safe', '{{base_url}}/missing/{{token}}'], api: [] } }), ids, cfg);
     expect(r.hits).toEqual([]);
-    expect(r.verdict).toBe('HELD');
+    // Audit P1-09: the owner control is per target. The 404 shows the owner only an echo, so that target can't
+    // count as held: HARNESS, with the target named (before: HELD on the strength of the other target).
+    expect(r.verdict).toBe('HARNESS_BROKEN');
+    expect(r.controls.ownerSeesOwnToken).toBe(false);
+    const diag = JSON.parse(readFileSync(join(stateDir, 'runs', 'test', 'echo.json'), 'utf8'));
+    expect(diag.notes.join(' ')).toMatch(/owner did not see its own token on: .*\/missing\//);
     // The echo really happened: the 404 page shows the owner's token in "Cannot GET /missing/<token>".
     const html = await (await fetch(`${app.url}/missing/${alice().token}`)).text();
     expect(html).toContain(`Cannot GET /missing/${alice().token}`);

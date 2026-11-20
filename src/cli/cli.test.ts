@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import type { Identity } from '../types.js';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -7,7 +8,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { freePortRange, killChromesUsing } from '../engine/__tests__/test-ports.js';
 import { CommanderError } from 'commander';
 import { ConfigSchema, IdentitySchema } from '../schemas.js';
-import { mockBoundary, mockConfig } from '../mocks/fixtures.js';
+import { mockBoundary, mockConfig, mockIdentities } from '../mocks/fixtures.js';
 import { buildProgram, type Actions } from './program.js';
 import { checkHost } from './hosts.js';
 import { runInit, parseUsersFile, readPublicIdentities } from './init.js';
@@ -481,13 +482,34 @@ describe('credits and exit codes', () => {
     expect(exitCodeFor([mockHeldResult, mockLeakResult])).toBe(1);
     expect(exitCodeFor([{ ...mockHeldResult, verdict: 'HARNESS_BROKEN' }])).toBe(1);
   });
+
+  it('run and lock --reauthor refuse a guest boundary whose viewer has credentials (audit P1-17)', async () => {
+    const { assertIdentities } = await import('./commands.js');
+    expect(() => assertIdentities([{ ...mockBoundary, id: 'g', kind: 'guest', viewer: 'bob' }], mockIdentities)).toThrow(/kind: guest, but its viewer "bob" has role viewer/);
+    const credGuest = mockIdentities.map((i) => (i.id === 'guest' ? { ...i, email: 'g@x.test', password: 'pw' } : i)); // notyours:allow-secret (fake fixture)
+    expect(() => assertIdentities([{ ...mockBoundary, id: 'g', kind: 'guest', viewer: 'guest' }], credGuest)).toThrow(/has login credentials/);
+    expect(() => assertIdentities([{ ...mockBoundary, id: 'g', kind: 'guest', viewer: 'guest' }], mockIdentities)).not.toThrow();
+  });
+
+  it('replay fails (never exit 0) when nothing is locked or a named boundary is not locked (audit P1-12)', async () => {
+    const { actions } = await import('./commands.js');
+    const r = tmp('ny-replay-empty-');
+    runInit(r, { url: 'http://localhost:3000' });
+    const bdir = path.join(r, '.notyours/boundaries');
+    fs.writeFileSync(path.join(bdir, 'notes.yaml'), YAML.stringify({ ...mockBoundary, id: 'notes' }));
+    await expect(actions.replay([], { cwd: r })).rejects.toThrow(/no boundary is locked/);
+    await expect(actions.replay(['notes'], { cwd: r })).rejects.toThrow(/no boundary is locked/);
+    fs.writeFileSync(path.join(bdir, 'invoices.yaml'), YAML.stringify({ ...mockBoundary, id: 'invoices', locked: true }));
+    await expect(actions.replay(['notes'], { cwd: r })).rejects.toThrow(/Not locked, so it can't be replayed: notes/);
+    await expect(actions.replay(['nope'], { cwd: r })).rejects.toThrow(/Unknown boundary id/);
+  });
 });
 
 describe('kane-cli version', () => {
   it('doctor prints the version and warns outside the tested range 0.10.0–0.10.6', async () => {
     const { checkKaneVersion, compareVersions } = await import('./doctor.js');
     expect(compareVersions('0.10.6', '0.10.10')).toBeLessThan(0);
-    expect(checkKaneVersion('0.10.0')).toMatchObject({ status: 'ok', detail: '0.10.0 (tested 0.10.0–0.10.6)' });
+    expect(checkKaneVersion('0.10.0')).toMatchObject({ status: 'ok', detail: '0.10.0 (tested on 0.10.0–0.10.6; 0.10.0 is faster)' });
     expect(checkKaneVersion('0.10.6')).toMatchObject({ status: 'ok' });
     expect(checkKaneVersion('0.10.6').detail).toMatch(/replays cost a few credits/);
     expect(checkKaneVersion('0.10.6').detail).toContain('@testmuai/kane-cli@0.10.0'); // AUD-22: pin the README's version
@@ -528,7 +550,7 @@ describe('doctor', () => {
       isPortFree: async () => true,
       nodeVersion: '22.3.0',
     });
-    expect(checks.find((c) => c.name === 'kane-cli version')?.detail).toBe('0.10.0 (tested 0.10.0–0.10.6)');
+    expect(checks.find((c) => c.name === 'kane-cli version')?.detail).toBe('0.10.0 (tested on 0.10.0–0.10.6; 0.10.0 is faster)');
     expect(checks.map((c) => [c.name, c.status])).toEqual([
       ['Node', 'ok'],
       ['Chrome', 'ok'],
@@ -712,23 +734,32 @@ describe('hooks', () => {
 
   it('stop (ratchet hook): an unlocked dirty boundary is only reported; a locked one that cannot be replayed blocks', async () => {
     const r = await runHook('stop', {}, root);
-    // notes is locked, but there is no kane-cli/Chrome in this test: the replay can't run, which fails closed (AUD-11).
+    // notes is locked, but there is no app, kane-cli or Chrome in this test: it can't be checked, which fails closed
+    // (AUD-11). Since audit P1-08 the stale-server check says so first (nothing answers), before any replay.
     expect(r.exitCode).toBe(2);
-    expect(r.stderr).toMatch(/COULD NOT CHECK notes/);
+    expect(r.stderr).toMatch(/nothing answers on :3000|COULD NOT CHECK notes/);
     expect(r.stderr).toMatch(/invoices changed but is not locked yet/); // the human note rides along
   });
 
   it('stop refuses to replay a dirty locked boundary pointing outside allowHosts, also in a nested app folder', async () => {
+    // Something answers on the app port (so the stale-server check lets the pass reach the replay's host gate).
+    const srv = net.createServer((c) => { c.on('error', () => {}); c.end(); }).listen(0, '127.0.0.1');
+    await new Promise((res) => srv.once('listening', res));
+    const port = (srv.address() as net.AddressInfo).port;
+    try {
     for (const nested of [false, true]) {
       const r2 = tmp('ny-gate-');
       const app = nested ? path.join(r2, 'apps', 'web') : r2;
       fs.mkdirSync(app, { recursive: true });
-      runInit(app, { url: 'http://localhost:3000' });
+      runInit(app, { url: `http://localhost:${port}` });
       fs.writeFileSync(path.join(app, '.notyours/boundaries/evil.yaml'), YAML.stringify({ ...mockBoundary, id: 'evil', locked: true, surface: ['src/**'], targets: { ui: ['https://victim.example.org/notes/1'], api: [] } }));
       fs.writeFileSync(path.join(app, '.notyours/dirty.json'), JSON.stringify({ evil: { files: ['src/a.ts'], globs: ['src/**'], ts: new Date().toISOString() } }));
       const r = await runHook('stop', {}, r2);
       expect(r.exitCode).toBe(2); // never replays; a boundary that can't be checked blocks (fail closed)
       expect(`${r.stdout ?? ''}${r.stderr ?? ''}`).toMatch(/victim\.example\.org.*not in allowHosts/);
+    }
+    } finally {
+      await new Promise((res) => srv.close(res));
     }
   });
 
@@ -828,7 +859,7 @@ describe('demo helpers', () => {
     const quick = demoEstimate(true);
     expect(quick).toMatch(/quick.*~4 min.*~50–60 Kane credits/);
     expect(quick).toMatch(/full.*~11 min.*~120–165 Kane credits/);
-    expect(quick).toContain('raw.githubusercontent.com/Jasekeee/notyours/main/docs/sample-report/report.html');
+    expect(quick).toContain('jasekeee.github.io/notyours/sample-report/report.html');
     const h = harness();
     await h.parse('demo', '--quick', '--no-open');
     expect(h.calls[0]?.[0]).toBe('demo');

@@ -1,6 +1,6 @@
 // `notyours demo`: copy the packaged demo app to a work dir, start it on :3077, probe every demo boundary
 // (replay if locked, else author), write and open the report, print the elapsed time.
-// Works from `npx github:Jasekeee/notyours demo`: no repo checkout, no Claude key. Needs Chrome + an authenticated kane-cli.
+// Works from `npx notyours demo`: no repo checkout, no Claude key. Needs Chrome + an authenticated kane-cli.
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -59,7 +59,7 @@ export function demoEstimate(quick: boolean, kaneVersion?: string): string {
 }
 const USERS_FILES = ['users.yaml', 'users.yml', 'users.json'];
 /** The redacted sample result, for judges with no Kane credits. */
-export const SAMPLE_REPORT_URL = 'https://raw.githubusercontent.com/Jasekeee/notyours/main/docs/sample-report/report.html';
+export const SAMPLE_REPORT_URL = 'https://jasekeee.github.io/notyours/sample-report/report.html';
 /** Default work folder: in the current folder (not the OS temp dir, which gets cleaned), reused on the next run. */
 export const DEFAULT_DEMO_DIR = 'notyours-demo';
 /** Never copied from the package into the work dir: deps, and run state under .notyours/ or .testmuai/. */
@@ -204,7 +204,7 @@ export async function runDemo(o: DemoOpts): Promise<number> {
     const started = new Date();
     const results: ProbeResult[] = [];
     if (locked.length) {
-      console.log(`Replaying ${locked.length} recorded boundar${locked.length === 1 ? 'y' : 'ies'} (0 credits)…`);
+      console.log(`Replaying ${locked.length} recorded boundar${locked.length === 1 ? 'y' : 'ies'} (no authoring runs; about 0–1 credit each)…`);
       results.push(...(await replayLocked(project, locked.map((b) => b.id))));
     }
     if (fresh.length) {
@@ -212,7 +212,7 @@ export async function runDemo(o: DemoOpts): Promise<number> {
       await ensureCredits(cfg, fresh.length);
       const authored = await author(project, fresh);
       results.push(...authored);
-      // Lock what was proven so the next run (with --dir) replays it for 0 credits.
+      // Lock what was proven so the next run (with --dir) replays it with no authoring runs.
       const ratchet = getRatchet(work);
       for (const r of authored) {
         const b = fresh.find((x) => x.id === r.boundaryId);

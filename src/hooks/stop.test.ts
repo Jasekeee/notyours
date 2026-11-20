@@ -14,7 +14,7 @@ import type { Boundary, Config, Engine, Identity, ProbeResult } from '../types.j
 import { appIndexFile, findAppDirs, scanAppDirs } from './appdir.js';
 import { postToolHook } from './post-tool.js';
 import { parseHookInput } from './types.js';
-import { LAST_LINE, MAX_REPORT_LINES, STALE_ATTEMPTS_KEY, stopHook, type StopDeps, leakBlock, formatLeakReport } from './stop.js';
+import { LAST_LINE, MAX_REPORT_LINES, STALE_ATTEMPTS_KEY, STOP_DEADLINE_MS, stopHook, type StopDeps, leakBlock, formatLeakReport } from './stop.js';
 import { writeSurfaceBaseline } from './surface-scan.js';
 import { checkAppFreshness, STALE_MESSAGE, type FreshnessDeps } from './app-freshness.js';
 
@@ -94,7 +94,7 @@ describe('stop hook', () => {
     expect(red.stderr).toContain('NY-ALICE-AAAAAAAAAAAA');
     expect(red.stderr).toContain('Screenshot: .notyours/runs/r1/bob-notes.png');
     expect(red.stderr).toContain('src/app/api/notes/route.ts (matched src/app/api/notes/**)');
-    expect(red.stderr).toContain('npx github:Jasekeee/notyours replay notes-cross-user');
+    expect(red.stderr).toContain('npx notyours replay notes-cross-user');
     expect(readAttempts(notyoursPaths(project))).toEqual({ 'notes-cross-user': 1 });
     expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
     // owner and viewer replayed in their own Chromes
@@ -118,7 +118,7 @@ describe('stop hook', () => {
     const third = await stopHook(input('stop-continuation', project), deps(engine));
     expect(third.exitCode).toBe(2); // not silently released
     expect(third.stderr).toContain('ESCALATED, still blocking');
-    expect(third.stderr).toContain('npx github:Jasekeee/notyours release notes-cross-user');
+    expect(third.stderr).toContain('npx notyours release notes-cross-user');
     expect(third.stderr).toContain('Stop retrying and tell the user');
     const esc = readFileSync(p.escalation, 'utf8');
     expect(esc).toContain("bob saw alice's data");
@@ -235,6 +235,18 @@ describe('stop hook', () => {
     expect(third.stderr).toContain('ESCALATED, still blocking');
     expect(readEscalated(notyoursPaths(project))['notes-cross-user']?.reason).toContain('kane-cli not found');
   });
+
+  it('a replay slower than its own deadline blocks (exit 2) before the hook timeout, and keeps the boundary marked (audit P1-16)', async () => {
+    dirtyNotes();
+    const slow: StopDeps = { env: {}, freshness: async () => ({ status: 'fresh' }), deadlineMs: 50, replay: () => new Promise<never>(() => {}) };
+    const r = await stopHook(input('stop-first', project), slow);
+    expect(r.exitCode).toBe(2);
+    expect(r.abandoned).toBe(true); // the CLI ends the process now, with the replay still running
+    expect(r.stderr).toContain('COULD NOT CHECK notes-cross-user');
+    expect(r.stderr).toMatch(/ran out of time.*This is not a pass/s);
+    expect(readDirty(notyoursPaths(project))).toHaveProperty('notes-cross-user');
+    expect(STOP_DEADLINE_MS).toBeLessThan(900_000); // the timeout install-hooks writes for the Stop hook
+  });
 });
 
 describe('stop hook with the app in a subfolder (demo/)', () => {
@@ -250,6 +262,7 @@ describe('stop hook with the app in a subfolder (demo/)', () => {
     const engine = new SequenceEngine([leak, mockHeldResult]);
     const d: StopDeps = {
       env: { CLAUDE_PROJECT_DIR: repo },
+      freshness: async () => ({ status: 'fresh' }),
       replay: (ids, ctx) => {
         seen.push(ctx.projectDir);
         return new RealRatchet({ projectDir: ctx.projectDir, kane, oracle: engineOracle(engine) }).replayIds(ctx.identities, ids);
@@ -275,6 +288,7 @@ describe('stop hook with the app in a subfolder (demo/)', () => {
     const seen: string[] = [];
     const r = await stopHook(input('stop-first', repo), {
       env: { CLAUDE_PROJECT_DIR: repo },
+      freshness: async () => ({ status: 'fresh' }),
       replay: async (ids, ctx) => (seen.push(ctx.projectDir), ids.map((boundaryId) => ({ ...mockHeldResult, boundaryId }))),
     });
     expect(r.exitCode).toBe(0);
@@ -327,10 +341,10 @@ describe('stop hook: stale app server', () => {
   it('app.start not approved on this machine: YELLOW with the approve command, exit 2, no replay', async () => {
     dirtyNotes();
     const engine = new SequenceEngine([]);
-    const unapproved = withFreshness(engine, async () => ({ status: 'unapproved', message: 'notyours: YELLOW. app.start has not been approved.\n    npx github:Jasekeee/notyours init' }));
+    const unapproved = withFreshness(engine, async () => ({ status: 'unapproved', message: 'notyours: YELLOW. app.start has not been approved.\n    npx notyours init' }));
     const r = await stopHook(input('stop-first', project), unapproved);
     expect(r.exitCode).toBe(2);
-    expect(r.stderr).toContain('npx github:Jasekeee/notyours init');
+    expect(r.stderr).toContain('npx notyours init');
     expect(engine.calls).toEqual([]);
     expect(kane.replayed).toEqual([]);
     expect(readAttempts(notyoursPaths(project))[STALE_ATTEMPTS_KEY]).toBe(1);
@@ -365,7 +379,7 @@ describe('stop hook: stale app server', () => {
     mkdirSync(path.join(project, 'src/app/api/notes'), { recursive: true });
     writeFileSync(path.join(project, 'src/app/api/notes/route.ts'), 'edited just now\n');
     dirtyNotes();
-    const fake: FreshnessDeps = { listeners: () => [4242], ageSeconds: () => 3600, now: () => Date.now(), restart: async () => { throw new Error('not configured'); } };
+    const fake: FreshnessDeps = { listeners: () => [4242], ageSeconds: () => 3600, now: () => Date.now(), restart: async () => { throw new Error('not configured'); }, answers: async () => true };
     const engine = new SequenceEngine([]);
     const r = await stopHook(input('stop-first', project), withFreshness(engine, (dir, paths, baseUrl, bs) => checkAppFreshness(dir, paths, baseUrl, bs, fake)));
     expect(r.exitCode).toBe(2);

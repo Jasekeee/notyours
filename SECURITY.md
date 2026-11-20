@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest release receives security fixes. Right now that is **0.2.1** (0.2.x).
+Only the latest release receives security fixes. Right now that is **0.2.2** (0.2.x).
 Older tags are kept for history but are not patched.
 
 ## Reporting a vulnerability
@@ -13,7 +13,7 @@ Report it privately through GitHub's private vulnerability reporting:
 go to the repository's **Security** tab, choose **Report a vulnerability**, and describe the problem.
 Include:
 
-- the notyours version (`npx github:Jasekeee/notyours --version`) and the Node and kane-cli versions;
+- the notyours version (`npx notyours --version`) and the Node and kane-cli versions;
 - the smallest steps to reproduce, using a local app and test accounts only;
 - what you expected and what happened.
 

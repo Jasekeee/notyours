@@ -39,8 +39,8 @@ export function checkKaneVersion(v: string | undefined): Check {
     name: 'kane-cli version',
     status: 'ok',
     detail: kaneReplaysCost(v)
-      ? `${v} (tested ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}); on this version replays cost a few credits and runs are about 2× slower than ${KANE_PINNED}, which the README's numbers use (pin: npm i -g @testmuai/kane-cli@${KANE_PINNED}; docs/KANE_COMPAT.md)`
-      : `${v} (tested ${KANE_TESTED_MIN}–${KANE_TESTED_MAX})`,
+      ? `${v} (tested on ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}; ${KANE_PINNED} is faster); on this version replays cost a few credits and runs are about 2× slower than ${KANE_PINNED}, which the README's numbers use (pin: npm i -g @testmuai/kane-cli@${KANE_PINNED}; docs/KANE_COMPAT.md)`
+      : `${v} (tested on ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}; ${KANE_PINNED} is faster)`,
   };
 }
 
@@ -101,7 +101,7 @@ export async function runDoctor(creditFloor: number, deps: Partial<DoctorDeps> =
       checks.push({
         name: 'Kane credits',
         status: 'warn',
-        detail: `${balance.toFixed(0)} left, below creditFloor ${creditFloor}: authoring runs (~30 credits each) are refused; replays (0 credits) still work`,
+        detail: `${balance.toFixed(0)} left, below creditFloor ${creditFloor}: authoring runs (~30 credits each) are refused; replays (no authoring runs; about 0–1 credit each) still work`,
       });
     } else {
       checks.push({ name: 'Kane credits', status: 'ok', detail: `${balance.toFixed(0)} available (floor ${creditFloor})` });
@@ -121,7 +121,7 @@ export async function runDoctor(creditFloor: number, deps: Partial<DoctorDeps> =
   return checks;
 }
 
-const HOOK_FIX = 'FIX: npx github:Jasekeee/notyours install-hooks';
+const HOOK_FIX = 'FIX: npx notyours install-hooks';
 
 /**
  * Every installed notyours hook command must resolve to a runnable CLI: it goes through the launcher, the launcher

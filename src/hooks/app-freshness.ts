@@ -62,6 +62,8 @@ export interface FreshnessDeps {
   now(): number;
   /** Restart the app: stop the listeners on `port`, run `start` in `appDir`, wait until the port answers. */
   restart(appDir: string, start: string, port: number, host: string, logFile: string): Promise<void>;
+  /** Does anything accept connections on host:port? */
+  answers(host: string, port: number): Promise<boolean>;
 }
 
 function tryExec(cmd: string, args: string[]): string | undefined {
@@ -110,12 +112,49 @@ const tail = (file: string, lines = 8): string => {
   try { return readFileSync(file, 'utf8').trimEnd().split('\n').slice(-lines).join('\n'); } catch { return ''; }
 };
 
-export async function restartApp(appDir: string, start: string, port: number, host: string, logFile: string, timeoutMs = 30_000): Promise<void> {
+export interface RestartDeps {
+  /** PIDs listening on the port (undefined: can't tell, e.g. no lsof). */
+  listeners?: (port: number) => number[] | undefined;
+  /** How long to wait for the port to be free after stopping the old server. */
+  stopWaitMs?: number;
+}
+
+/** One connection attempt: does anything accept TCP connections on host:port right now? */
+export function portAnswers(host: string, port: number, timeoutMs = 1_000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = net.connect({ host, port });
+    let settled = false;
+    const done = (v: boolean) => { if (!settled) { settled = true; resolve(v); } };
+    // Close politely (FIN, read what the server sends) so the probe never resets a running app's connection.
+    s.on('connect', () => { done(true); s.end(); s.resume(); });
+    s.on('error', () => done(false)); // refused; later errors after connect are ignored
+    s.setTimeout(timeoutMs, () => { done(true); s.destroy(); }); // filtered or silent: treat as "something is there"
+    s.on('close', () => done(false));
+  });
+}
+
+/**
+ * Restart the app (audit P0-3): stop the old server, require the port to be FREE (connection refused) before
+ * starting app.start, then require that a NEW process answers. Anything else throws, which the Stop hook reports
+ * as YELLOW (restart-failed) and never replays: a replay must not judge the old server's code.
+ */
+export async function restartApp(appDir: string, start: string, port: number, host: string, logFile: string, timeoutMs = 30_000, deps: RestartDeps = {}): Promise<void> {
+  const listeners = deps.listeners ?? listenersOn;
+  const stopWaitMs = deps.stopWaitMs ?? 5_000;
   // 1. Stop the old server (only processes listening on the app's own port; lsof shows only this user's).
-  const old = listenersOn(port) ?? [];
-  for (const pid of old) { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
-  for (let i = 0; i < 20 && (listenersOn(port) ?? []).length; i++) await sleep(250);
-  for (const pid of listenersOn(port) ?? []) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+  const old = listeners(port);
+  for (const pid of old ?? []) { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
+  const freeBy = Date.now() + stopWaitMs;
+  while ((await portAnswers(host, port)) && Date.now() < freeBy) await sleep(100);
+  if (await portAnswers(host, port)) {
+    for (const pid of listeners(port) ?? []) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+    await sleep(300);
+  }
+  if (await portAnswers(host, port)) {
+    const who = old === undefined ? 'notyours cannot see which process holds it (no lsof)'
+      : old.length ? `pid ${old.join(', ')} did not stop` : "it is held by a process notyours cannot see (another user's, or a container's)";
+    throw new Error(`:${port} still answers after stopping the old server: ${who}. Stop that server yourself; notyours will not replay against it.`);
+  }
   // 2. Start the new one, detached, so it outlives this hook process.
   const fd = openSync(logFile, 'a');
   let exitedWith: string | undefined;
@@ -133,17 +172,21 @@ export async function restartApp(appDir: string, start: string, port: number, ho
     const log = tail(logFile);
     throw new Error(`${(e as Error).message}${log ? `\n  last lines of ${path.basename(logFile)}:\n  ${log.split('\n').join('\n  ')}` : ''}`);
   }
+  // 4. The port was free before the start, so whoever answers now is new, unless lsof still shows an old pid there.
+  const now = listeners(port);
+  const survivors = (now ?? []).filter((pid) => (old ?? []).includes(pid));
+  if (survivors.length) throw new Error(`:${port} answers, but from pid ${survivors.join(', ')}, which was listening before the restart: not a new process. Not replaying.`);
 }
 
-export const defaultFreshnessDeps: FreshnessDeps = { listeners: listenersOn, ageSeconds: ageOf, now: () => Date.now(), restart: restartApp };
+export const defaultFreshnessDeps: FreshnessDeps = { listeners: listenersOn, ageSeconds: ageOf, now: () => Date.now(), restart: restartApp, answers: (host, port) => portAnswers(host, port) };
 
 export type Freshness =
-  | { status: 'fresh' | 'unknown'; note?: string }
+  | { status: 'fresh'; note?: string }
   | { status: 'restarted'; note: string }
-  | { status: 'stale' | 'restart-failed' | 'unapproved'; message: string };
+  | { status: 'stale' | 'unverified' | 'restart-failed' | 'unapproved'; message: string };
 
 /** The command a person runs in a terminal to approve app.start (the wizard shows the command and asks first). */
-export const APPROVE_COMMAND = 'npx github:Jasekeee/notyours init';
+export const APPROVE_COMMAND = 'npx notyours init';
 
 const hhmmss = (ms: number) => new Date(ms).toTimeString().slice(0, 8);
 
@@ -185,13 +228,22 @@ export async function checkAppFreshness(
       return { status: 'restart-failed', message: `notyours: YELLOW. Could not restart the app with app.start on :${port}: ${(e as Error).message}. Not replaying.` };
     }
   }
+  // Without app.start: replay only when the running server provably started after the newest surface edit
+  // (audit P1-08). Anything that can't be verified is YELLOW, never a replay as if fresh.
   const pids = deps.listeners(port);
-  if (pids === undefined) return { status: 'unknown', note: `notyours: could not check the app server's age on :${port} (no lsof); set app.start to restart it before every replay.` };
-  if (!pids.length) return { status: 'unknown' }; // nothing running: the replay's positive controls will say so
+  if (pids === undefined) return unverified(port, 'notyours cannot see which process listens on it (no lsof)');
+  if (!pids.length) {
+    if (await deps.answers(host, port)) return unverified(port, "the port answers, but from a process notyours cannot see (another user's, or a container's)");
+    return {
+      status: 'unverified',
+      message: `notyours: YELLOW. nothing answers on :${port}. Start your app server (in the background), then stop again.\n` +
+        '  A person can set `app.start` in .notyours/config.yaml so the Stop hook starts it automatically.',
+    };
+  }
   const newest = newestSurfaceFile(appDir, boundaries);
   if (!newest) return { status: 'fresh' };
   const ages = pids.map((pid) => deps.ageSeconds(pid)).filter((a): a is number => a !== undefined);
-  if (!ages.length) return { status: 'unknown' };
+  if (!ages.length) return unverified(port, `the start time of pid ${pids.join(', ')} can't be read`);
   // The youngest listener counts; etime has 1 s resolution, so allow 2 s.
   const startedMs = deps.now() - Math.min(...ages) * 1000;
   if (newest.mtimeMs <= startedMs + 2000) return { status: 'fresh' };
@@ -203,6 +255,17 @@ export async function checkAppFreshness(
       '  Not replaying: the result would judge the old code.\n' +
       '  Restart the app server (stop the old process, start it again in the background), then stop again so notyours can replay.\n' +
       '  A person can set `app.start` in .notyours/config.yaml so the Stop hook restarts it automatically.',
+  };
+}
+
+function unverified(port: number, why: string): Freshness {
+  return {
+    status: 'unverified',
+    message:
+      `notyours: YELLOW. can't verify the server is current on :${port}: ${why}.\n` +
+      '  Not replaying: the result could judge old code.\n' +
+      '  Restart the app server yourself, then stop again; or a person sets `app.start` in .notyours/config.yaml (and\n' +
+      '  approves it once in a terminal) so the Stop hook restarts it before every replay.',
   };
 }
 
