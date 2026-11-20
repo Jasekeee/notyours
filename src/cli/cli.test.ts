@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import type { Identity } from '../types.js';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -733,23 +734,32 @@ describe('hooks', () => {
 
   it('stop (ratchet hook): an unlocked dirty boundary is only reported; a locked one that cannot be replayed blocks', async () => {
     const r = await runHook('stop', {}, root);
-    // notes is locked, but there is no kane-cli/Chrome in this test: the replay can't run, which fails closed (AUD-11).
+    // notes is locked, but there is no app, kane-cli or Chrome in this test: it can't be checked, which fails closed
+    // (AUD-11). Since audit P1-08 the stale-server check says so first (nothing answers), before any replay.
     expect(r.exitCode).toBe(2);
-    expect(r.stderr).toMatch(/COULD NOT CHECK notes/);
+    expect(r.stderr).toMatch(/nothing answers on :3000|COULD NOT CHECK notes/);
     expect(r.stderr).toMatch(/invoices changed but is not locked yet/); // the human note rides along
   });
 
   it('stop refuses to replay a dirty locked boundary pointing outside allowHosts, also in a nested app folder', async () => {
+    // Something answers on the app port (so the stale-server check lets the pass reach the replay's host gate).
+    const srv = net.createServer((c) => { c.on('error', () => {}); c.end(); }).listen(0, '127.0.0.1');
+    await new Promise((res) => srv.once('listening', res));
+    const port = (srv.address() as net.AddressInfo).port;
+    try {
     for (const nested of [false, true]) {
       const r2 = tmp('ny-gate-');
       const app = nested ? path.join(r2, 'apps', 'web') : r2;
       fs.mkdirSync(app, { recursive: true });
-      runInit(app, { url: 'http://localhost:3000' });
+      runInit(app, { url: `http://localhost:${port}` });
       fs.writeFileSync(path.join(app, '.notyours/boundaries/evil.yaml'), YAML.stringify({ ...mockBoundary, id: 'evil', locked: true, surface: ['src/**'], targets: { ui: ['https://victim.example.org/notes/1'], api: [] } }));
       fs.writeFileSync(path.join(app, '.notyours/dirty.json'), JSON.stringify({ evil: { files: ['src/a.ts'], globs: ['src/**'], ts: new Date().toISOString() } }));
       const r = await runHook('stop', {}, r2);
       expect(r.exitCode).toBe(2); // never replays; a boundary that can't be checked blocks (fail closed)
       expect(`${r.stdout ?? ''}${r.stderr ?? ''}`).toMatch(/victim\.example\.org.*not in allowHosts/);
+    }
+    } finally {
+      await new Promise((res) => srv.close(res));
     }
   });
 
