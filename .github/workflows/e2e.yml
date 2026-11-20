@@ -1,13 +1,11 @@
 # E2E: the five browser test files (real headless Chrome, a local fixture app, a fake kane-cli), run one file at a time.
-# Never installs or runs kane-cli, so it never spends Kane credits. Manual and nightly, not on every push:
-# on ubuntu-latest, 8 engine tests that judge captured network response bodies currently time out
-# (docs/STATUS.md, "CI"). They pass on macOS (`npm test`). This workflow keeps them running and visible.
+# Never installs or runs kane-cli, so it never spends Kane credits. Manual only (no schedule): on ubuntu-latest,
+# 8 engine tests that judge captured network response bodies currently time out (docs/STATUS.md, "CI"). They pass on
+# macOS (`npm test`). The false-green regressions also run without a browser in ci.yml (`npm run test:false-green`).
 name: E2E
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '17 3 * * *'
 
 permissions:
   contents: read
