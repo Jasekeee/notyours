@@ -7,8 +7,12 @@
 <meta name="description" content="notyours runs your app on localhost, signs in as several users in real browsers, and checks that one user's data never reaches another user's screen or network traffic.">
 <meta property="og:title" content="notyours: prove your users' data stays theirs">
 <meta property="og:description" content="Isolation tests for your own app, in real browsers. A canary token decides, not an AI.">
-<meta property="og:image" content="https://raw.githubusercontent.com/Jasekeee/notyours/main/assets/social-preview.png">
+<meta property="og:image" content="https://jasekeee.github.io/notyours/assets/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://jasekeee.github.io/notyours/">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jasekeee.github.io/notyours/assets/social-preview.png">
 <meta name="theme-color" content="#0A0A0B">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3.5' fill='%23FFD60A'/%3E%3Cpath d='M4 5.5h8M4 10.5h8' stroke='%231A1500' stroke-width='1.8'/%3E%3C/svg%3E">
 <link rel="preload" href="assets/fonts/Geist-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -184,8 +188,8 @@
   <div class="wrap">
     <div class="sec-h">
       <span class="label">// tested on an app it didn't write</span>
-      <h2 id="natural-h">0 leaks, 0 false alarms, 9 gaps in notyours.</h2>
-      <p>A fresh Claude Code session built a notes app with share links and a Pro export, from a neutral prompt with no security instructions. notyours tested a copy of it in three experiments.</p>
+      <h2 id="natural-h">Tested on an app it didn't write: 0 false alarms.</h2>
+      <p>A fresh Claude Code session built a notes app with share links and a Pro export, from a neutral prompt with no security instructions. notyours tested a copy of it in three experiments and found 0 leaks.</p>
     </div>
     <div class="exps">
       <article class="card exp"><span class="num">01</span><h3>Prove four boundaries</h3><p class="task">Cross-user, guest, plan-gate and sweep, on the app as Sonnet 5.5 built it.</p>
@@ -196,9 +200,9 @@
         <dl><dt>leaks</dt><dd><b>0</b> Keyed by note id only, but the ownership check still ran first</dd><dt>false alarms</dt><dd><b>0</b></dd></dl></article>
     </div>
     <div class="card gaps">
-      <div class="big"><div><b>9</b><span>gaps in notyours</span></div><div><b style="color:var(--held)">4</b><span>fixed</span></div><div><b>5</b><span>open, documented</span></div></div>
+      <div class="big"><div><b>9</b><span>issues found</span></div><div><b style="color:var(--held)">4</b><span>fixed</span></div><div><b>5</b><span>documented</span></div></div>
       <div>
-        <p><strong>Fixed:</strong> file downloads, a strict CSP blocking the oracle's <code>fetch()</code>, the Stop hook judging a stale server, and failed login replays for personas still signed in.</p>
+        <p>The experiments also tested notyours itself. <strong>Fixed:</strong> file downloads, a strict CSP blocking the oracle's <code>fetch()</code>, the Stop hook judging a stale server, and failed login replays for personas still signed in.</p>
         <p><strong>What didn't happen:</strong> neither model took the bait, so there was no real regression to catch. The full catch-and-fix loop has only been shown on the demo's seeded bugs.</p>
         <p>The experiments and the fix-day re-runs cost about 559 Kane credits over 35 authoring runs. <a href="https://github.com/Jasekeee/notyours/blob/main/docs/natural-app/SUMMARY.md">Read the summary</a>.</p>
       </div>

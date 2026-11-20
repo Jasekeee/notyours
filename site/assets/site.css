@@ -146,7 +146,7 @@
 .gaps { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px 40px; align-items: start; margin-top: 16px; padding: 28px; }
 .gaps .big { display: flex; gap: 28px; }
 .gaps .big div b { display: block; font: 620 44px/1 var(--sans); letter-spacing: -.03em; }
-.gaps .big div span { font: 12.5px/1 var(--mono); color: var(--dim); }
+.gaps .big div span { font: 12.5px/1 var(--mono); color: var(--dim); white-space: nowrap; }
 .gaps p { margin: 0 0 10px; color: var(--muted); font-size: 15px; }
 .gaps p:last-child { margin-bottom: 0; }
 .gaps p strong { color: var(--text); font-weight: 500; }
