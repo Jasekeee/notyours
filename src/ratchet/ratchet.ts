@@ -1,4 +1,5 @@
 import { assertHostsAllowed } from '../cli/host-gate.js';
+import { guestViewerProblem } from '../engine/identities.js';
 import { createEngine, sessionPool, wipeProfile, type ChromePool } from '../engine/index.js';
 import type { Boundary, Config, Identity, ProbeResult, Ratchet } from '../types.js';
 import { KaneCli, type KaneClient } from './kane.js';
@@ -107,6 +108,9 @@ export class RealRatchet implements Ratchet {
 
   private async replayOne(b: Boundary, ids: Identity[], pool: ChromePool | undefined, oracle: Oracle): Promise<ProbeResult> {
     try {
+      // Never log a credentialed "guest" in and call the result a guest check (audit P1-17): HARNESS, not HELD.
+      const guest = guestViewerProblem(b, ids);
+      if (guest) throw new Error(guest);
       if (pool) {
         const viewer = ids.find((i) => i.id === b.viewer);
         // A guest replays on a wiped profile: no cookies from earlier runs.

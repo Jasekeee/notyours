@@ -39,8 +39,8 @@ export function checkKaneVersion(v: string | undefined): Check {
     name: 'kane-cli version',
     status: 'ok',
     detail: kaneReplaysCost(v)
-      ? `${v} (tested ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}); on this version replays cost a few credits and runs are about 2× slower than ${KANE_PINNED}, which the README's numbers use (pin: npm i -g @testmuai/kane-cli@${KANE_PINNED}; docs/KANE_COMPAT.md)`
-      : `${v} (tested ${KANE_TESTED_MIN}–${KANE_TESTED_MAX})`,
+      ? `${v} (tested on ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}; ${KANE_PINNED} is faster); on this version replays cost a few credits and runs are about 2× slower than ${KANE_PINNED}, which the README's numbers use (pin: npm i -g @testmuai/kane-cli@${KANE_PINNED}; docs/KANE_COMPAT.md)`
+      : `${v} (tested on ${KANE_TESTED_MIN}–${KANE_TESTED_MAX}; ${KANE_PINNED} is faster)`,
   };
 }
 

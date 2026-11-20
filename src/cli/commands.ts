@@ -28,6 +28,7 @@ import { guard, guardOutput, installHooks, type HookInput } from './hooks.js';
 import { postToolHook, stopHook, writeSurfaceBaseline, type HookResult } from '../hooks/index.js';
 import { notyoursPaths } from '../ratchet/paths.js';
 import { estimateAuthoring, estimateLine } from './estimate.js';
+import { guestViewerProblem } from '../engine/identities.js';
 import { ownPagesFor } from '../ratchet/ratchet.js';
 import { readAttempts, readDirty, readEscalated, writeAttempts, writeDirty, writeEscalated } from '../ratchet/store.js';
 import { readPublicIdentities, runInit } from './init.js';
@@ -92,12 +93,14 @@ export function assertHuman(command: string, env: NodeJS.ProcessEnv = process.en
   );
 }
 
-function assertIdentities(boundaries: Boundary[], identities: Identity[]): void {
+export function assertIdentities(boundaries: Boundary[], identities: Identity[]): void {
   const ids = new Set(identities.map((i) => i.id));
   for (const b of boundaries) {
     for (const who of [b.owner, b.viewer]) {
       if (!ids.has(who)) throw new UserError(`Boundary ${b.id} uses identity "${who}", which is not in .notyours/secrets.json (known: ${[...ids].join(', ')})`);
     }
+    const guest = guestViewerProblem(b, identities);
+    if (guest) throw new UserError(guest, `set \`viewer:\` to your guest identity in .notyours/boundaries/${b.id}.yaml.`);
   }
 }
 
@@ -474,15 +477,18 @@ export const actions: Actions = {
     const root = enter(o);
     const p = loadProject(root);
     const chosen = selectBoundaries(p.all, ids).map((b) => b.boundary); // also validates ids
+    // A CI gate that checked nothing must not pass (audit P1-12): nothing locked, or a named id not locked, fails.
+    const locked = new Set(p.all.filter((b) => b.boundary.locked).map((b) => b.boundary.id));
+    if (!locked.size) throw new UserError('Nothing to replay: no boundary is locked.', 'prove boundaries with `notyours run`, then lock them with `notyours lock`.');
+    const notLocked = ids.filter((id) => !locked.has(id));
+    if (notLocked.length) throw new UserError(`Not locked, so it can't be replayed: ${notLocked.join(', ')}.`, `lock it first: notyours lock ${notLocked.join(' ')}`);
     assertHostsAllowed(p.cfg, chosen, root);
     const started = new Date();
     const results = await withApp(root, p.cfg, () => replayLocked(p, ids));
-    if (!results.length) {
-      log('Nothing to replay. Lock proven boundaries first: notyours lock');
-      return 0;
-    }
+    if (!results.length) throw new UserError('Nothing was replayed: no locked boundary produced a result.', 'run `notyours doctor`, then `notyours replay` again.');
     finish(root, `replay ${ids.join(' ')}`.trim(), started, results, p);
-    return exitCodeFor(results);
+    const unreplayed = ids.filter((id) => !results.some((r) => r.boundaryId === id));
+    return unreplayed.length ? Math.max(1, exitCodeFor(results)) : exitCodeFor(results);
   },
 
   async report(o) {
