@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -9,7 +10,7 @@ import { lockedBoundary } from '../ratchet/testkit.js';
 import { writeConfig } from '../cli/workspace.js';
 import { approveStart } from '../cli/app-approval.js';
 import {
-  appPort, checkAppFreshness, listenersOn, parseEtime, readAppSettings, restartApp, STALE_MESSAGE, type FreshnessDeps,
+  appPort, checkAppFreshness, listenersOn, parseEtime, readAppSettings, restartApp, STALE_MESSAGE, waitForPort, type FreshnessDeps,
 } from './app-freshness.js';
 
 const project = (config: string) => {
@@ -20,7 +21,7 @@ const project = (config: string) => {
 };
 const b: Boundary = { ...lockedBoundary, surface: ['server.js'] };
 const deps = (over: Partial<FreshnessDeps>): FreshnessDeps => ({
-  listeners: () => [], ageSeconds: () => undefined, now: () => Date.now(), restart: async () => undefined, ...over,
+  listeners: () => [], ageSeconds: () => undefined, now: () => Date.now(), restart: async () => undefined, answers: async () => true, ...over,
 });
 
 describe('app settings', () => {
@@ -71,11 +72,18 @@ describe('checkAppFreshness', () => {
     expect(r.status).toBe('fresh');
   });
 
-  it('no server, or no lsof: unknown (the replay runs; its controls report a dead app)', async () => {
+  it("can't verify the server is current -> YELLOW, never a replay as if fresh (audit P1-08)", async () => {
     const dir = withServerJs();
-    expect((await checkAppFreshness(dir, notyoursPaths(dir), 'http://127.0.0.1:4001', [b], deps({ listeners: () => [] }))).status).toBe('unknown');
-    const noLsof = await checkAppFreshness(dir, notyoursPaths(dir), 'http://127.0.0.1:4001', [b], deps({ listeners: () => undefined }));
-    expect(noLsof).toMatchObject({ status: 'unknown', note: expect.stringContaining('set app.start') });
+    const check = (over: Partial<FreshnessDeps>) => checkAppFreshness(dir, notyoursPaths(dir), 'http://127.0.0.1:4001', [b], deps(over));
+    const yellow = { status: 'unverified', message: expect.stringContaining("can't verify the server is current") };
+    // no lsof
+    expect(await check({ listeners: () => undefined })).toMatchObject(yellow);
+    // the port answers, but lsof sees no listener (another user's process, a container's proxy)
+    expect(await check({ listeners: () => [], answers: async () => true })).toMatchObject(yellow);
+    // a listener whose start time can't be read
+    expect(await check({ listeners: () => [77], ageSeconds: () => undefined })).toMatchObject(yellow);
+    // nothing answers at all: say so before any Kane run
+    expect(await check({ listeners: () => [], answers: async () => false })).toMatchObject({ status: 'unverified', message: expect.stringContaining('nothing answers on :4001') });
   });
 
   it('app.start set but not approved here: YELLOW with the approve command, and no restart', async () => {
@@ -127,6 +135,54 @@ describe('restartApp (real processes)', () => {
     expect(second.length).toBe(1);
     expect(second[0]).not.toBe(first[0]); // a new process
   }, 30_000);
+
+  // A separate "old server" process (never this test worker: the old code would SIGTERM whatever lsof shows).
+  const oldServer = async (port: number) => {
+    const child = spawn(process.execPath, ['-e', `require('net').createServer((c) => { c.on('error', () => {}); c.end('OLD'); }).listen(${port}, '127.0.0.1')`], { stdio: 'ignore' });
+    started.push(child.pid!);
+    await waitForPort('127.0.0.1', port, 5_000);
+    return child;
+  };
+  const answer = (port: number) => new Promise<string>((r) => { const c = net.connect(port, '127.0.0.1'); let d = ''; c.on('data', (x) => (d += x)); c.on('close', () => r(d)); c.on('error', () => r('')); });
+
+  it("audit P0-3: without lsof, an old server it can't stop is never reported as restarted; the old one keeps the port", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'ny-restart-'));
+    const port = await freePort();
+    await oldServer(port);
+    writeFileSync(path.join(dir, 'server.js'), `require('net').createServer((c) => { c.on('error', () => {}); c.end('NEW'); }).listen(${port}, '127.0.0.1');\n`);
+    const savedPath = process.env.PATH;
+    process.env.PATH = path.dirname(process.execPath); // node only: no lsof
+    try {
+      await expect(restartApp(dir, `"${process.execPath}" server.js`, port, '127.0.0.1', path.join(dir, 'app.log'), 5_000, { stopWaitMs: 300 }))
+        .rejects.toThrow(/still answers/);
+    } finally {
+      process.env.PATH = savedPath;
+    }
+    expect(await answer(port)).toBe('OLD');
+  }, 20_000);
+
+  it('audit P0-3: lsof sees no listener, but the port still answers (another user, a container proxy): refused', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'ny-restart-'));
+    const port = await freePort();
+    await oldServer(port);
+    await expect(restartApp(dir, 'node server.js', port, '127.0.0.1', path.join(dir, 'app.log'), 5_000, { listeners: () => [], stopWaitMs: 300 }))
+      .rejects.toThrow(/still answers/);
+    expect(await answer(port)).toBe('OLD');
+  }, 20_000);
+
+  it('audit P0-3: after starting, the port must be held by a NEW listener, not one that was there before', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'ny-restart-'));
+    const port = await freePort();
+    const sleeper = spawn('sleep', ['30'], { stdio: 'ignore' }); // a harmless "old pid" that lsof keeps reporting
+    started.push(sleeper.pid!);
+    writeFileSync(path.join(dir, 'server.js'), `require('net').createServer((c) => { c.on('error', () => {}); c.end('NEW'); }).listen(${port}, '127.0.0.1');\n`);
+    try {
+      await expect(restartApp(dir, 'node server.js', port, '127.0.0.1', path.join(dir, 'app.log'), 5_000, { listeners: () => [sleeper.pid!], stopWaitMs: 300 }))
+        .rejects.toThrow(/not a new process/);
+    } finally {
+      started.push(...(listenersOn(port) ?? []));
+    }
+  }, 20_000);
 
   it('a start command that dies is reported with the end of its log', async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'ny-restart-'));

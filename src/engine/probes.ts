@@ -6,7 +6,7 @@ import type { Boundary, Config, Identity, KaneRun, ProbeResult } from '../types.
 import type { ChromePool } from './chrome.js';
 import { byId } from './identities.js';
 import type { KaneOutcome, KaneRunner, KaneVars } from './kane.js';
-import { Capture, judge, parseTarget, seesToken, type NetRecord, type Visit } from './oracle.js';
+import { Capture, judge, ownerControl, parseTarget, seesToken, type NetRecord, type Visit } from './oracle.js';
 
 export interface ProbeDeps {
   runner: KaneRunner;
@@ -241,8 +241,14 @@ export async function probe(b: Boundary, ids: Identity[], cfg: Config, deps: Pro
       viewerCtlVisits = await visitAll(vcap, ready, 'vctl');
       viewerOk = seesToken(viewer.token, viewerCtlVisits, vcap.records);
     }
-    const ownerSeesOwnToken = seesToken(owner.token, ownerVisits, ocap.records);
-    if (!ownerSeesOwnToken) notes.push('owner did not see its own token on the targets');
+    // cross-user/guest: every target must show the owner her own token (audit P1-09), see ownerControl().
+    const ownerCtl = ownerControl(b.kind, owner.token, ownerVisits, ocap.records);
+    const ownerSeesOwnToken = ownerCtl.ok;
+    if (!ownerSeesOwnToken) {
+      notes.push(ownerCtl.missing.length
+        ? `owner did not see its own token on: ${ownerCtl.missing.join(', ')} (a target that shows the owner nothing proves nothing; fix or remove it)`
+        : 'owner did not see its own token on the targets');
+    }
     if (!viewerOk && b.kind !== 'guest') notes.push('viewer did not see its own token on its own page (not signed in?)');
 
     // Which observations count. plan-gate: only the gated result (targets), since the free user's own pages

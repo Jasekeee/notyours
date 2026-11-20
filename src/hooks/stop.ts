@@ -217,7 +217,7 @@ async function stopForApp(appDir: string, projectDir: string, deps: StopDeps, no
   // Never judge old code: restart the app (app.start) or check that the running server is newer than its code.
   const fresh = await (deps.freshness ?? checkAppFreshness)(appDir, p, cfg.baseUrl, replayIds.map((id) => byId.get(id)!));
   const att = readAttempts(p);
-  if (fresh.status === 'stale' || fresh.status === 'restart-failed' || fresh.status === 'unapproved') {
+  if (fresh.status === 'stale' || fresh.status === 'unverified' || fresh.status === 'restart-failed' || fresh.status === 'unapproved') {
     // Still dirty: replay once the app is restarted. Counted, and escalated (still blocking) after maxAttempts.
     const n = (att[STALE_ATTEMPTS_KEY] ?? 0) + 1;
     att[STALE_ATTEMPTS_KEY] = n;

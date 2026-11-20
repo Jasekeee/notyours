@@ -80,6 +80,15 @@ export function scanText(text: string, requestUrl: string): TokenOcc[] {
 }
 
 /** Records every text/json/html response body (<=2MB) in a Chrome, across all current and new pages. */
+/**
+ * A record for a body the oracle fetched itself (downloads, non-GET targets). Over MAX_BODY only the first part is
+ * scanned and the record is flagged unreadable, so a no-hit result can never count as HELD (AUD-12, audit P0-2).
+ */
+function bodyRecord(url: string, status: number, tag: string, body: string): NetRecord {
+  if (body.length <= MAX_BODY) return { url, status, tag, tokens: scanText(body, url) };
+  return { url, status, tag, tokens: scanText(body.slice(0, MAX_BODY), url), unreadable: `body over ${MAX_BODY / 1024 / 1024} MB (only the first part was scanned)` };
+}
+
 export class Capture {
   readonly records: NetRecord[] = [];
   private readonly pending = new Set<Promise<void>>();
@@ -188,7 +197,7 @@ export class Capture {
             }
             status = r.status;
             downloaded = true;
-            this.records.push({ url, status, tag, tokens: scanText(r.body.slice(0, MAX_BODY), url) });
+            this.records.push(bodyRecord(url, status, tag, r.body));
           }
         } else {
           // The origin page itself is not the target: tag the tab only once it has loaded.
@@ -199,7 +208,7 @@ export class Capture {
             return { status: res.status, body: await res.text() };
           }, url, method);
           status = r.status;
-          this.records.push({ url, status, tag, tokens: scanText(r.body.slice(0, MAX_BODY), url) });
+          this.records.push(bodyRecord(url, status, tag, r.body));
         }
         error = undefined;
         break;
@@ -261,6 +270,18 @@ export function seesToken(token: string, visits: Visit[], records: NetRecord[]):
   if (visits.some((v) => v.kind === 'ui' && v.dom.some((o) => o.token === token && !o.echo))) return true;
   const apiTags = new Set(visits.filter((v) => v.kind === 'api').map((v) => v.tag));
   return records.some((r) => apiTags.has(r.tag) && r.tokens.some((o) => o.token === token && !o.echo));
+}
+
+/**
+ * The owner's positive control (audit P1-09). cross-user and guest: EVERY target must show the owner her own token,
+ * or a target that shows nothing to anyone (a typo, a login redirect) would count as "held" untested. plan-gate and
+ * sweep keep any-of: their targets legitimately include pages without the owner's token (the page with the Pro
+ * button; the viewer's own list).
+ */
+export function ownerControl(kind: string, token: string, visits: Visit[], records: NetRecord[]): { ok: boolean; missing: string[] } {
+  if (kind !== 'cross-user' && kind !== 'guest') return { ok: seesToken(token, visits, records), missing: [] };
+  const missing = visits.filter((v) => !seesToken(token, [v], records)).map((v) => v.url);
+  return { ok: visits.length > 0 && missing.length === 0, missing };
 }
 
 export interface Judgement {

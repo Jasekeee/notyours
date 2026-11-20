@@ -250,6 +250,7 @@ describe('stop hook with the app in a subfolder (demo/)', () => {
     const engine = new SequenceEngine([leak, mockHeldResult]);
     const d: StopDeps = {
       env: { CLAUDE_PROJECT_DIR: repo },
+      freshness: async () => ({ status: 'fresh' }),
       replay: (ids, ctx) => {
         seen.push(ctx.projectDir);
         return new RealRatchet({ projectDir: ctx.projectDir, kane, oracle: engineOracle(engine) }).replayIds(ctx.identities, ids);
@@ -275,6 +276,7 @@ describe('stop hook with the app in a subfolder (demo/)', () => {
     const seen: string[] = [];
     const r = await stopHook(input('stop-first', repo), {
       env: { CLAUDE_PROJECT_DIR: repo },
+      freshness: async () => ({ status: 'fresh' }),
       replay: async (ids, ctx) => (seen.push(ctx.projectDir), ids.map((boundaryId) => ({ ...mockHeldResult, boundaryId }))),
     });
     expect(r.exitCode).toBe(0);
@@ -365,7 +367,7 @@ describe('stop hook: stale app server', () => {
     mkdirSync(path.join(project, 'src/app/api/notes'), { recursive: true });
     writeFileSync(path.join(project, 'src/app/api/notes/route.ts'), 'edited just now\n');
     dirtyNotes();
-    const fake: FreshnessDeps = { listeners: () => [4242], ageSeconds: () => 3600, now: () => Date.now(), restart: async () => { throw new Error('not configured'); } };
+    const fake: FreshnessDeps = { listeners: () => [4242], ageSeconds: () => 3600, now: () => Date.now(), restart: async () => { throw new Error('not configured'); }, answers: async () => true };
     const engine = new SequenceEngine([]);
     const r = await stopHook(input('stop-first', project), withFreshness(engine, (dir, paths, baseUrl, bs) => checkAppFreshness(dir, paths, baseUrl, bs, fake)));
     expect(r.exitCode).toBe(2);
