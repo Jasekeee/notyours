@@ -1,12 +1,11 @@
 # notyours: rules for every agent
 
 ## Rules
-- **Frozen again at v0.2.0 (craft sprint closed 2026-11-19).** Only fix bugs that break the install path or the demo
-  recording; everything else goes to Known limitations. v0.1.5 (tag) stays as the fallback.
-  Sprint outcome: feat/onboarding, feat/site and feat/release merged into main for v0.2.0. The Stop hook restarts
-  `app.start` only after a person approves it on this machine; the demo copy runs as an ES module in any folder.
-  The goal "would a developer install this tonight?" (8+/10) was not scored: the repo has no measurement for it.
-  Measured on the v0.2.0 fresh-clone run: see docs/STATUS.md, "Fresh clone, v0.2.0".
+- **Final freeze at v0.2.2 (2026-11-20).** v0.2.2 fixed the v0.2.1 audit's listed findings (docs/AUDIT-v0.2.1.md;
+  what was fixed and what wasn't: docs/STATUS.md, "Fixed after the v0.2.1 audit" and "Known limitations"). No more
+  features, refactors or wording passes. Only fix a bug that breaks the install path (`npx notyours`) or the demo
+  (`notyours demo --quick`), and only with the owner's approval; everything else goes to Known limitations.
+  v0.2.1 and v0.1.5 (tags) stay as fallbacks.
 - **No fake metrics, users, testimonials, logos or funding claims anywhere** (code, README, docs, site, UI copy).
 - **Every number must come from the repo's measurements** (committed results, tests, benchmarks). If there is no measurement, don't state the number.
 - **Do not mention the hackathon** in README, docs or the site.
@@ -19,7 +18,7 @@
 - Secrets only in `.env` / `.notyours/secrets.json` (gitignored). Never print TestMu credentials or identity passwords
   (use `redactIdentity()` from `src/shared/redact.ts`).
 - Commit small and often. Never force-push. Push only if the pre-push hook passes; never use `--no-verify`.
-- Kane credits: ~16 per authoring run, 0 per `testmd run` replay. Prefer replays. Never loop or retry authoring runs.
+- Kane credits: ~16 per authoring run, about 0–1 per replayed boundary (no authoring). Prefer replays. Never loop or retry authoring runs.
   Log every run's `credits_consumed`. Never test against example.com/.org; use local fixtures.
 - Run `npm run typecheck && npm test` before committing.
 
@@ -27,7 +26,8 @@
 - Variables file format: `{"name":{"value":"..."}}`.
 - Parallel Kane runs on separate Chromes via `--cdp-endpoint` work. Live puppeteer-core capture alongside Kane works.
 - `--analyzer-only` judges mostly from `<title>`: NEVER use it for verdicts. The canary-token oracle decides.
-- `kane-cli run ... --name X` writes `.testmuai/tests/X_test.md`. `testmd run` replay costs 0 credits and takes <1s.
+- `kane-cli run ... --name X` writes `.testmuai/tests/X_test.md`. `testmd run` replay costs 0 credits and takes <1s
+  in the spike. Measured in notyours since: a replayed boundary takes ~40–50 s and about 0–1 credit (docs/STATUS.md).
 - Replay ignores changed variables and goes to the recorded URL. Retarget with `--override-start-url`, or use fixed seed URLs.
   `testmd run` + `--cdp-endpoint` works.
 - kane-cli writes evidence packs (zips with the account email and share links) to `.testmuai/evidence/` wherever it runs.

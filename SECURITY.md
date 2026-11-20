@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest release receives security fixes. Right now that is **0.2.1** (0.2.x).
+Only the latest release receives security fixes. Right now that is **0.2.2** (0.2.x).
 Older tags are kept for history but are not patched.
 
 ## Reporting a vulnerability
