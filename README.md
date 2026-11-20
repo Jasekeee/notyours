@@ -9,15 +9,11 @@
 **Prove your users' data stays theirs.** notyours runs your app on localhost, signs in as several users, and checks
 that one user's data never reaches another user's browser.
 
-![notyours demo (recording to come)](assets/demo.gif)
-
-<!-- assets/demo.gif is not recorded yet. Replace this line and the placeholder above when it exists. -->
-
 > Isolation tests for your own app. Not a penetration test.
 
 ## Quickstart
 
-You need Node 22+, Google Chrome, and [kane-cli](https://www.testmuai.com/kane-cli/) 0.10.0–0.10.6 (tested both; 0.10.0 is
+You need Node 22+, Google Chrome, and [kane-cli](https://www.testmuai.com/kane-cli/) (tested on 0.10.0–0.10.6; 0.10.0 is
 faster), logged in.
 
 ```sh
@@ -84,7 +80,7 @@ separate real Chrome browsers, and checks what each one can actually see. More i
      │
   oracle    did NY-ALICE-… reach Bob?  ─▶  LEAK · HELD · HARNESS
      │
-  lock      record it; every later check is a 0-credit replay
+  lock      record it; later checks replay it (no authoring runs, ~0–1 credit each)
      │
   report    report.html + report.json  ─▶  leaks go back to your coding agent
 ```
@@ -198,7 +194,10 @@ No head-to-head benchmark has been run. These are trade-offs from how each appro
 A replay of four locked boundaries used 3.4 credits (170 s). The demo prints its estimate before it starts, and
 `run --dry-run` prints one without starting Kane. `.notyours/credits.log` records every Kane run. A per-project daily cap on authoring runs (default 20) is enforced by the CLI.
 
-**Does my data leave my machine?** Kane runs are tied to your TestMu AI account. Test Manager links are written to
+**Does my data leave my machine?** Yes, through Kane. Every Kane run belongs to your TestMu AI account and gets a Test
+Manager link, and Kane's agent decides its steps from what the personas' browsers show. Treat everything your test
+personas see, and the test accounts' credentials, as shared with TestMu AI: use test accounts and test data, never real
+users'. notyours itself sends nothing anywhere; the oracle runs on your machine. Test Manager links are written to
 `.notyours/runs/` and evidence packs to `.testmuai/evidence/`. These hold your account email and share links, and
 `init` keeps them out of git. Do not publish them.
 
@@ -231,9 +230,13 @@ and installs the `/notyours-map` command.
 The hooks **fail closed**: each runs `.notyours/bin/notyours-hook`, which finds the CLI. If it can't, the hook blocks
 with "notyours guard unavailable". `doctor` checks that every installed hook resolves.
 
-- **It never judges an old server.** With `app: { start: "node server.js", port: 3000 }` in `.notyours/config.yaml` it
-  restarts your app before replaying. Without it, if the server is older than your code, it stops and asks for a restart.
-- **Personas that are still signed in skip the login replay.** A Stop pass can cost about 0 credits.
+- **It doesn't judge a server it can't show is current.** With `app: { start: "node server.js", port: 3000 }` in
+  `.notyours/config.yaml` (approved once by a person in a terminal) it stops the old server, waits until the port is
+  free, starts yours and checks that a new process answers before replaying. Without `app.start`, it compares the
+  listening process's start time with your newest `surface` file. If the server is older, or it can't tell (no `lsof`,
+  or a process it can't see), it stops with YELLOW and asks for a restart or `app.start`.
+- **Personas that are still signed in skip the login replay.** Measured: a one-boundary Stop pass took 62 s and lowered
+  the balance by 0.73 credits (0 logged).
 
 ## Credit costs
 
@@ -247,8 +250,8 @@ with "notyours guard unavailable". `doctor` checks that every installed hook res
 On kane-cli 0.10.6 replays cost more and runs take longer. See [docs/KANE_COMPAT.md](docs/KANE_COMPAT.md).
 
 notyours refuses to start authoring runs when your balance is below `creditFloor` (default 300, in
-`.notyours/config.yaml`). The account balance can drop a little more than the logs show (measured: 61 vs 48.8 for the
-quick demo).
+`.notyours/config.yaml`). The account balance drops more than the logs show: 81 vs 42.2 logged on the v0.2.0 fresh-clone run (demo, loop
+and Stop check; docs/STATUS.md), and 37.17 vs 29.10 in the v0.2.1 audit (docs/AUDIT-v0.2.1.md).
 
 ```sh
 npx notyours budget          # today's authoring runs vs the cap

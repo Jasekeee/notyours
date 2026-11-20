@@ -13,7 +13,7 @@ Report it privately through GitHub's private vulnerability reporting:
 go to the repository's **Security** tab, choose **Report a vulnerability**, and describe the problem.
 Include:
 
-- the notyours version (`npx github:Jasekeee/notyours --version`) and the Node and kane-cli versions;
+- the notyours version (`npx notyours --version`) and the Node and kane-cli versions;
 - the smallest steps to reproduce, using a local app and test accounts only;
 - what you expected and what happened.
 

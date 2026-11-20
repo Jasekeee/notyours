@@ -3,7 +3,7 @@
 # the replay catches it (exit 1, LEAK), the fix goes back in, the replay is GREEN (exit 0).
 #
 #   From a clone:  npm ci && npm run build && bash scripts/judge-loop.sh            (work folder ./notyours-loop)
-#   Other CLI:     NY="npx github:Jasekeee/notyours" bash scripts/judge-loop.sh
+#   Other CLI:     NY="npx notyours" bash scripts/judge-loop.sh
 #
 # First run only (setup): the quick demo (~4 min, ~50–60 credits) and proving the fixed B1 (2 authoring runs,
 # ~2–3 min, ~30–40 credits). After that the loop itself takes about 2 minutes and a few credits (replays only).
